@@ -1,0 +1,10 @@
+# Atualizações automáticas de dependências.
+# Os ecossistemas gradle (backend/) e pub (app/) entram quando esses projetos existirem.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

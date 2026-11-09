@@ -1,0 +1,42 @@
+name: Propor um perfil
+description: Sugira um perfil para o guia inicial e as regras que ele gera.
+title: "[perfil] "
+labels: [perfil]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Perfis geram regras de essencialidade (Essencial, Importante ou Flexível) e de marca (ex.: Trabalho, Estudo). Cada regra precisa de uma explicação curta, que o app mostra para quem usa. Nada de rótulos com julgamento, como "Supérfluo".
+  - type: input
+    id: name
+    attributes:
+      label: Nome do perfil
+      placeholder: ex. Motorista de app
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Quem tem esse perfil
+      description: Rotina e gastos típicos de quem trabalha ou vive assim.
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: Regras sugeridas
+      description: Uma por linha, no formato gasto → essencialidade, marca → explicação.
+      placeholder: |
+        Combustível → Essencial, Trabalho → é o principal insumo de quem dirige por aplicativo
+        Lavagem do carro → Importante, Trabalho → afeta a avaliação das corridas
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmação
+      options:
+        - label: As regras usam só Essencial, Importante e Flexível, sem julgamento moral.
+          required: true
+        - label: Não incluí dados financeiros reais nem dados pessoais.
+          required: true

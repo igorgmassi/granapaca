@@ -1,0 +1,56 @@
+# --- Segredos e dados reais: nunca entram no Git ---
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+key.properties
+
+# Extratos, exportações e backups reais
+*.ofx
+*.qfx
+extratos/
+exports/
+backups/
+*.dump
+# Fixtures sintéticas de teste são a exceção
+!**/src/test/resources/**/*.ofx
+!**/test/fixtures/**/*.ofx
+
+# --- Java / Gradle ---
+.gradle/
+build/
+target/
+out/
+*.class
+hs_err_pid*
+
+# --- Flutter / Dart ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/android/local.properties
+**/android/.gradle/
+**/macos/Flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# --- IDEs e sistema ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.log

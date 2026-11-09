@@ -1,0 +1,58 @@
+name: Relatar um bug
+description: Algo não funciona como deveria.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Não cole dados reais.** Nada de extratos, prints com valores reais, CPF, números de conta ou cartão, tokens, chaves de API ou credenciais da Pluggy. Use dados sintéticos ou troque os valores.
+
+        Vulnerabilidade de segurança? Não abra issue: use o [relato privado](https://github.com/igorgmassi/granapaca/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: O que aconteceu
+      description: Descreva o problema e o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versão ou commit
+      placeholder: ex. v0.1.0 ou abc1234
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Onde aconteceu
+      multiple: true
+      options:
+        - Android
+        - iOS
+        - Windows
+        - macOS
+        - Linux
+        - Demo web
+        - Backend
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      description: Revise antes de colar e remova qualquer dado pessoal.
+      render: text
+  - type: checkboxes
+    id: no-real-data
+    attributes:
+      label: Confirmação
+      options:
+        - label: Confirmo que esta issue não contém dados financeiros reais, dados pessoais, tokens nem chaves.
+          required: true

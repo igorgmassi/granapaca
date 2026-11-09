@@ -1,0 +1,32 @@
+name: Sugerir uma funcionalidade
+description: Uma ideia ou melhoria para o GranaPaCá.
+title: "[ideia] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Não cole dados reais.** Se precisar de exemplo, use valores e nomes inventados.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qual problema isso resolve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: O que você propõe
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+  - type: checkboxes
+    id: no-real-data
+    attributes:
+      label: Confirmação
+      options:
+        - label: Confirmo que esta issue não contém dados financeiros reais, dados pessoais, tokens nem chaves.
+          required: true
