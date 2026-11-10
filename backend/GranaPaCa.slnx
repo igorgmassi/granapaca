@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GranaPaCa.Api/GranaPaCa.Api.csproj" />
+  </Folder>
+</Solution>
