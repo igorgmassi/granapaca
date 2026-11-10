@@ -5,7 +5,7 @@ Identidade visual e design das telas do app, em 12 partes. Cada parte é um arqu
 | Parte | Assunto | Status |
 |---|---|---|
 | [1](01-revisao-das-decisoes.md) | Revisão das decisões do briefing | Pronta |
-| 2 | Design tokens em JSON e Dart | A fazer |
+| [2](02-design-tokens.md) | Design tokens em JSON e Dart | Pronta |
 | 3 | Mascote: folha de modelo, expressões e máquina de estados | A fazer |
 | 4 | Logo e ícone do app | A fazer |
 | 5 | Biblioteca de componentes, com estados | A fazer |
