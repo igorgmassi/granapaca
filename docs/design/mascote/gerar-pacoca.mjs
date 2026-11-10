@@ -1,12 +1,14 @@
 // Gera os SVGs da Paçoca a partir das mesmas peças, para frente, perfil, costas e expressões
 // ficarem consistentes. Uso: node docs/design/mascote/gerar-pacoca.mjs (grava os SVGs nesta pasta).
+// Anatomia a partir de fotos de paca: corpo esguio, focinho alongado com nariz rosado, orelhas
+// pequenas, bigodes longos e fileiras horizontais de pintas que viram traços no flanco.
 import { writeFileSync } from "node:fs";
 
-// Paleta da Paçoca: no máximo 3 tons por cor, sem contorno preto.
+// Paleta: no máximo 3 tons por cor, sem contorno preto.
 const C = {
-  car: "#C47A3A", carL: "#DFA36B", carD: "#9A5524",
+  car: "#B96A35", carL: "#D99A66", carD: "#8E4A20",
   cre: "#F7E6CC", creD: "#E6C9A0",
-  olho: "#2A1C12", nariz: "#5A2A0C", narizL: "#8A4A22", boch: "#EE9C92",
+  olho: "#2A1C12", nariz: "#5A2A0C", rosa: "#D9877A", rosaL: "#F0B0A6",
   mata: "#2A7550", mataD: "#1E5A3C",
   milho: "#E5A62B", milhoD: "#B98318", milhoL: "#F7D27A",
   agua: "#7DB9EA", aguaD: "#22649C", metal: "#6B5546",
@@ -19,89 +21,101 @@ const gira = (a, x, y) => ` transform="rotate(${a} ${x} ${y})"`;
 const moeda = (x, y, r, base = C.milho, anel = C.milhoD, brilho = C.milhoL) =>
   circ(x, y, r, base) + `<circle cx="${x}" cy="${y}" r="${(r * 0.62).toFixed(1)}" fill="none" stroke="${anel}" stroke-width="${(r * 0.2).toFixed(1)}"/>` +
   (brilho ? circ((x - r * 0.3).toFixed(1), (y - r * 0.32).toFixed(1), (r * 0.2).toFixed(1), brilho) : "");
-const pinta = (x, y, r) => moeda(x, y, r, C.cre, C.creD, null); // as pintas são moedinhas creme
-const braco = ([x, y, a]) => ell(x, y, 12, 18, C.carD, gira(a, x, y));
-const pegada = (x, y) => ell(x, y, 5, 6, C.carL) + circ(x - 5, y - 8, 2.2, C.carL) + circ(x, y - 10, 2.2, C.carL) + circ(x + 5, y - 8, 2.2, C.carL);
+// Pinta em traço: cápsula creme; as fileiras alternam traços longos e curtos, como na paca.
+const listra = ([x, y, w, a = 0]) => `<rect x="${x}" y="${y - 2.5}" width="${w}" height="5" rx="2.5" fill="${C.cre}"${a ? gira(a, x + w / 2, y) : ""}/>`;
+const espelha = ([x, y, w, a = 0]) => [240 - x - w, y, w, -a];
+const braco = ([x, y, a]) => ell(x, y, 8, 16, C.carD, gira(a, x, y));
+const pegada = (x, y) => ell(x, y, 4.5, 5.5, C.carL) + circ(x - 4.5, y - 7, 2, C.carL) + circ(x, y - 9, 2, C.carL) + circ(x + 4.5, y - 7, 2, C.carL);
+const fio = (d) => traco(d, C.nariz, 1.4, ' opacity="0.75"');
+const bigodes = (x, y, lado) => [[-56, -12], [-60, 3], [-52, 18]].map(([dx, dy]) => fio(`M${x} ${y} Q${x + lado * dx * 0.5} ${y + dy * 0.4} ${x + lado * dx} ${y + dy}`)).join("");
 
+// Frente: em pé, para os gestos. Cabeça com focinho alongado; os dentes saem da junção do lábio.
 const OLHOS = {
-  abertos: (r = 9.5) => [100, 140].map((x) => circ(x, 86, r, C.olho) + circ(x - 3, 82.5, r * 0.34, "#FFFFFF") + circ(x + 3, 89.5, 1.4, "#FFFFFF")).join(""),
-  felizes: () => [100, 140].map((x) => traco(`M${x - 9} 89 Q${x} 79 ${x + 9} 89`, C.olho, 3.6)).join(""),
-  fechados: () => [100, 140].map((x) => traco(`M${x - 9} 86 Q${x} 93 ${x + 9} 86`, C.olho, 3.6)).join(""),
-  cima: () => [102, 142].map((x) => circ(x, 83, 9.5, C.olho) + circ(x - 3, 79.5, 3.2, "#FFFFFF")).join(""),
-  lupa: () => circ(100, 86, 9.5, C.olho) + circ(97, 82.5, 3.2, "#FFFFFF") + circ(142, 86, 13, C.olho) + circ(138, 81, 4.4, "#FFFFFF") + circ(146, 90, 1.8, "#FFFFFF"),
+  abertos: (r = 8) => [101, 139].map((x) => circ(x, 88, r, C.olho) + circ(x - 2.5, 85, r * 0.34, "#FFFFFF") + circ(x + 2.5, 91, 1.2, "#FFFFFF")).join(""),
+  felizes: () => [101, 139].map((x) => traco(`M${x - 8} 91 Q${x} 82 ${x + 8} 91`, C.olho, 3.4)).join(""),
+  fechados: () => [101, 139].map((x) => traco(`M${x - 8} 88 Q${x} 94 ${x + 8} 88`, C.olho, 3.4)).join(""),
+  cima: () => [103, 141].map((x) => circ(x, 85, 8, C.olho) + circ(x - 2.5, 82, 2.7, "#FFFFFF")).join(""),
+  lupa: () => circ(101, 88, 8, C.olho) + circ(98.5, 85, 2.7, "#FFFFFF") + circ(139, 88, 11, C.olho) + circ(135.5, 84, 3.7, "#FFFFFF") + circ(142.5, 91.5, 1.6, "#FFFFFF"),
 };
-const BOCAS = {
-  sorriso: traco("M120 107 V112", C.nariz, 3) + traco("M109 112 Q120 121 131 112", C.nariz, 3),
-  aberta: traco("M120 107 V112", C.nariz, 3) + `<path d="M108 112 Q120 129 132 112 Z" fill="${C.nariz}"/>` + ell(120, 120, 6, 3.5, C.boch),
-  reta: traco("M120 107 V112", C.nariz, 3) + traco("M113 115 L127 114", C.nariz, 3),
-  ondulada: traco("M110 116 Q115 112 120 116 Q125 120 130 116", C.nariz, 3),
-  pequena: traco("M116 114 Q120 117 124 114", C.nariz, 3),
+const DENTES = `<rect x="116.5" y="120" width="7" height="7" rx="1.8" fill="#FFFFFF"/>` + traco("M120 120.5 V126.5", C.creD, 1);
+const LABIO = {
+  sorriso: "M108 117 Q113 125 120 120 Q127 125 132 117",
+  reta: "M112 121 Q116 123 120 120 Q124 123 128 121",
+  ondulada: "M110 123 Q115 119 120 120 Q125 119 130 123",
+  pequena: "M114 120 Q117 122.5 120 120 Q123 122.5 126 120",
 };
+function boca(tipo) {
+  const filtro = traco("M120 118.5 V120.5", C.nariz, 2.4);
+  if (tipo === "aberta") return filtro + `<path d="M110 120 Q120 137 130 120 Z" fill="${C.nariz}"/>` + ell(120, 130, 5, 3, C.rosa) + DENTES;
+  return filtro + traco(LABIO[tipo], C.nariz, 2.6) + (tipo === "pequena" ? "" : DENTES);
+}
+const LISTRAS_FRENTE = [[78, 134, 12], [74, 148, 14], [74, 162, 12], [88, 162, 4], [76, 176, 12], [81, 190, 8]];
+const BRACOS_PADRAO = [[80, 160, -12], [160, 160, 12]];
 
-const DENTES = `<rect x="115.5" y="111" width="9" height="8" rx="2" fill="#FFFFFF"/>` + traco("M120 111.5 V118.5", C.creD, 1.2);
-const BIGODE = [[101, 106], [98, 112], [104, 114], [139, 106], [142, 112], [136, 114]].map(([x, y]) => circ(x, y, 1.6, C.creD)).join("");
-const BRACOS_PADRAO = [[84, 160, -28], [156, 160, 28]];
-
-function frente({ olhos = "abertos", boca = "sorriso", bracos = BRACOS_PADRAO, sobrancelhas = "", atras = "", meio = "", frenteExtra = "", olhoR } = {}) {
+function frente({ olhos = "abertos", bocaTipo = "sorriso", bracos = BRACOS_PADRAO, sobrancelhas = "", atras = "", meio = "", frenteExtra = "", olhoR } = {}) {
   return [
     atras,
-    ell(97, 213, 21, 10, C.carD), ell(143, 213, 21, 10, C.carD),
-    circ(78, 56, 10, C.carD), circ(78, 57, 5, C.creD), circ(162, 56, 10, C.carD), circ(162, 57, 5, C.creD),
-    ell(120, 156, 68, 63, C.car),
-    pinta(64, 138, 7), pinta(62, 158, 7.5), pinta(66, 178, 7), pinta(176, 138, 7), pinta(178, 158, 7.5), pinta(174, 178, 7),
-    ell(120, 170, 38, 33, C.cre),
-    traco("M54 172 Q120 196 186 172", C.mataD, 6),
-    `<rect x="93" y="174" width="54" height="27" rx="11" fill="${C.mata}"/>`, traco("M96 183 Q120 190 144 183", C.mataD, 3), moeda(120, 187, 6),
-    ell(120, 92, 60, 50, C.car),
-    ell(120, 111, 31, 22, C.cre),
-    ell(84, 106, 9, 5.5, C.boch, ' opacity="0.75"'), ell(156, 106, 9, 5.5, C.boch, ' opacity="0.75"'),
+    ell(106, 216, 14, 7, C.carD), ell(134, 216, 14, 7, C.carD),
+    circ(90, 58, 9, C.carD), circ(90, 59, 4.5, C.creD), circ(150, 58, 9, C.carD), circ(150, 59, 4.5, C.creD),
+    ell(120, 158, 50, 58, C.car),
+    [...LISTRAS_FRENTE, ...LISTRAS_FRENTE.map(espelha)].map(listra).join(""),
+    ell(120, 172, 26, 34, C.cre),
+    traco("M72 172 Q120 192 168 172", C.mataD, 5),
+    `<rect x="98" y="174" width="44" height="24" rx="10" fill="${C.mata}"/>`, traco("M101 182 Q120 188 139 182", C.mataD, 2.5), moeda(120, 186, 5.5),
+    ell(120, 92, 48, 42, C.car), ell(120, 114, 24, 20, C.car),
+    ell(120, 119, 18, 12, C.carL),
+    ell(98, 108, 7, 4.5, C.rosa, ' opacity="0.45"'), ell(142, 108, 7, 4.5, C.rosa, ' opacity="0.45"'),
     OLHOS[olhos](olhoR), sobrancelhas,
-    ell(120, 101, 9, 6.5, C.nariz), ell(117, 99.5, 2.6, 1.6, C.narizL),
-    BOCAS[boca],
-    boca === "pequena" ? "" : DENTES,
-    BIGODE,
+    bigodes(106, 118, 1), bigodes(134, 118, -1),
+    ell(120, 113, 8, 6, C.rosa), ell(118, 111.5, 2.4, 1.4, C.rosaL),
+    boca(bocaTipo),
     meio,
     bracos.map(braco).join(""),
     frenteExtra,
   ].join("");
 }
 
+// Perfil: em quatro patas, como nas fotos. Corpo alongado, garupa alta e quatro fileiras de traços.
+const LISTRAS_PERFIL = [
+  [62, 124, 12], [78, 122, 9], [92, 122, 15], [111, 124, 10], [125, 127, 7],
+  [50, 138, 9], [63, 137, 17], [84, 137, 11], [99, 138, 16], [119, 140, 10], [133, 142, 8],
+  [54, 152, 12], [70, 152, 15], [89, 153, 9], [102, 153, 17], [123, 155, 11],
+  [64, 166, 10], [78, 167, 14], [96, 168, 11], [111, 168, 9],
+];
 function perfil({ andando = false } = {}) {
-  const pes = andando
-    ? ell(86, 211, 22, 10, C.carD, gira(-14, 86, 211)) + ell(156, 208, 22, 10, C.carD, gira(16, 156, 208))
-    : ell(96, 213, 22, 10, C.carD) + ell(142, 213, 22, 10, C.carD);
+  const [pt, pd] = andando ? [-16, 14] : [6, 0];
   return [
-    andando ? pegada(28, 224) + pegada(50, 206) : "",
-    ell(56, 172, 8, 6, C.carD), pes,
-    circ(108, 58, 10, C.carD), circ(109, 59, 5, C.creD),
-    ell(112, 155, 60, 62, C.car),
-    [[70, 136, 6.5], [88, 134, 6.5], [106, 134, 6.5], [64, 158, 7], [82, 157, 7], [100, 157, 7], [72, 180, 6], [90, 180, 6], [108, 181, 6]].map(([x, y, r]) => pinta(x, y, r)).join(""),
-    ell(146, 170, 24, 34, C.cre),
-    traco("M66 166 Q110 192 160 168", C.mataD, 6), `<rect x="132" y="170" width="36" height="26" rx="10" fill="${C.mata}"/>`, moeda(150, 183, 5.5),
-    ell(140, 94, 54, 46, C.car),
-    ell(180, 106, 24, 19, C.cre),
-    ell(162, 110, 9, 5.5, C.boch, ' opacity="0.75"'),
-    circ(156, 84, 9, C.olho), circ(153, 80.5, 3, "#FFFFFF"), circ(158.5, 87.5, 1.3, "#FFFFFF"),
-    ell(201, 99, 7, 5.5, C.nariz), ell(199, 97.5, 2.2, 1.4, C.narizL),
-    traco("M182 115 Q190 120 197 113", C.nariz, 3), `<rect x="192" y="106" width="6" height="8" rx="2" fill="#FFFFFF"/>`,
-    braco(andando ? [160, 144, -30] : [150, 150, 20]),
+    andando ? pegada(16, 226) + pegada(32, 214) : "",
+    ell(70, 190, 11, 18, C.carD, gira(pt, 70, 176)), ell(98, 194, 8, 15, C.carD, gira(-pt, 98, 182)),
+    ell(80, 136, 46, 44, C.car), ell(114, 150, 74, 40, C.car),
+    ell(118, 176, 50, 11, C.cre),
+    LISTRAS_PERFIL.map(listra).join(""),
+    traco("M124 112 Q134 146 126 186", C.mataD, 5), `<rect x="112" y="168" width="30" height="20" rx="8" fill="${C.mata}"/>`, moeda(127, 178, 4.5),
+    ell(152, 194, 8, 16, C.carD, gira(pd, 152, 180)), ell(172, 194, 8, 15, C.carD, gira(-pd, 172, 181)),
+    ell(andando ? 66 : 72, 211, 12, 5, C.carD), ell(100, 211, 10, 5, C.carD), ell(andando ? 162 : 156, 211, 11, 5, C.carD), ell(176, 211, 10, 5, C.carD),
+    circ(164, 104, 8, C.carD), circ(164, 105, 4, C.creD),
+    ell(178, 126, 32, 26, C.car, gira(12, 178, 126)), ell(204, 138, 18, 13, C.car), ell(211, 140, 12, 9, C.carL),
+    circ(186, 120, 6, C.olho), circ(184, 118, 2, "#FFFFFF"),
+    traco("M208 146 Q213 148 218 145", C.nariz, 2.2), `<rect x="211.5" y="146" width="4.5" height="5" rx="1.2" fill="#FFFFFF"/>`,
+    ell(221, 138, 6, 5, C.rosa), ell(220, 136.5, 2, 1.3, C.rosaL),
+    fio("M214 142 Q226 135 238 128"), fio("M214 144 Q227 144 240 146"), fio("M213 146 Q224 153 234 162"),
   ].join("");
 }
 
 function costas() {
+  const LISTRAS = [[76, 132, 12], [72, 146, 16], [72, 160, 14], [74, 174, 12], [80, 188, 8], [92, 140, 6], [92, 168, 5]];
   return [
-    braco([60, 160, -18]), braco([180, 160, 18]),
-    ell(97, 213, 21, 10, C.carD), ell(143, 213, 21, 10, C.carD),
-    circ(78, 56, 10, C.carD), circ(162, 56, 10, C.carD),
-    ell(120, 156, 68, 63, C.car),
-    [[62, 140, 7], [60, 160, 7], [66, 180, 6.5], [84, 128, 6], [80, 150, 6], [84, 172, 6]].flatMap(([x, y, r]) => [pinta(x, y, r), pinta(240 - x, y, r)]).join(""),
-    traco("M54 172 Q120 196 186 172", C.mataD, 6),
-    ell(120, 200, 7, 6, C.carD),
-    ell(120, 92, 60, 50, C.car),
+    braco([74, 160, -12]), braco([166, 160, 12]),
+    ell(106, 216, 14, 7, C.carD), ell(134, 216, 14, 7, C.carD),
+    circ(90, 58, 9, C.carD), circ(150, 58, 9, C.carD),
+    ell(120, 158, 50, 58, C.car),
+    [...LISTRAS, ...LISTRAS.map(espelha)].map(listra).join(""),
+    traco("M72 172 Q120 192 168 172", C.mataD, 5),
+    ell(120, 92, 48, 42, C.car),
   ].join("");
 }
 
-const zz = traco("M182 34 h14 l-14 16 h14", C.metal, 3.5) + traco("M206 14 h10 l-10 12 h10", C.metal, 3);
+const zz = traco("M174 40 h14 l-14 16 h14", C.metal, 3.5) + traco("M198 20 h10 l-10 12 h10", C.metal, 3);
 const agua = `<path d="M0 152 Q30 142 60 152 T120 152 T180 152 T240 152 V240 H0 Z" fill="${C.agua}" opacity="0.6"/>` +
   traco("M0 152 Q30 142 60 152 T120 152 T180 152 T240 152", C.aguaD, 3) +
   [[40, 124, 5], [28, 104, 3.5], [206, 116, 4.5], [214, 98, 3]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${C.aguaD}" stroke-width="2"/>`).join("");
@@ -114,21 +128,21 @@ export const VISTAS = [
 ];
 export const EXPRESSOES = [
   ["acenando", "Acenando", "Boas-vindas e guia inicial", 1,
-    frente({ bracos: [[84, 160, -28], [176, 104, 32]], frenteExtra: traco("M193 76 Q201 85 197 96", C.carL, 3) + traco("M202 68 Q213 81 207 96", C.carL, 3) })],
+    frente({ bracos: [[80, 160, -12], [170, 106, 30]], frenteExtra: traco("M186 78 Q194 87 190 98", C.carL, 3) + traco("M195 70 Q206 83 200 98", C.carL, 3) })],
   ["comemorando", "Comemorando", "Meta batida, mês com sobra", 2,
-    frente({ olhos: "felizes", boca: "aberta", bracos: [[66, 100, -30], [174, 100, 30]], atras: moeda(56, 44, 9) + moeda(120, 20, 10) + moeda(186, 46, 9) + moeda(28, 84, 6) + moeda(214, 86, 6) })],
+    frente({ olhos: "felizes", bocaTipo: "aberta", bracos: [[74, 104, -28], [166, 104, 28]], atras: moeda(56, 44, 9) + moeda(120, 20, 10) + moeda(186, 46, 9) + moeda(28, 84, 6) + moeda(214, 86, 6) })],
   ["pensando", "Pensando", "IA processando, chat digitando", 3,
-    frente({ olhos: "cima", boca: "reta", bracos: [[84, 160, -28], [142, 136, -40]], atras: moeda(176, 46, 5, C.carL, C.car, null) + moeda(193, 31, 7, C.carL, C.car, null) + moeda(213, 15, 9, C.carL, C.car, null) })],
+    frente({ olhos: "cima", bocaTipo: "reta", bracos: [[80, 160, -12], [140, 142, -40]], atras: moeda(172, 48, 5, C.carL, C.car, null) + moeda(188, 33, 7, C.carL, C.car, null) + moeda(207, 17, 9, C.carL, C.car, null) })],
   ["lupa", "Com lupa", "Lendo nota fiscal ou comprovante", 4,
-    frente({ olhos: "lupa", bracos: [[84, 160, -28]], meio: circ(142, 86, 21, C.agua, ' opacity="0.35"') + `<circle cx="142" cy="86" r="21" fill="none" stroke="${C.metal}" stroke-width="6"/>` + traco("M129 75 Q134 69 142 68", "#FFFFFF", 3, ' opacity="0.8"') + traco("M157 101 L180 126", C.metal, 8), frenteExtra: braco([182, 132, 25]) })],
+    frente({ olhos: "lupa", bracos: [[80, 160, -12]], meio: circ(139, 88, 19, C.agua, ' opacity="0.35"') + `<circle cx="139" cy="88" r="19" fill="none" stroke="${C.metal}" stroke-width="5.5"/>` + traco("M127 78 Q132 72 139 71", "#FFFFFF", 3, ' opacity="0.8"') + traco("M152 102 L172 126", C.metal, 7), frenteExtra: braco([174, 132, 25]) })],
   ["dormindo", "Dormindo", "Sem internet, sincronização pendente", 5,
-    frente({ olhos: "fechados", boca: "pequena", bracos: [[86, 166, -20], [154, 166, 20]], frenteExtra: zz })],
+    frente({ olhos: "fechados", bocaTipo: "pequena", bracos: [[84, 166, -10], [156, 166, 10]], frenteExtra: zz })],
   ["mergulhando", "Mergulhando", "Atualizando os dados ao puxar a tela", 6,
-    frente({ olhos: "felizes", bracos: [[50, 146, 62], [190, 146, -62]], frenteExtra: agua })],
+    frente({ olhos: "felizes", bracos: [[62, 146, 62], [178, 146, -62]], frenteExtra: agua })],
   ["preocupada", "Preocupada", "Alertas e conexão vencendo", 7,
-    frente({ olhoR: 8.5, boca: "ondulada", sobrancelhas: traco("M88 74 L107 66", C.carD, 4) + traco("M133 66 L152 74", C.carD, 4), bracos: [[78, 122, 25], [156, 160, 28]] })],
+    frente({ olhoR: 7, bocaTipo: "ondulada", sobrancelhas: traco("M90 76 L106 70", C.carD, 3.5) + traco("M134 70 L150 76", C.carD, 3.5), bracos: [[88, 118, 22], [160, 160, 12]] })],
   ["cadeado", "Segurando um cadeado", "Telas de privacidade e segurança", 8,
-    frente({ bracos: [[96, 170, 40], [144, 170, -40]], meio: traco("M107 152 v-12 a13 13 0 0 1 26 0 v12", C.metal, 6) + `<rect x="98" y="148" width="44" height="36" rx="9" fill="${C.milho}"/>` + circ(120, 162, 5, C.metal) + `<rect x="117.5" y="163" width="5" height="10" rx="2" fill="${C.metal}"/>` })],
+    frente({ bracos: [[100, 168, 38], [140, 168, -38]], meio: traco("M108 150 v-11 a12 12 0 0 1 24 0 v11", C.metal, 5.5) + `<rect x="100" y="146" width="40" height="34" rx="8" fill="${C.milho}"/>` + circ(120, 159, 4.5, C.metal) + `<rect x="117.75" y="160" width="4.5" height="9" rx="2" fill="${C.metal}"/>` })],
   ["andando", "Andando", "Trilha do primeiro acesso", 9, perfil({ andando: true })],
 ];
 

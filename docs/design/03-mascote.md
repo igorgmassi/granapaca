@@ -11,21 +11,22 @@ A Paçoca está desenhada em 12 SVGs: 3 vistas e 9 expressões, todas geradas pe
 |---|---|---|
 | ![Paçoca de frente](mascote/frente.svg) | ![Paçoca de perfil](mascote/perfil.svg) | ![Paçoca de costas](mascote/costas.svg) |
 
-- **Corpo:** em forma de pera, com a cabeça larga emendada no corpo e bochechas cheias, como a paca de verdade.
-- **Roedora, não ursinho:** orelhas pequenas e baixas, dentes da frente brancos e pontinhos de bigode no focinho creme.
-- **Pintas:** moedinhas creme nas laterais, três de cada lado na frente e três fileiras no perfil. São a marca registrada dela.
+- **Corpo:** esguio, como nas fotos de paca usadas de referência. De frente ela fica em pé, para os gestos; de perfil e andando, fica em quatro patas, com a garupa alta.
+- **Cara de paca:** focinho alongado com nariz rosado, orelhas pequenas, bigodes longos e os dentes da frente saindo da junção do lábio.
+- **Listras de pintas:** fileiras horizontais de traços creme, longos e curtos, como na paca de verdade. São quatro fileiras no perfil e cinco em cada lateral vista de frente. São a marca registrada dela.
 - **Pochete:** em Mata, com a fivela de moeda em Milho. De costas, aparece só a alça.
 - **Traço:** vetorial plano, formas redondas, sem contorno preto e no máximo 3 tons por cor.
 
 | Cor | Tons |
 |---|---|
-| Caramelo do corpo | #DFA36B, #C47A3A, #9A5524 |
+| Caramelo do corpo | #D99A66, #B96A35, #8E4A20 |
 | Creme (focinho, barriga e pintas) | #F7E6CC, #E6C9A0 |
 | Pochete | #2A7550, #1E5A3C |
 | Moedas | #F7D27A, #E5A62B, #B98318 |
-| Olhos e nariz | #2A1C12, #5A2A0C, #8A4A22 |
+| Olhos, boca e bigodes | #2A1C12, #5A2A0C |
+| Nariz | #F0B0A6, #D9877A |
 
-A Paçoca tem as mesmas cores nos dois temas. O caramelo do corpo fica acima de 3:1 nos quatro fundos: 3,13:1 no fundo Paçoca, 3,39:1 na Superfície clara, 5,52:1 no fundo escuro e 5,05:1 na Superfície escura.
+A Paçoca tem as mesmas cores nos dois temas. O caramelo do corpo fica acima de 3:1 nos quatro fundos: 3,74:1 no fundo Paçoca, 4,06:1 na Superfície clara, 4,61:1 no fundo escuro e 4,22:1 na Superfície escura.
 
 ## Expressões
 
