@@ -55,7 +55,7 @@ flowchart LR
   demo["Demo web<br/>Flutter Web no GitHub Pages<br/>dados sintéticos, sem backend"]
 
   subgraph instancia["Sua instância (Docker Compose)"]
-    api["Backend<br/>Java 25 · Spring Boot 4.1<br/>monólito modular"]
+    api["Backend<br/>.NET 10 · ASP.NET Core<br/>monólito modular"]
     db[("PostgreSQL")]
     files[("Comprovantes<br/>volume cifrado")]
   end
@@ -77,12 +77,12 @@ Só o backend fala com a Pluggy e com os provedores de IA, então segredos nunca
 | Camada | Tecnologia |
 |---|---|
 | App (mobile, desktop e demo web) | Flutter e Dart 3 |
-| Backend | Java 25 (LTS), Spring Boot 4.1 e Spring Modulith |
-| Dados | PostgreSQL e Flyway |
-| IA | Spring AI, com OpenAI, Anthropic, Google e Ollama |
+| Backend | .NET 10 (LTS) e ASP.NET Core, como monólito modular |
+| Dados | PostgreSQL, Dapper e DbUp |
+| IA | Microsoft.Extensions.AI, com OpenAI, Anthropic, Google e Ollama |
 | Integração bancária | Pluggy (Meu Pluggy) e importação de OFX/CSV |
 | Infraestrutura | Docker Compose (amd64 e arm64), Tailscale e Caddy opcional |
-| Qualidade | GitHub Actions, JUnit 5, Testcontainers e flutter_test |
+| Qualidade | GitHub Actions, xUnit, Testcontainers e flutter_test |
 
 Cada escolha relevante vira um ADR em [`docs/adr`](docs/adr), e qualquer troca na stack passa por um ADR novo.
 
@@ -91,7 +91,7 @@ Cada escolha relevante vira um ADR em [`docs/adr`](docs/adr), e qualquer troca n
 ```text
 granapaca/
 ├── app/        # app Flutter (mobile, desktop e demo web)
-├── backend/    # API e jobs em Spring Boot
+├── backend/    # API e jobs em ASP.NET Core
 ├── profiles/   # perfis do guia inicial, em YAML
 ├── infra/      # Docker Compose, Caddy e guias de instalação
 └── docs/       # ADRs e documentação

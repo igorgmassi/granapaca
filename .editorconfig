@@ -8,7 +8,7 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 2
 
-[*.{java,kt,kts,gradle}]
+[*.{cs,csx,java,kt,kts,gradle}]
 indent_size = 4
 
 [*.md]

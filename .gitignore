@@ -19,16 +19,17 @@ exports/
 backups/
 *.dump
 # Fixtures sintéticas de teste são a exceção
-!**/src/test/resources/**/*.ofx
+!backend/tests/**/fixtures/**/*.ofx
 !**/test/fixtures/**/*.ofx
 
-# --- Java / Gradle ---
-.gradle/
+# --- .NET e saídas de build ---
+backend/**/bin/
+backend/**/obj/
 build/
-target/
-out/
-*.class
-hs_err_pid*
+.vs/
+*.user
+*.DotSettings.user
+TestResults/
 
 # --- Flutter / Dart ---
 .dart_tool/
