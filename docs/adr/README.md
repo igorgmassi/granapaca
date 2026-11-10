@@ -6,8 +6,8 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 
 | ADR | Decisão | Status |
 |---|---|---|
-| ADR-001 | .NET 10 (LTS) + ASP.NET Core no backend | A escrever |
-| ADR-002 | Monólito modular em .NET, com um projeto por módulo e testes de arquitetura; microsserviços fora | A escrever |
+| [ADR-001](0001-dotnet-10-e-aspnet-core.md) | .NET 10 (LTS) + ASP.NET Core no backend | Aceito |
+| [ADR-002](0002-monolito-modular.md) | Monólito modular em .NET, com um projeto por módulo e testes de arquitetura; microsserviços fora | Aceito |
 | ADR-003 | BankProvider: Pluggy (real e Sandbox), Arquivo OFX/CSV e Sintético | A escrever |
 | ADR-004 | Cliente da Pluggy como HttpClient tipado, sem o SDK oficial | A escrever |
 | ADR-005 | Jobs persistidos no Postgres: Hangfire × Quartz.NET | A escrever |
@@ -22,7 +22,7 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | ADR-014 | Entrada simples com tipos de movimento × partidas dobradas | A escrever |
 | ADR-015 | Tempo: UTC + America/Sao_Paulo; competência × caixa | A escrever |
 | ADR-016 | Criptografia de campo com envelope (AES-GCM do .NET) e master key fora do banco | A escrever |
-| ADR-017 | Persistência: Dapper + DbUp (SQL-first) × EF Core, schema por módulo e UUIDv7 | A escrever |
+| [ADR-017](0017-persistencia-dapper-e-dbup.md) | Persistência: Dapper + DbUp (SQL-first) × EF Core, schema por módulo e UUIDv7 | Aceito |
 | ADR-018 | REST + OpenAPI 3.1 com cliente Dart gerado e SSE no chat | A escrever |
 | ADR-019 | Tokens opacos com refresh rotativo e detecção de reuso | A escrever |
 | ADR-020 | Microsoft.Extensions.AI × Semantic Kernel | A escrever |
