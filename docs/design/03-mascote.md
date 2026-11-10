@@ -12,8 +12,8 @@ A Paçoca está desenhada em 12 SVGs: 3 vistas e 9 expressões, todas geradas pe
 | ![Paçoca de frente](mascote/frente.svg) | ![Paçoca de perfil](mascote/perfil.svg) | ![Paçoca de costas](mascote/costas.svg) |
 
 - **Corpo:** esguio, como nas fotos de paca usadas de referência. De frente ela fica em pé, para os gestos; de perfil e andando, fica em quatro patas, com a garupa alta.
-- **Cara de paca:** focinho alongado com nariz rosado, orelhas pequenas, bigodes longos e os dentes da frente saindo da junção do lábio.
-- **Listras de pintas:** fileiras horizontais de traços creme, longos e curtos, como na paca de verdade. São quatro fileiras no perfil e cinco em cada lateral vista de frente. São a marca registrada dela.
+- **Cara de paca:** focinho alongado com nariz rosado, orelhas pequenas e bigodes longos. Os dentes da frente aparecem só com a boca aberta.
+- **Listras de pintas:** fileiras de traços creme, longos e curtos, que acompanham o comprimento do corpo, como na paca de verdade. De lado, são quatro fileiras na horizontal, com pintas curtas em cima e traços longos embaixo. Em pé, o corpo fica na vertical e as fileiras também: duas colunas em cada lateral. São a marca registrada dela.
 - **Pochete:** em Mata, com a fivela de moeda em Milho. De costas, aparece só a alça.
 - **Traço:** vetorial plano, formas redondas, sem contorno preto e no máximo 3 tons por cor.
 
