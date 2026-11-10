@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
+    <PackageReference Include="dbup-postgresql" />
     <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GranaPaCa.Modules.Sample\GranaPaCa.Modules.Sample.csproj" />
   </ItemGroup>
 </Project>

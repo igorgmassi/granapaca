@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/GranaPaCa.Api/GranaPaCa.Api.csproj" />
+    <Project Path="src/GranaPaCa.Modules.Sample/GranaPaCa.Modules.Sample.csproj" />
   </Folder>
 </Solution>
