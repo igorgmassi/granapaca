@@ -1,0 +1,59 @@
+name: História de usuário
+description: Uma funcionalidade vista por quem usa o app, com critérios de aceite.
+title: "[US] "
+labels: ["us"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Uma US descreve um resultado para quem usa o GranaPaCá. As tarefas técnicas entram como sub-issues desta.
+  - type: input
+    id: plano
+    attributes:
+      label: Parte do plano
+      description: De onde vem esta US.
+      placeholder: "Parte 2, requisito RF-12"
+    validations:
+      required: true
+  - type: textarea
+    id: historia
+    attributes:
+      label: História
+      description: Quem, o quê e para quê.
+      value: |
+        **Como** [quem usa]
+        **quero** [o que fazer]
+        **para** [o resultado que espera]
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Critérios de aceite
+      description: Um cenário por critério, no formato Dado/Quando/Então.
+      value: |
+        - **Dado** [o contexto], **quando** [a ação], **então** [o resultado].
+    validations:
+      required: true
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      options:
+        - MVP
+        - v1
+        - Futuro
+    validations:
+      required: true
+  - type: textarea
+    id: notas
+    attributes:
+      label: Notas
+      description: Regras de negócio, telas do design, ADRs ligados ou dúvidas em aberto.
+  - type: checkboxes
+    id: dados
+    attributes:
+      label: Dados
+      options:
+        - label: Não incluí dados reais (extratos, saldos, nomes ou documentos) nem credenciais ou chaves.
+          required: true
