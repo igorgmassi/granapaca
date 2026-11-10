@@ -5,7 +5,7 @@
 
 ## Contexto
 
-O projeto tem app Flutter, backend Spring Boot, perfis em YAML, infraestrutura e documentação, mantidos por uma pessoa com cerca de 10 horas por semana. O app consome um cliente gerado do contrato OpenAPI do backend, e os perfis são lidos pelo backend e validados no CI.
+O projeto tem app Flutter, backend ASP.NET Core, perfis em YAML, infraestrutura e documentação, mantidos por uma pessoa com cerca de 10 horas por semana. O app consome um cliente gerado do contrato OpenAPI do backend, e os perfis são lidos pelo backend e validados no CI.
 
 ## Decisão
 

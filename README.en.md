@@ -55,7 +55,7 @@ flowchart LR
   demo["Web demo<br/>Flutter Web on GitHub Pages<br/>synthetic data, no backend"]
 
   subgraph instance["Your instance (Docker Compose)"]
-    api["Backend<br/>Java 25 · Spring Boot 4.1<br/>modular monolith"]
+    api["Backend<br/>.NET 10 · ASP.NET Core<br/>modular monolith"]
     db[("PostgreSQL")]
     files[("Receipts<br/>encrypted volume")]
   end
@@ -77,12 +77,12 @@ Only the backend talks to Pluggy and to AI providers, so secrets never reach the
 | Layer | Technology |
 |---|---|
 | App (mobile, desktop and web demo) | Flutter and Dart 3 |
-| Backend | Java 25 (LTS), Spring Boot 4.1 and Spring Modulith |
-| Data | PostgreSQL and Flyway |
-| AI | Spring AI, with OpenAI, Anthropic, Google and Ollama |
+| Backend | .NET 10 (LTS) and ASP.NET Core, as a modular monolith |
+| Data | PostgreSQL, Dapper and DbUp |
+| AI | Microsoft.Extensions.AI, with OpenAI, Anthropic, Google and Ollama |
 | Banking integration | Pluggy (Meu Pluggy) and OFX/CSV import |
 | Infrastructure | Docker Compose (amd64 and arm64), Tailscale and optional Caddy |
-| Quality | GitHub Actions, JUnit 5, Testcontainers and flutter_test |
+| Quality | GitHub Actions, xUnit, Testcontainers and flutter_test |
 
 Every relevant choice is recorded as an ADR in [`docs/adr`](docs/adr) (in Portuguese), and any change to the stack needs a new ADR.
 
