@@ -3,4 +3,7 @@
     <Project Path="src/GranaPaCa.Api/GranaPaCa.Api.csproj" />
     <Project Path="src/GranaPaCa.Modules.Sample/GranaPaCa.Modules.Sample.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GranaPaCa.Tests/GranaPaCa.Tests.csproj" />
+  </Folder>
 </Solution>
