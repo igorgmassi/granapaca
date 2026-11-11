@@ -95,12 +95,8 @@ const moedaIcone = (x, y, r, c) =>
   `<circle cx="${x}" cy="${y}" r="${f(r * 0.64)}" fill="none" stroke="${c.ouroE}" stroke-width="${f(r * 0.16)}"/>` +
   `<circle cx="${f(x - r * 0.3)}" cy="${f(y - r * 0.32)}" r="${f(r * 0.16)}" fill="${c.ouroC}"/>`;
 
-// contorno: anel creme de 6 px por baixo da bolsa e da alça. A bolsa verde e o Caramelo têm a mesma
-// luminância (1,01:1); sem o anel, ela some em cinza e em 32 px. Só vale sobre o fundo Caramelo.
-function pochete(c, { alca = ALCA_ICONE, pintas = true, contorno = false } = {}) {
+function pochete(c, { alca = ALCA_ICONE, pintas = true } = {}) {
   return [
-    contorno ? `<path d="${alca}" fill="none" stroke="${c.pinta}" stroke-width="28" stroke-linecap="round"/>` +
-      `<rect x="62" y="82" width="132" height="90" rx="26" fill="${c.pinta}" stroke="${c.pinta}" stroke-width="12"/>` : "",
     `<path d="${alca}" fill="none" stroke="${c.alca}" stroke-width="16" stroke-linecap="round"/>`,
     `<rect x="62" y="82" width="132" height="90" rx="26" fill="${c.bolsa}"/>`,
     `<path d="${TAMPA}" fill="${c.tampa}"/>`,
@@ -115,6 +111,9 @@ const fundo = (cor, rx = 0) => (cor ? `<rect width="256" height="256"${rx ? ` rx
 const simbolo = () => pochete(cores("claro"), { alca: ALCA_SIMBOLO });
 // O centro da bolsa fica em y 127, um pouco acima do centro do quadro (centro óptico).
 const ampliada = (k, corpo) => `<g transform="translate(128 127) scale(${k}) translate(-128 -127)">${corpo}</g>`;
+// Disco creme atrás da pochete. A bolsa verde e o Caramelo têm a mesma luminância (1,01:1): sem o disco,
+// ela some em cinza e em 32 px. Só vale sobre o Caramelo; no fundo escuro a bolsa já passa de 3:1.
+const disco = (r) => `<circle cx="128" cy="127" r="${r}" fill="${P.claro.pinta}"/>`;
 
 // Monocromático (Android, ícone temático): só a forma; a tampa, a moeda e as pintas ficam vazadas.
 function mono() {
@@ -137,17 +136,16 @@ const ARQUIVOS = {
     `<g transform="translate(${f(L.largura / 2 - 112)} 14) scale(${f(224 / 256)})">${simbolo()}</g>` +
     `<g transform="translate(0 ${220 - TOPO})">${tracoLogo(LOGO.cor)}</g></svg>\n`,
   // iOS: quadro inteiro de 1024 px; o sistema aplica o recorte [Conferir: Apple HIG, App icons].
-  // No iOS o quadro aparece inteiro (no Android só 2/3 dele), então a pochete vai 20% maior para ter o mesmo peso.
-  "icone-ios-claro.svg": svg256("Ícone do GranaPaCá", fundo(P.claro.fundo) + ampliada(1.2, pochete(cores("claro"), { contorno: true }))),
+  // No iOS o quadro aparece inteiro e no Android só 2/3 dele: o Android usa a mesma composição em 2/3.
+  "icone-ios-claro.svg": svg256("Ícone do GranaPaCá", fundo(P.claro.fundo) + disco(104) + ampliada(1.2, pochete(cores("claro")))),
   "icone-ios-escuro.svg": svg256("Ícone do GranaPaCá, aparência escura", fundo(P.escuro.fundo) + ampliada(1.2, pochete(cores("escuro")))),
   "icone-ios-tingido.svg": svg256("Ícone do GranaPaCá, aparência tingida", ampliada(1.2, pochete(cores("tingido")))),
   // Android adaptativo: camadas de 108 dp; o essencial fica no círculo seguro de 66 dp.
   "icone-android-fundo.svg": svg256("Fundo do ícone adaptativo", fundo(P.claro.fundo)),
-  "icone-android-frente.svg": svg256("Frente do ícone adaptativo", pochete(cores("claro"), { contorno: true })),
+  "icone-android-frente.svg": svg256("Frente do ícone adaptativo", disco(69) + ampliada(0.8, pochete(cores("claro")))),
   "icone-android-mono.svg": svg256("Ícone monocromático", mono()),
-  // Favicon da demo web: sem as pintas e maior, para ler em 16 a 32 px.
-  "favicon.svg": svg256("GranaPaCá", fundo(P.claro.fundo, 56) +
-    ampliada(1.3, pochete(cores("claro"), { alca: ALCA_SIMBOLO, pintas: false, contorno: true }))),
+  // Favicon da demo web: sem as pintas, com disco e pochete maiores, para ler em 16 a 32 px.
+  "favicon.svg": svg256("GranaPaCá", fundo(P.claro.fundo, 56) + disco(112) + ampliada(1.3, pochete(cores("claro"), { pintas: false }))),
 };
 const pasta = new URL("./", import.meta.url);
 for (const [nome, conteudo] of Object.entries(ARQUIVOS)) writeFileSync(new URL(nome, pasta), conteudo);

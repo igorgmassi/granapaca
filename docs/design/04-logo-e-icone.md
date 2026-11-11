@@ -59,7 +59,7 @@ O primeiro ícone era a cabeça da Paçoca de perfil. Em 48 px ela parecia um bi
 |---|---|---|---|---|
 | <img src="logo/icone-ios-claro.svg" width="120" alt="Ícone iOS claro"> | <img src="logo/icone-ios-escuro.svg" width="120" alt="Ícone iOS escuro"> | <img src="logo/icone-ios-tingido.svg" width="120" alt="Ícone iOS tingido"> | <img src="logo/icone-android-frente.svg" width="120" alt="Frente do ícone Android"> | <img src="logo/icone-android-mono.svg" width="120" alt="Ícone Android monocromático"> |
 
-A pochete fica no centro óptico, um pouco acima do meio, e a alça sai pelas bordas, como um cinto. Sobre o Caramelo ela ganha um anel creme de 6 (no quadro de 256), que a separa do fundo (veja [Cores e contraste](#cores-e-contraste)). No iOS o quadro aparece inteiro, então a pochete vai 20% maior. No Android só os 72 dp do meio aparecem, e a pochete inteira cabe no círculo seguro.
+A pochete fica sobre um disco creme, no centro óptico (um pouco acima do meio). A alça atravessa o disco e sai pelas bordas, como um cinto. O disco separa a bolsa verde do Caramelo (veja [Cores e contraste](#cores-e-contraste)). No iOS o quadro aparece inteiro. No Android só os 72 dp do meio aparecem, então a camada da frente usa a mesma composição em 2/3 do tamanho, e o disco inteiro cabe no círculo seguro.
 
 | Arquivo | Plataforma | O que é |
 |---|---|---|
@@ -69,7 +69,7 @@ A pochete fica no centro óptico, um pouco acima do meio, e a alça sai pelas bo
 | `icone-android-fundo.svg` | Android | Camada de fundo do ícone adaptativo: Caramelo chapado. |
 | `icone-android-frente.svg` | Android | Camada da frente. O essencial fica no círculo seguro de 66 dp dentro da camada de 108 dp. |
 | `icone-android-mono.svg` | Android | Camada monocromática dos ícones temáticos: só a forma, com a linha da tampa, a moeda e as pintas vazadas. |
-| `favicon.svg` | Web | Demo web: cantos arredondados, sem as pintas, com a alça curta e a pochete 30% maior, para 16 a 32 px. |
+| `favicon.svg` | Web | Demo web: cantos arredondados, sem as pintas, com o disco e a pochete maiores, para 16 a 32 px. |
 
 ### Tamanhos pequenos
 
@@ -86,23 +86,23 @@ Em 48 px aparecem a bolsa, a tampa, a moeda e as pintas. Em 24 px as pintas vira
 | Logo Caramelo sobre o fundo Paçoca | 5,21:1 |
 | Logo Caramelo sobre branco | 5,65:1 |
 | Logo escuro sobre o fundo escuro | 8,60:1 |
-| Bolsa verde sobre o fundo Caramelo | 1,01:1 (por isso o anel) |
-| Anel creme sobre o fundo Caramelo | 4,61:1 |
-| Anel creme e pintas sobre a bolsa | 4,56:1 |
+| Bolsa verde sobre o fundo Caramelo | 1,01:1 (por isso o disco) |
+| Disco creme sobre o fundo Caramelo | 4,61:1 |
+| Bolsa sobre o disco creme, e pintas sobre a bolsa | 4,56:1 |
 | Bolsa sobre o fundo escuro | 3,35:1 |
 | Símbolo sobre o fundo Paçoca: tampa e alça | 7,50:1 |
 | Símbolo sobre o fundo Paçoca: bolsa | 5,15:1 |
 
-O verde Mata e o Caramelo têm quase a mesma luminância. Sem o anel, a pochete só se separa do fundo pela cor: some em escala de cinza e vira uma mancha com 32 px. Com o anel, cada lado da borda passa de 4,5:1. A simulação de deuteranopia e de protanopia (Machado 2009) mostrou a forma inteira com o anel. No fundo escuro a bolsa já passa de 3:1, então o ícone escuro não tem anel. A moeda fica em 2,61:1 sobre a bolsa, mas ela é detalhe: a forma que identifica o ícone é a pochete. O ícone usa 7 cores, contando o fundo, e cada cor tem um papel.
+O verde Mata e o Caramelo têm quase a mesma luminância. Direto sobre o Caramelo, a pochete só se separa do fundo pela cor: some em escala de cinza e vira uma mancha com 32 px. Testei três correções em cor, em cinza e com simulação de deuteranopia e de protanopia (Machado 2009): um anel creme em volta da bolsa, um disco creme atrás dela e um fundo escuro. O escolhido foi o disco. Com ele, a bolsa fica a 4,56:1 do creme e o creme a 4,61:1 do Caramelo. A alça, onde passa fora do disco, fica em 1,44:1, mas é detalhe. No fundo escuro a bolsa já passa de 3:1, então o ícone escuro não tem disco. A moeda fica em 2,61:1 sobre a bolsa, mas ela é detalhe: a forma que identifica o ícone é a pochete. O ícone usa 7 cores, contando o fundo, e cada cor tem um papel.
 
 ## Usos proibidos
 
 - Recolorir fora das versões desta página, esticar, girar ou inclinar.
-- Pôr contorno, sombra, brilho ou degradê. A exceção é o anel creme do ícone sobre Caramelo, que não pode sair dali nem ir para o símbolo.
-- Trocar o letreiro por texto digitado em Fredoka ou em outra fonte.
+- Pôr contorno, sombra, brilho ou degradê.- Trocar o letreiro por texto digitado em Fredoka ou em outra fonte.
 - Separar a moedinha do "a", ou usá-la como acento em outras palavras.
 - Usar o logo horizontal abaixo do tamanho mínimo, em vez do símbolo.
-- Pôr o símbolo sobre Caramelo: nesse fundo, use o ícone.
+- Pôr o símbolo sobre Caramelo: nesse fundo, use o ícone, com o disco creme.
+- Tirar o disco do ícone claro, ou pôr o disco no ícone escuro ou no símbolo.
 
 ## A conferir
 
