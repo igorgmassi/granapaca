@@ -3,14 +3,13 @@ name: backend
 on:
   push:
     branches: [main]
-    paths:
-      - backend/**
-      - .github/workflows/backend.yml
+  # No path filter: build-test is a required check, and GitHub blocks a PR whose required check never ran.
   pull_request:
-    paths:
-      - backend/**
-      - .github/workflows/backend.yml
   workflow_dispatch:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
