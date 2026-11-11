@@ -31,5 +31,6 @@ ConnectionStrings__Postgres="Host=localhost;Database=granapaca;Username=granapac
 
 - Cada módulo é um projeto `GranaPaCa.Modules.<Nome>`, com schema próprio e scripts em `Migrations/NNNN_descricao.sql`.
 - Fora do próprio projeto, um módulo só é usado pela classe `<Nome>Module` e pelo namespace `Contracts`. O teste de arquitetura barra o resto.
-- Um script aplicado nunca muda: a correção vira um script novo.
+- Um script aplicado nunca muda, nem o conteúdo nem o nome: a correção vira um script novo. O DbUp identifica cada script pelo nome completo do recurso (namespace do projeto, pasta `Migrations` e arquivo), e um nome novo roda de novo nas instâncias existentes.
+- Todo script novo entra na lista `AppliedMigrations` de [`ApiTests`](tests/GranaPaCa.Tests/ApiTests.cs). O teste falha quando o journal do DbUp diverge dela.
 - Dependência nova entra em `Directory.Packages.props`, com licença compatível com a AGPL-3.0, e os `packages.lock.json` vão no mesmo commit.

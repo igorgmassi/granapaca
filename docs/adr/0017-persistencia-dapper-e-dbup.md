@@ -15,8 +15,8 @@ Dapper + DbUp, com SQL escrito à mão. EF Core fica fora.
 - **Migrações:** DbUp, com scripts SQL numerados (`Migrations/NNNN_descricao.sql`) embutidos no assembly de cada módulo.
   - O host aplica os scripts pendentes na subida, antes de atender requisições.
   - Cada script roda na própria transação. Se um script falha, a API não sobe.
-  - O DbUp registra os scripts aplicados na tabela `schemaversions`.
-  - Um script aplicado nunca muda: a correção vira um script novo.
+  - O DbUp registra cada script aplicado na tabela `schemaversions` pelo nome completo do recurso embutido, como `GranaPaCa.Modules.Sample.Migrations.0001_create_sample_schema.sql`. Esse nome é a identidade do script.
+  - Um script aplicado nunca muda, nem o conteúdo nem o nome: a correção vira um script novo.
 - **Schema por módulo:** cada módulo tem o próprio schema (o de exemplo usa `sample`), e só ele lê e escreve nas próprias tabelas. Um script nunca depende de tabela de outro módulo, porque o DbUp ordena os scripts pelo nome completo, que começa pelo módulo.
 - **Chaves:** UUIDv7 gerado pela aplicação com `Guid.CreateVersion7()`, ordenável pelo momento da criação.
 
@@ -31,5 +31,6 @@ Dapper + DbUp, com SQL escrito à mão. EF Core fica fora.
 - O SQL é a fonte da verdade e passa pela revisão do PR como qualquer código.
 - O mapeamento é manual: cada consulta lista as colunas. Os testes de integração rodam contra um PostgreSQL real (Testcontainers, imagem `postgres:18-alpine`), então um erro de SQL quebra o CI.
 - O DbUp não desfaz migrações. Para reverter, escreve-se um script novo.
+- O namespace raiz do projeto e a pasta `Migrations` fazem parte do nome de cada script. Renomear um deles, ou o arquivo, faz o DbUp rodar o script de novo nas instâncias existentes: um `CREATE` falha e a API não sobe, e um `INSERT` duplica dados. Um teste de integração compara a `schemaversions` com a lista dos scripts aplicados e falha no CI quando um nome muda.
 - Duas réplicas subindo juntas disputariam o mesmo script. Hoje cada pessoa roda uma instância só. Mais réplicas pediriam um lock, como o advisory lock do PostgreSQL.
 - O Dapper gera código em tempo de execução. Native AOT pediria o Dapper.AOT, e isso entra na conta do ADR-010.
