@@ -140,7 +140,7 @@ const agua = `<path d="M0 152 Q30 142 60 152 T120 152 T180 152 T240 152 V240 H0 
 // [arquivo, nome, quando aparece, estado no Rive, desenho]
 export const VISTAS = [
   ["frente", "Frente", "Folha de modelo", "—", frente()],
-  ["perfil", "Perfil", "Folha de modelo e ícone do app", "—", perfil()],
+  ["perfil", "Perfil", "Folha de modelo", "—", perfil()],
   ["costas", "Costas", "Folha de modelo", "—", costas()],
 ];
 export const EXPRESSOES = [

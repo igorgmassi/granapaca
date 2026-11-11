@@ -1,8 +1,8 @@
 # Parte 4: Logo e ícone
 
-O logo é o nome GranaPaCá em letreiro arredondado, Caramelo, com o acento do á desenhado como uma moedinha caindo. O ícone é a cabeça da Paçoca de perfil sobre Caramelo, com três pintas creme em linha no pescoço. Tudo está em SVG na pasta [`logo`](logo/).
+O logo é o nome GranaPaCá em letreiro arredondado, Caramelo, com o acento do á desenhado como uma moedinha caindo. O ícone é a pochete verde da Paçoca sobre Caramelo, com a fivela de moeda e três pintas creme costuradas na frente. Tudo está em SVG na pasta [`logo`](logo/).
 
-- **Data:** 2026-11-10
+- **Data:** 2026-11-10; símbolo e ícone refeitos em 2026-11-11
 - **Para regenerar:** `node docs/design/logo/gerar-logo.mjs`
 - **Conferido com:** a skill logo-design (auditoria dos SVGs e folha de testes com tamanhos, fundos, uma cor, invertido, borrado, espelhado e girado).
 
@@ -42,15 +42,24 @@ Na folha de testes, o logo horizontal ainda lê com 16 px de altura. O mínimo d
 
 <img src="logo/simbolo.svg" width="160" alt="Símbolo do GranaPaCá">
 
-A cabeça da Paçoca de perfil, com o mesmo desenho da [mascote](03-mascote.md), e três pintas creme alongadas em linha no pescoço. As pintas são elipses, não círculos: redondas e com anel, pareciam botões de camisa. O pescoço termina arredondado, para o símbolo ficar inteiro sem o fundo do ícone.
+A pochete da Paçoca: a bolsa verde Mata, a tampa num verde mais escuro, a fivela com a moedinha do logo e três pintas creme alongadas, como as fileiras de pintas da paca. As pintas são traços arredondados, não círculos: redondas e com anel, pareciam botões de camisa. No símbolo a alça é um trecho curto do mesmo arco do ícone, com as pontas arredondadas. Com as pontas subindo mais, ela parecia chifre ou bigode.
 
 ## Ícone do app
+
+### Por que a pochete
+
+O primeiro ícone era a cabeça da Paçoca de perfil. Em 48 px ela parecia um bicho marrom qualquer. As cinco versões ilustradas feitas depois no Gemini ficaram detalhadas demais para o tamanho, ou engraçadinhas demais para um app de dinheiro. Ícone de app pede uma ideia só, numa forma compacta. Comparei quatro caminhos abstratos: a pochete; a silhueta da paca, que parecia porquinho e depois anta; os olhos brilhando na toca; e o G do letreiro com uma moeda. A pochete ganhou porque:
+
+- é a assinatura visual da Paçoca, presente em todas as poses da [mascote](03-mascote.md);
+- guarda a grana, e a fivela é a moedinha do logo;
+- leva as pintas da paca, costuradas na frente;
+- o verde Mata é o oposto do Caramelo no círculo de cores.
 
 | iOS claro | iOS escuro | iOS tingido | Android | Android temático |
 |---|---|---|---|---|
 | <img src="logo/icone-ios-claro.svg" width="120" alt="Ícone iOS claro"> | <img src="logo/icone-ios-escuro.svg" width="120" alt="Ícone iOS escuro"> | <img src="logo/icone-ios-tingido.svg" width="120" alt="Ícone iOS tingido"> | <img src="logo/icone-android-frente.svg" width="120" alt="Frente do ícone Android"> | <img src="logo/icone-android-mono.svg" width="120" alt="Ícone Android monocromático"> |
 
-No ícone, a cabeça fica num caramelo claro (#E3A775), porque a cor do corpo da mascote some contra o fundo Caramelo. O pescoço sai pela borda de baixo, como um busto.
+A pochete fica no centro óptico, um pouco acima do meio, e a alça sai pelas bordas, como um cinto. Sobre o Caramelo ela ganha um anel creme de 6 (no quadro de 256), que a separa do fundo (veja [Cores e contraste](#cores-e-contraste)). No iOS o quadro aparece inteiro, então a pochete vai 20% maior. No Android só os 72 dp do meio aparecem, e a pochete inteira cabe no círculo seguro.
 
 | Arquivo | Plataforma | O que é |
 |---|---|---|
@@ -59,8 +68,8 @@ No ícone, a cabeça fica num caramelo claro (#E3A775), porque a cor do corpo da
 | `icone-ios-tingido.svg` | iOS | Aparência tingida: tons de cinza sobre fundo transparente; o sistema aplica a cor. |
 | `icone-android-fundo.svg` | Android | Camada de fundo do ícone adaptativo: Caramelo chapado. |
 | `icone-android-frente.svg` | Android | Camada da frente. O essencial fica no círculo seguro de 66 dp dentro da camada de 108 dp. |
-| `icone-android-mono.svg` | Android | Camada monocromática dos ícones temáticos: só a forma, com olho e pintas vazados. |
-| `favicon.svg` | Web | Demo web: cantos arredondados, sem bigodes e com a cabeça maior, para 16 a 32 px. |
+| `icone-android-mono.svg` | Android | Camada monocromática dos ícones temáticos: só a forma, com a linha da tampa, a moeda e as pintas vazadas. |
+| `favicon.svg` | Web | Demo web: cantos arredondados, sem as pintas, com a alça curta e a pochete 30% maior, para 16 a 32 px. |
 
 ### Tamanhos pequenos
 
@@ -68,7 +77,7 @@ No ícone, a cabeça fica num caramelo claro (#E3A775), porque a cor do corpo da
 |---|---|---|---|
 | <img src="logo/icone-ios-claro.svg" width="48" alt="Ícone em 48 px"> | <img src="logo/icone-ios-claro.svg" width="24" alt="Ícone em 24 px"> | <img src="logo/favicon.svg" width="32" alt="Favicon em 32 px"> | <img src="logo/favicon.svg" width="16" alt="Favicon em 16 px"> |
 
-Em 48 px a cabeça, o olho e as pintas aparecem, como o briefing exige. Em 16 px sobra a silhueta, e por isso o favicon é um desenho próprio.
+Em 48 px aparecem a bolsa, a tampa, a moeda e as pintas. Em 24 px as pintas viram uma linha clara e a moeda vira um ponto dourado, mas a forma da pochete continua. O favicon tira as pintas e aumenta a bolsa para ser lido em 16 px.
 
 ## Cores e contraste
 
@@ -77,16 +86,19 @@ Em 48 px a cabeça, o olho e as pintas aparecem, como o briefing exige. Em 16 px
 | Logo Caramelo sobre o fundo Paçoca | 5,21:1 |
 | Logo Caramelo sobre branco | 5,65:1 |
 | Logo escuro sobre o fundo escuro | 8,60:1 |
-| Cabeça do ícone sobre o fundo Caramelo | 2,70:1 |
-| Cabeça do ícone sobre o fundo escuro | 8,95:1 |
-| Símbolo sobre o fundo Paçoca | 3,74:1 |
+| Bolsa verde sobre o fundo Caramelo | 1,01:1 (por isso o anel) |
+| Anel creme sobre o fundo Caramelo | 4,61:1 |
+| Anel creme e pintas sobre a bolsa | 4,56:1 |
+| Bolsa sobre o fundo escuro | 3,35:1 |
+| Símbolo sobre o fundo Paçoca: tampa e alça | 7,50:1 |
+| Símbolo sobre o fundo Paçoca: bolsa | 5,15:1 |
 
-A cabeça do ícone fica abaixo de 3:1 contra o Caramelo. Ela se separa do fundo também pelo olho escuro, pelas pintas e pelo contorno, e a folha de testes mostrou a silhueta legível de 24 px para cima. O ícone usa 7 cores, contando o fundo: é um mascote, não um logo abstrato, e cada cor tem um papel.
+O verde Mata e o Caramelo têm quase a mesma luminância. Sem o anel, a pochete só se separa do fundo pela cor: some em escala de cinza e vira uma mancha com 32 px. Com o anel, cada lado da borda passa de 4,5:1. A simulação de deuteranopia e de protanopia (Machado 2009) mostrou a forma inteira com o anel. No fundo escuro a bolsa já passa de 3:1, então o ícone escuro não tem anel. A moeda fica em 2,61:1 sobre a bolsa, mas ela é detalhe: a forma que identifica o ícone é a pochete. O ícone usa 7 cores, contando o fundo, e cada cor tem um papel.
 
 ## Usos proibidos
 
 - Recolorir fora das versões desta página, esticar, girar ou inclinar.
-- Pôr contorno, sombra, brilho ou degradê.
+- Pôr contorno, sombra, brilho ou degradê. A exceção é o anel creme do ícone sobre Caramelo, que não pode sair dali nem ir para o símbolo.
 - Trocar o letreiro por texto digitado em Fredoka ou em outra fonte.
 - Separar a moedinha do "a", ou usá-la como acento em outras palavras.
 - Usar o logo horizontal abaixo do tamanho mínimo, em vez do símbolo.
@@ -97,7 +109,7 @@ A cabeça do ícone fica abaixo de 3:1 contra o Caramelo. Ela se separa do fundo
 - **Android:** as medidas das camadas (108 dp, área visível de 72 dp e círculo seguro de 66 dp) e o formato aceito para a camada monocromática [Conferir: developer.android.com, ícones adaptativos].
 - **iOS:** as três aparências (clara, escura e tingida) e os ícones em camadas do iOS 26, feitos no Icon Composer [Conferir: Apple Human Interface Guidelines, App icons].
 - **Exportação:** o pacote flutter_launcher_icons pede imagens PNG [Conferir: pub.dev/packages/flutter_launcher_icons]. Os PNGs saem destes SVGs na Parte 12, com o script `render_png.py` da skill logo-design.
-- **Traços:** o letreiro e os bigodes são traços (stroke). Para gravação, recorte ou bordado, expanda os traços num editor vetorial. O ícone monocromático usa máscara, então ele é exportado em PNG.
+- **Traços:** o letreiro e a alça da pochete são traços (stroke). Para gravação, recorte ou bordado, expanda os traços num editor vetorial. O ícone monocromático usa máscara, então ele é exportado em PNG.
 
 ## Próximo
 
