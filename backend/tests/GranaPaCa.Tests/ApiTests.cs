@@ -10,6 +10,23 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    // DbUp journals each script by its full resource name, so renaming the project, root namespace,
+    // Migrations folder or file would run it again on existing databases. Append new scripts; never edit an entry.
+    private static readonly string[] AppliedMigrations =
+    [
+        "GranaPaCa.Modules.Sample.Migrations.0001_create_sample_schema.sql",
+    ];
+
+    [Fact]
+    public async Task Migration_names_in_the_journal_never_change()
+    {
+        await using var query = api.Services.GetRequiredService<NpgsqlDataSource>()
+            .CreateCommand("SELECT array_agg(scriptname) FROM schemaversions");
+        var journal = (string[])(await query.ExecuteScalarAsync(Ct))!;
+
+        Assert.Equal(AppliedMigrations.Order(StringComparer.Ordinal), journal.Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task Health_reports_postgres_as_healthy()
     {
