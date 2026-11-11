@@ -17,7 +17,7 @@ public sealed class Program
         builder.Services.AddSingleton(services => NpgsqlDataSource.Create(
             services.GetRequiredService<IConfiguration>().GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("Set the connection string ConnectionStrings__Postgres.")));
-        builder.Services.AddHealthChecks().AddCheck<PostgresHealthCheck>("postgres");
+        builder.Services.AddHealthChecks().AddCheck<PostgresHealthCheck>("postgres", timeout: TimeSpan.FromSeconds(5));
 
         var app = builder.Build();
 
