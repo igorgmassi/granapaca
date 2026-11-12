@@ -19,8 +19,8 @@ Resumo das decisões visuais que valem para todo o app. O detalhe de cada uma es
 
 ## Tipo
 
-- Fredoka na marca, nos títulos, nas saudações e nas falas da Paçoca.
-- Inter na interface e nos números, com algarismos tabulares. Centavos menores nos valores em destaque.
+- Baloo 2 na marca, nos títulos, nas saudações e nas falas da Paçoca.
+- Figtree na interface e nos números, com algarismos tabulares. Centavos menores nos valores em destaque.
 - Fontes empacotadas no app, nunca baixadas em tempo de execução.
 
 ## Forma e movimento

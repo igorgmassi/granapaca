@@ -51,7 +51,7 @@ O `estado` 0 é a Paçoca parada, igual à vista de frente.
 - **Em alerta,** só a preocupada, sem drama. Em erro que envolve dinheiro, ela não brinca.
 - **Fundo:** Superfície, fundo Paçoca ou a ilustração da trilha. Nunca sobre foto nem sobre a cor de um banco.
 - **Não mexer no desenho:** sem recolorir, esticar, girar ou pôr contorno.
-- **Texto fora do desenho:** as falas vão num balão ao lado, no estilo `falaPacoca` (Fredoka 18).
+- **Texto fora do desenho:** as falas vão num balão ao lado, no estilo `falaPacoca` (Baloo 2 18).
 - **Leitor de tela:** quando a frase ao lado já diz o estado, a Paçoca é decorativa e fica fora da leitura. Quando ela é o único sinal, ganha rótulo, como "A Paçoca está dormindo: sem internet".
 
 | Uso | Tamanho | Recorte |

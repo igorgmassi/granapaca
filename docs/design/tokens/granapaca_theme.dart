@@ -1,6 +1,6 @@
 // Tema do GranaPaCá: Material 3 com os tokens de docs/design/tokens/tokens.json.
 // Referência para a Parte 12; o destino final é app/lib/core/theme/.
-// Fontes empacotadas (Fredoka e Inter, OFL), nunca baixadas em tempo de execução.
+// Fontes empacotadas (Baloo 2 e Figtree, OFL), nunca baixadas em tempo de execução.
 import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
@@ -32,8 +32,8 @@ abstract final class GranaMovimento {
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : d;
 }
 
-const _marca = 'Fredoka';
-const _interface = 'Inter';
+const _marca = 'Baloo 2';
+const _interface = 'Figtree';
 const _tnum = [FontFeature.tabularFigures()];
 
 TextStyle _estilo(String familia, double tamanho, double altura, FontWeight peso) =>
@@ -92,7 +92,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   final List<Color> grafico;
   final Color outros;
 
-  /// Valores em Inter com algarismos tabulares; os centavos usam [TextStyle.fontSize] menor.
+  /// Valores em Figtree com algarismos tabulares; os centavos usam [TextStyle.fontSize] menor.
   final TextStyle valorDestaque, valorGrande, valorLinha;
   final TextStyle falaPacoca;
 
@@ -103,7 +103,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     rio: const Color(0xFF22649C),
     essencial: const Color(0xFF6F340E),
     importante: const Color(0xFFA65E28),
-    flexivel: const Color(0xFFC98545),
+    flexivel: const Color(0xFFC17C3E),
     grafico: const [
       Color(0xFF8B3E05), Color(0xFF277BD0), Color(0xFFA78511), Color(0xFF267E4E),
       Color(0xFFFE903C), Color(0xFF7F4B9D), Color(0xFFD54573), Color(0xFF02A8AA),

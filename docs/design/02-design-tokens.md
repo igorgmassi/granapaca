@@ -75,24 +75,24 @@ O mapa de calor usa uma escala de Caramelo em 5 tons, do menor ao maior gasto. O
 
 | Estilo | Fonte | Tamanho / altura (px) | Peso | Uso |
 |---|---|---|---|---|
-| `displayMedium` | Fredoka | 40 / 48 | 600 | Título das etapas do primeiro acesso |
-| `displaySmall` | Fredoka | 32 / 40 | 600 | Comemorações e estados vazios grandes |
-| `headlineLarge` | Fredoka | 28 / 36 | 600 | Saudação do Início |
-| `headlineMedium` | Fredoka | 24 / 32 | 600 | Título de tela |
-| `headlineSmall` | Fredoka | 20 / 28 | 600 | Título de seção com a marca |
-| `titleLarge` | Inter | 20 / 28 | 600 | Título de folha e de diálogo |
-| `titleMedium` | Inter | 16 / 24 | 600 | Título de cartão, estabelecimento no extrato |
-| `titleSmall` | Inter | 14 / 20 | 600 | Subtítulo |
-| `bodyLarge` | Inter | 16 / 24 | 400 | Texto corrido |
-| `bodyMedium` | Inter | 14 / 20 | 400 | Texto padrão da interface |
-| `bodySmall` | Inter | 12 / 16 | 400 | Data, banco e legenda |
-| `labelLarge` | Inter | 14 / 20 | 600 | Botões e chips |
-| `labelMedium` | Inter | 12 / 16 | 600 | Barra de navegação |
-| `labelSmall` | Inter | 11 / 16 | 600 | Marcadores |
-| `valorDestaque` | Inter, tnum | 40 / 48, centavos 22 | 600 | "Sobrou este mês" |
-| `valorGrande` | Inter, tnum | 24 / 32, centavos 16 | 600 | Saldo e total da rosca |
-| `valorLinha` | Inter, tnum | 16 / 24 | 600 | Valor no extrato |
-| `falaPacoca` | Fredoka | 18 / 26 | 500 | Falas da Paçoca |
+| `displayMedium` | Baloo 2 | 40 / 48 | 600 | Título das etapas do primeiro acesso |
+| `displaySmall` | Baloo 2 | 32 / 40 | 600 | Comemorações e estados vazios grandes |
+| `headlineLarge` | Baloo 2 | 28 / 36 | 600 | Saudação do Início |
+| `headlineMedium` | Baloo 2 | 24 / 32 | 600 | Título de tela |
+| `headlineSmall` | Baloo 2 | 20 / 28 | 600 | Título de seção com a marca |
+| `titleLarge` | Figtree | 20 / 28 | 600 | Título de folha e de diálogo |
+| `titleMedium` | Figtree | 16 / 24 | 600 | Título de cartão, estabelecimento no extrato |
+| `titleSmall` | Figtree | 14 / 20 | 600 | Subtítulo |
+| `bodyLarge` | Figtree | 16 / 24 | 400 | Texto corrido |
+| `bodyMedium` | Figtree | 14 / 20 | 400 | Texto padrão da interface |
+| `bodySmall` | Figtree | 12 / 16 | 400 | Data, banco e legenda |
+| `labelLarge` | Figtree | 14 / 20 | 600 | Botões e chips |
+| `labelMedium` | Figtree | 12 / 16 | 600 | Barra de navegação |
+| `labelSmall` | Figtree | 11 / 16 | 600 | Marcadores |
+| `valorDestaque` | Figtree, tnum | 40 / 48, centavos 22 | 600 | "Sobrou este mês" |
+| `valorGrande` | Figtree, tnum | 24 / 32, centavos 16 | 600 | Saldo e total da rosca |
+| `valorLinha` | Figtree, tnum | 16 / 24 | 600 | Valor no extrato |
+| `falaPacoca` | Baloo 2 | 18 / 26 | 500 | Falas da Paçoca |
 
 Os quatro estilos de valor e a fala da Paçoca ficam no `GranaTokens`, porque o `TextTheme` não tem lugar para eles.
 
@@ -146,5 +146,7 @@ Text('+ R\$ 1.234,56', style: grana.valorLinha.copyWith(color: grana.mata));
 ## A conferir
 
 - **O Dart não passou por análise.** O Flutter não está instalado na máquina onde os tokens foram escritos. Antes de usar, rode `flutter analyze` [Conferir: `CardThemeData` e `DialogThemeData` exigem Flutter 3.27 ou mais novo; `InputDecorationTheme` pode ter virado `InputDecorationThemeData` em versões recentes].
-- **Fontes:** use os arquivos estáticos de cada peso (Fredoka 500 e 600, Inter 400 e 600) declarados no `pubspec.yaml`, com o `OFL.txt` ao lado. Fonte variável no Flutter não aplica o peso automaticamente em todas as plataformas [Conferir: docs.flutter.dev, fontes personalizadas].
+- **Fontes:** use os arquivos estáticos de cada peso (Baloo 2 500 e 600, Figtree 400 e 600) declarados no `pubspec.yaml`, com o `OFL.txt` ao lado. Fonte variável no Flutter não aplica o peso automaticamente em todas as plataformas [Conferir: docs.flutter.dev, fontes personalizadas].
+- **Altura da Baloo 2:** a fonte tem métricas verticais altas: a 32 px, a linha natural dela mede 51 px, contra 39 px da Figtree. Use sempre a altura de linha do token e `TextLeadingDistribution.even`, para o texto não ficar baixo dentro de botões e títulos [Conferir: api.flutter.dev, TextStyle.leadingDistribution].
+- **Logo e fontes:** o logo é serifado e não usa nenhuma das duas fontes. Ele entra sempre como imagem (SVG), nunca como texto digitado.
 - **Ícones:** confira os nomes da tabela no pacote phosphor_flutter [Conferir: pub.dev/packages/phosphor_flutter].

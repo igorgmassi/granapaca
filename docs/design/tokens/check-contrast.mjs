@@ -22,7 +22,7 @@ const PARES = [
     ["mata", f, 4.5], ["rio", f, 4.5], ["outline", f, 3],
   ]),
   ["sobreMilho", "milho", 4.5],
-  ["essencial", "surfaceContainerLow", 3], ["importante", "surfaceContainerLow", 3], ["flexivel", "surfaceContainerLow", 3],
+  ["essencial", "surfaceContainerLow", 3], ["importante", "surfaceContainerLow", 3], ["flexivel", "surfaceContainerLow", 3], ["flexivel", "surface", 3],
 ];
 
 let falhas = 0;

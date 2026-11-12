@@ -16,7 +16,7 @@ O briefing de identidade visual fica quase todo como está. Conceito, Paçoca, p
 | Paleta da interface | Os 11 tokens, nos temas claro e escuro. | 34 pares medidos: todos os textos passam de 4,5:1 e todas as bordas de 3:1. Milho só funciona como fundo com texto Cacau por cima (7,71:1); sozinho, como ícone ou borda sobre branco, fica em 2,14:1. |
 | Dinheiro | Gasto na cor do texto, com "−". Receita em Mata, com "+". Vermelho só para alerta. | — |
 | Essencialidade | Escala em tons de Caramelo, nunca verde e vermelho. | A escala passa no validador de cores nos dois temas. Flexível fica no limite (3,03:1 sobre a Superfície) e cai para 2,8:1 sobre o fundo Paçoca, então o marcador aparece só em cartões e folhas. |
-| Tipografia | Fredoka na marca, nos títulos e nas falas da Paçoca. Inter na interface, com algarismos tabulares. Saldo em Inter SemiBold com centavos menores. | Muda a forma de carregar as fontes (mudança 11). |
+| Tipografia | Baloo 2 na marca, nos títulos e nas falas da Paçoca. Figtree na interface, com algarismos tabulares. Saldo em Figtree SemiBold com centavos menores. | Muda a forma de carregar as fontes (mudança 11). |
 | Formas | Cartões com 20 px, chips com 12 px, botões em pílula, espaçamento em múltiplos de 4, margem de 16 px no celular e pouca sombra. | — |
 | Pintas | Ícone, carregamento, R$ ••• e indicador de passos. | Ganham um uso novo (mudança 7). |
 | Ícones | Phosphor regular nas telas e duotone nas ilustrações. | [Conferir: pub.dev/packages/phosphor_flutter] na Parte 12. |
@@ -134,7 +134,7 @@ Tocar numa fatia, numa barra ou num dia abre as transações correspondentes. A 
 
 ### 11. Fontes dentro do app
 
-Fredoka e Inter vão empacotadas no app, com a licença OFL ao lado dos arquivos. O app nunca baixa fonte da internet ao abrir. Com o pacote google_fonts, isso é `GoogleFonts.config.allowRuntimeFetching = false` [Conferir: pub.dev/packages/google_fonts].
+Baloo 2 e Figtree vão empacotadas no app, com a licença OFL ao lado dos arquivos. O app nunca baixa fonte da internet ao abrir. Com o pacote google_fonts, isso é `GoogleFonts.config.allowRuntimeFetching = false` [Conferir: pub.dev/packages/google_fonts].
 
 **Por quê:** privacidade, porque abrir o app não avisa ninguém de fora; funcionamento offline, que o plano exige; e texto certo já na primeira abertura.
 
@@ -158,7 +158,7 @@ No Android, ícone adaptativo com a camada monocromática que o briefing já ped
 
 ### 15. Nome escrito "GranaPaCá", inclusive no logo
 
-O logo continua em Fredoka, Caramelo, com o acento do Á desenhado como moedinha. O P e o C maiúsculos marcam as duas palavras.
+O logo mudou em 2026-11-12: "Grana PaCá" num letreiro serifado, com "Grana" em verde Mata, "PaCá" em Caramelo, a paca deitada sobre o nome e o acento em forma de pinta. A pochete é só o ícone do app e não entra no logo. As fontes do app passaram a ser Baloo 2 (marca) e Figtree (interface). Detalhes na [Parte 4](04-logo-e-icone.md).
 
 **Por quê:** é a grafia do repositório, do README e do plano. Numa palavra só, o nome também não quebra em duas linhas sob o ícone na tela do celular. Se preferir "Grana PaCá" com espaço, só o logo muda.
 
