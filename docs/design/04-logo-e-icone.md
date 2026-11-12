@@ -119,4 +119,4 @@ O verde Mata e o Caramelo têm quase a mesma luminância. Direto sobre o Caramel
 
 ## Próximo
 
-Parte 5: biblioteca de componentes.
+[Parte 5](05-componentes.md): biblioteca de componentes.

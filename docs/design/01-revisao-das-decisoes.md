@@ -156,7 +156,7 @@ No Android, ícone adaptativo com a camada monocromática que o briefing já ped
 
 **Por quê:** sem essas versões, o sistema escurece ou tinge o ícone por conta própria, e a Paçoca pode sumir no fundo.
 
-### 15. Nome escrito "GranaPaCá", inclusive no logo
+### 15. Nome: "Grana PaCá" no logo, "granapaca" no repositório
 
 O logo mudou em 2026-11-12: "Grana PaCá" num letreiro serifado, com "Grana" em verde Mata, "PaCá" em Caramelo, a paca deitada sobre o nome e o acento em forma de pinta. A pochete é só o ícone do app e não entra no logo. As fontes do app passaram a ser Baloo 2 (marca) e Figtree (interface). Detalhes na [Parte 4](04-logo-e-icone.md).
 
