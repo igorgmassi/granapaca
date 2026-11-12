@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'demo/demo_data.dart';
+import 'finance/model.dart';
+import 'finance/queries.dart';
 
 void main() {
   runApp(const GranaPaCaApp());
@@ -19,25 +21,34 @@ class GranaPaCaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final data = demoDataset();
+    final (from, to) = monthRange(data.today);
     return MaterialApp(
       title: 'GranaPaCá',
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
-      home: DemoHomePage(transactions: demoTransactions()),
+      home: DemoHomePage(
+        transactions: history(data, TxFilter(from: from, to: to)).items,
+        balanceCents: summary(data, data.today).leftoverCents,
+      ),
     );
   }
 }
 
 class DemoHomePage extends StatelessWidget {
-  const DemoHomePage({super.key, required this.transactions});
+  const DemoHomePage({
+    super.key,
+    required this.transactions,
+    required this.balanceCents,
+  });
 
-  final List<DemoTransaction> transactions;
+  final List<Transaction> transactions;
+  final int balanceCents;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final balance = transactions.fold(0, (sum, t) => sum + t.amountCents);
 
     return Scaffold(
       appBar: AppBar(title: const Text('GranaPaCá')),
@@ -59,7 +70,7 @@ class DemoHomePage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Saldo do mês', style: text.labelLarge),
-                Text(formatBrl(balance), style: text.headlineMedium),
+                Text(formatBrl(balanceCents), style: text.headlineMedium),
               ],
             ),
           ),
