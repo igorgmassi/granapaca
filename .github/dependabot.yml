@@ -1,5 +1,4 @@
 # Atualizações automáticas de dependências.
-# O ecossistema pub (app/) entra quando o app existir.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,6 +10,13 @@ updates:
 
   - package-ecosystem: nuget
     directory: /backend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: pub
+    directory: /app
     schedule:
       interval: weekly
     commit-message:
