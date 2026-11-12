@@ -149,4 +149,4 @@ O marcador de pintas vem sempre com o nome do nível. Onde o nome não cabe, as 
 
 ## Próximo
 
-Parte 6: telas do primeiro acesso e do Início.
+[Parte 6](06-telas-a.md): telas do primeiro acesso e do Início.

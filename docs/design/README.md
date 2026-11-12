@@ -9,7 +9,7 @@ Identidade visual e design das telas do app, em 12 partes. Cada parte é um arqu
 | [3](03-mascote.md) | Mascote: folha de modelo, expressões e máquina de estados | Pronta |
 | [4](04-logo-e-icone.md) | Logo e ícone do app | Pronta |
 | [5](05-componentes.md) | Biblioteca de componentes, com estados | Pronta |
-| 6 | Telas A: primeiro acesso e Início | A fazer |
+| [6](06-telas-a.md) | Telas A: primeiro acesso e Início | Pronta |
 | 7 | Telas B: extrato, detalhe, correção e Gastos | A fazer |
 | 8 | Telas C: chat, nota fiscal, gasto em dinheiro, planejamento, alertas, configurações e demo | A fazer |
 | 9 | Fluxos | A fazer |
