@@ -1,78 +1,32 @@
 // Gera logo, símbolo e ícones do GranaPaCá em SVG. Uso: node docs/design/logo/gerar-logo.mjs
-// O letreiro é desenhado em traço redondo (geometria da Fredoka SemiBold), não com a fonte: assim o
-// logo sai igual em qualquer lugar, sem depender da fonte instalada, e o acento do á vira a moedinha.
-import { writeFileSync } from "node:fs";
+// O logo vem de contornos prontos (letreiro.json); o símbolo e os ícones são desenhados aqui.
+import { readFileSync, writeFileSync } from "node:fs";
 
 const f = (n) => +n.toFixed(1);
-const rad = (g) => (g * Math.PI) / 180;
 
-// ---------- Letreiro ----------
-const SW = 13; // espessura do traço
-const BASE = 93.5, XT = 66.5, CT = 48.5, MEIO = 71, BOJO = 80; // linhas de centro do traço
-
-const GLIFOS = {
-  G: (x) => { const rx = 24, ry = 22.5, cx = x + rx, a = rad(40);
-    return { d: `M${f(cx + rx * Math.cos(a))} ${f(MEIO - ry * Math.sin(a))} A${rx} ${ry} 0 1 0 ${cx + rx} ${MEIO} H${cx + 7}`, w: 2 * rx }; },
-  r: (x) => ({ d: `M${x} ${BASE} V${XT} M${x} ${BOJO} C${x} 71 ${x + 5} ${XT} ${x + 16} ${XT}`, w: 16 }),
-  a: (x) => ({ d: `M${x + 28} ${XT} V${BASE} M${x + 28} ${BOJO} A14 13.5 0 1 0 ${x} ${BOJO} A14 13.5 0 1 0 ${x + 28} ${BOJO}`, w: 28 }),
-  n: (x) => ({ d: `M${x} ${BASE} V${XT} M${x} 82 C${x} 71 ${x + 6} ${XT} ${x + 13} ${XT} C${x + 21} ${XT} ${x + 26} 72 ${x + 26} ${BOJO} V${BASE}`, w: 26 }),
-  P: (x) => ({ d: `M${x} ${BASE} V${CT} H${x + 12} A13 13 0 0 1 ${x + 12} ${CT + 26} H${x}`, w: 25 }),
-  C: (x) => { const rx = 23, ry = 22.5, cx = x + rx, a = rad(48), dx = f(cx + rx * Math.cos(a));
-    return { d: `M${dx} ${f(MEIO - ry * Math.sin(a))} A${rx} ${ry} 0 1 0 ${dx} ${f(MEIO + ry * Math.sin(a))}`, w: f(rx + rx * Math.cos(a)) }; },
-};
-const KERN = { Gr: 1, ra: -3, an: 0, na: 0, aP: 1, Pa: -2, aC: 0, Ca: -1 };
-const ESPACO = 6;
-
-function letreiro() {
-  const texto = "GranaPaCa";
-  let x = SW / 2 + 1, d = "", acento = null;
-  for (let i = 0; i < texto.length; i++) {
-    const g = GLIFOS[texto[i]](x);
-    d += g.d + " ";
-    if (i === texto.length - 1) acento = { cx: x + 13, cy: 47 }; // o último "a" é o á
-    x += g.w + SW + ESPACO + (KERN[texto[i] + (texto[i + 1] ?? "")] ?? 0);
-  }
-  return { d: d.trim(), largura: Math.ceil(x - ESPACO - SW / 2 + 1), acento };
-}
-const L = letreiro();
-const TOPO = 22; // acima da moeda e dos rastros
-const ALTURA = 100 + 2 - TOPO;
-
-// Moeda do acento: cai na direção do acento agudo, com dois rastros para cima e à direita.
-function moeda({ cx, cy }, cores) {
-  const rastros = [[6, -7, 11, -14], [10, -1, 16, -8]].map(([x0, y0, x1, y1]) =>
-    `<path d="M${cx + x0} ${cy + y0} L${cx + x1} ${cy + y1}" stroke="${cores.rastro}" stroke-width="3.2" stroke-linecap="round"/>`).join("");
-  if (cores.mono) {
-    // Uma cor só: anel e miolo, com o vão vazado (funciona sobre qualquer fundo).
-    return rastros + `<path fill-rule="evenodd" fill="${cores.rastro}" d="M${cx - 8.5} ${cy} a8.5 8.5 0 1 0 17 0 a8.5 8.5 0 1 0 -17 0 Z M${cx - 6} ${cy} a6 6 0 1 1 12 0 a6 6 0 1 1 -12 0 Z M${cx - 4.2} ${cy} a4.2 4.2 0 1 0 8.4 0 a4.2 4.2 0 1 0 -8.4 0 Z"/>`;
-  }
-  return rastros + `<circle cx="${cx}" cy="${cy}" r="8.5" fill="${cores.moeda}"/>` +
-    `<circle cx="${cx}" cy="${cy}" r="5.3" fill="none" stroke="${cores.anel}" stroke-width="1.8"/>` +
-    `<circle cx="${cx - 2.6}" cy="${cy - 2.8}" r="1.7" fill="${cores.brilho}"/>`;
-}
-
+// ---------- Logo ----------
+// Letreiro serifado "Grana PaCá" com a paca deitada sobre "aC" e o acento em forma de pinta.
+// Os contornos ficam em letreiro.json (traçados da arte aprovada); aqui só entram as cores.
+// A pochete é o ícone do app e NUNCA entra no logo.
+const LT = JSON.parse(readFileSync(new URL("./letreiro.json", import.meta.url), "utf8"));
 const LOGO = {
-  cor: { letra: "#A0521A", rastro: "#A0521A", moeda: "#E5A62B", anel: "#A0521A", brilho: "#F7D27A" },
-  escuro: { letra: "#E8A066", rastro: "#E8A066", moeda: "#F3C35A", anel: "#8E4A20", brilho: "#FBE3A6", fundo: "#17110D" },
-  mono: { letra: "currentColor", rastro: "currentColor", mono: true },
+  cor: { grana: "#2A7550", paca: "#A0521A", bicho: "#B96A35", acento: "#2A7550" },
+  escuro: { grana: "#6CC596", paca: "#E8A066", bicho: "#D99A66", acento: "#6CC596", fundo: "#17110D" },
+  mono: { grana: "currentColor", paca: "currentColor", bicho: "currentColor", acento: "currentColor" },
 };
 function logo(nome, { respiro = false } = {}) {
-  const c = LOGO[nome], m = respiro ? 40 : 0; // respiro = altura do "a" (40 unidades)
-  const vb = `${-m} ${TOPO - m} ${L.largura + 2 * m} ${ALTURA + 2 * m}`;
+  const c = LOGO[nome], [x0, y0, x1, y1] = LT.caixa;
+  const m = respiro ? LT.alturaDoA : 50; // área de respiro = altura do "a" minúsculo
+  const vb = [x0 - m, y0 - m, x1 - x0 + 2 * m, y1 - y0 + 2 * m];
+  const fundo = respiro ? "#FBF5EC" : c.fundo;
   const guia = respiro
-    ? `<rect x="${-m}" y="${TOPO - m}" width="${L.largura + 2 * m}" height="${ALTURA + 2 * m}" fill="#FBF5EC"/>` +
-      `<rect x="0" y="${TOPO}" width="${L.largura}" height="${ALTURA}" fill="none" stroke="#94816E" stroke-width="1" stroke-dasharray="4 3"/>` +
-      `<rect x="${-m + 1}" y="${TOPO - m + 1}" width="${L.largura + 2 * m - 2}" height="${ALTURA + 2 * m - 2}" fill="none" stroke="#B83A22" stroke-width="1.5" stroke-dasharray="6 4"/>` +
-      `<g fill="none" stroke="#22649C" stroke-width="1.5"><path d="M${-m + 4} ${TOPO + 20} H-4"/><path d="M${L.largura + 4} ${TOPO + 20} H${L.largura + m - 4}"/></g>` +
-      `<text x="${-m / 2}" y="${TOPO + 14}" font-family="Inter, sans-serif" font-size="11" fill="#22649C" text-anchor="middle">x</text>`
+    ? `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#94816E" stroke-width="8" stroke-dasharray="40 30"/>` +
+      `<rect x="${vb[0] + 10}" y="${vb[1] + 10}" width="${vb[2] - 20}" height="${vb[3] - 20}" fill="none" stroke="#B83A22" stroke-width="12" stroke-dasharray="60 40"/>`
     : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" role="img" aria-labelledby="t"><title id="t">GranaPaCá</title>` +
-    guia + (c.fundo && !respiro ? `<rect x="${-m}" y="${TOPO - m}" width="${L.largura + 2 * m}" height="${ALTURA + 2 * m}" fill="${c.fundo}"/>` : "") +
-    tracoLogo(c) + `</svg>\n`;
-}
-// O letreiro é feito de traços (stroke); para gravação ou recorte, expandir os traços num editor vetorial.
-function tracoLogo(c) {
-  return `<path d="${L.d}" fill="none" stroke="${c.letra}" stroke-width="${SW}" stroke-linecap="round" stroke-linejoin="round"/>` + moeda(L.acento, c);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.join(" ")}" role="img" aria-labelledby="t"><title id="t">Grana PaCá</title>` +
+    (fundo ? `<rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="${fundo}"/>` : "") + guia +
+    ["grana", "paca", "bicho", "acento"].map((n) => `<path d="${LT[n]}" fill="${c[n]}" fill-rule="evenodd"/>`).join("") + `</svg>
+`;
 }
 
 // ---------- Símbolo e ícone: a pochete da Paçoca ----------
@@ -131,10 +85,6 @@ const ARQUIVOS = {
   "logo-mono.svg": logo("mono"),
   "logo-respiro.svg": logo("cor", { respiro: true }),
   "simbolo.svg": svg256("Símbolo do GranaPaCá", simbolo()),
-  // Logo empilhado: símbolo em cima, letreiro embaixo, para espaços estreitos (o horizontal é muito largo).
-  "logo-empilhado.svg": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 70 ${L.largura} 232" role="img" aria-labelledby="t"><title id="t">GranaPaCá</title>` +
-    `<g transform="translate(${f(L.largura / 2 - 112)} 14) scale(${f(224 / 256)})">${simbolo()}</g>` +
-    `<g transform="translate(0 ${220 - TOPO})">${tracoLogo(LOGO.cor)}</g></svg>\n`,
   // iOS: quadro inteiro de 1024 px; o sistema aplica o recorte [Conferir: Apple HIG, App icons].
   // No iOS o quadro aparece inteiro e no Android só 2/3 dele: o Android usa a mesma composição em 2/3.
   "icone-ios-claro.svg": svg256("Ícone do GranaPaCá", fundo(P.claro.fundo) + disco(104) + ampliada(1.2, pochete(cores("claro")))),

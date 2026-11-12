@@ -1,8 +1,8 @@
 # Parte 4: Logo e ícone
 
-O logo é o nome GranaPaCá em letreiro arredondado, Caramelo, com o acento do á desenhado como uma moedinha caindo. O ícone é a pochete verde da Paçoca sobre Caramelo, com a fivela de moeda e três pintas creme costuradas na frente. Tudo está em SVG na pasta [`logo`](logo/).
+O logo é o nome Grana PaCá num letreiro serifado, com "Grana" em verde Mata e "PaCá" em Caramelo, a paca deitada sobre o nome e o acento do á em forma de pinta. O ícone é a pochete verde da Paçoca sobre Caramelo, com a fivela de moeda e três pintas creme costuradas na frente. Tudo está em SVG na pasta [`logo`](logo/).
 
-- **Data:** 2026-11-10; símbolo e ícone refeitos em 2026-11-11
+- **Data:** 2026-11-10; símbolo e ícone refeitos em 2026-11-11; logo refeito em 2026-11-12
 - **Para regenerar:** `node docs/design/logo/gerar-logo.mjs`
 - **Conferido com:** a skill logo-design (auditoria dos SVGs e folha de testes com tamanhos, fundos, uma cor, invertido, borrado, espelhado e girado).
 
@@ -10,39 +10,40 @@ O logo é o nome GranaPaCá em letreiro arredondado, Caramelo, com o acento do �
 
 | Versão | Arquivo | Onde usar |
 |---|---|---|
-| ![Logo colorido](logo/logo-cor.svg) | `logo-cor.svg` | Fundo claro: README, telas, apresentação |
-| ![Logo sobre fundo escuro](logo/logo-escuro.svg) | `logo-escuro.svg` | Fundo escuro e tema escuro |
-| ![Logo em uma cor](logo/logo-mono.svg) | `logo-mono.svg` | Uma cor só: carimbo, gravação, impressão em preto. Usa a cor do texto em volta (`currentColor`). |
-| <img src="logo/logo-empilhado.svg" width="180" alt="Logo empilhado"> | `logo-empilhado.svg` | Espaços estreitos: tela de abertura, avatar de perfil, capa |
+| <img src="logo/logo-cor.svg" width="360" alt="Logo colorido"> | `logo-cor.svg` | Fundo claro: README, telas, apresentação |
+| <img src="logo/logo-escuro.svg" width="360" alt="Logo sobre fundo escuro"> | `logo-escuro.svg` | Fundo escuro e tema escuro |
+| <img src="logo/logo-mono.svg" width="360" alt="Logo em uma cor"> | `logo-mono.svg` | Uma cor só: carimbo, gravação, impressão em preto. Usa a cor do texto em volta (`currentColor`). |
 
-**Como foi construído.** As letras não são a fonte Fredoka digitada: são traços redondos de espessura única, desenhados na geometria da Fredoka SemiBold. Assim o logo sai igual em qualquer lugar, sem depender de fonte instalada, e o acento vira desenho. O "a" é de um andar só, como no estilo arredondado do mascote. O P e o C maiúsculos marcam as duas palavras do trocadilho.
+**O que cada parte diz.** "Grana" é verde, a cor do dinheiro guardado. "PaCá" é Caramelo, a cor da paca. A paca deitada sobre "PaCá" tem as fileiras de pintas que a diferenciam de outros roedores. O acento do á é uma pinta solta.
 
-**A moedinha.** Ela cai na direção do acento agudo, com dois rastros para cima e para a direita: o "pra cá" em forma de desenho. Na versão colorida é Milho com anel Caramelo. Na versão de uma cor, vira anel e miolo vazados, para funcionar sobre qualquer fundo.
+**Por que serifa.** O pedido era um logo criativo e aconchegante, com um mínimo de seriedade de empresa. A serifa de curvas cheias dá o ar de marca estabelecida, e a paca tira a frieza. O bicho por cima da segunda palavra segue o padrão de logos como o do MySQL: o nome fica intacto e o animal dá personalidade.
 
-**Revisão do briefing.** O briefing pede "Grana PaCá" com espaço. Mantive "GranaPaCá" junto, como no repositório e no README ([Parte 1](01-revisao-das-decisoes.md), mudança 15). Se preferir com espaço, só o espaço entre "Grana" e "PaCá" muda no gerador.
+**Como foi construído.** A arte veio de um estudo com seis letreiros em preto e branco. O escolhido foi traçado em vetor e separado em quatro partes (Grana, PaCá, paca e acento), guardadas em [`letreiro.json`](logo/letreiro.json). O gerador só aplica as cores. As letras são contornos: o logo não depende de fonte instalada.
+
+**A pochete não entra no logo.** Ela é o ícone do app. O logo e a pochete nunca aparecem montados juntos.
+
+**Revisão do briefing.** O nome do logo voltou a ser "Grana PaCá", com espaço, como no briefing. O repositório e o identificador do app continuam `granapaca`.
 
 ### Área de respiro
 
 ![Área de respiro do logo](logo/logo-respiro.svg)
 
-A área livre em volta do logo é **x**, a altura do "a" minúsculo: metade da altura do logo. Nenhum texto, borda ou outro logo entra nela.
+A área livre em volta do logo é a altura do "a" minúsculo. Nenhum texto, borda ou outro logo entra nela. O tracejado cinza é a caixa do logo; o vermelho é o limite da área livre.
 
 ### Tamanhos mínimos
 
-| Versão | Tela | Impressão |
+| Uso | Tela | Impressão |
 |---|---|---|
-| Logo horizontal | 24 px de altura | 8 mm de altura |
-| Logo empilhado | 64 px de altura | 20 mm de altura |
-| Símbolo | 32 px | 10 mm |
-| Abaixo disso | Use o favicon | — |
+| Logo | 120 px de largura | 30 mm de largura |
+| Abaixo disso | Use o ícone do app ou o favicon | — |
 
-Na folha de testes, o logo horizontal ainda lê com 16 px de altura. O mínimo de 24 px deixa folga para a moedinha, que vira um ponto abaixo disso.
+Com 96 px de largura o nome ainda é lido, mas as pintas da paca viram ruído. Por isso o mínimo é 120 px.
 
 ## Símbolo
 
 <img src="logo/simbolo.svg" width="160" alt="Símbolo do GranaPaCá">
 
-A pochete da Paçoca: a bolsa verde Mata, a tampa num verde mais escuro, a fivela com a moedinha do logo e três pintas creme alongadas, como as fileiras de pintas da paca. As pintas são traços arredondados, não círculos: redondas e com anel, pareciam botões de camisa. No símbolo a alça é um trecho curto do mesmo arco do ícone, com as pontas arredondadas. Com as pontas subindo mais, ela parecia chifre ou bigode.
+A pochete da Paçoca: a bolsa verde Mata, a tampa num verde mais escuro, a fivela em forma de moeda e três pintas creme alongadas, como as fileiras de pintas da paca. As pintas são traços arredondados, não círculos: redondas e com anel, pareciam botões de camisa. No símbolo a alça é um trecho curto do mesmo arco do ícone, com as pontas arredondadas. Com as pontas subindo mais, ela parecia chifre ou bigode.
 
 ## Ícone do app
 
@@ -51,7 +52,7 @@ A pochete da Paçoca: a bolsa verde Mata, a tampa num verde mais escuro, a fivel
 O primeiro ícone era a cabeça da Paçoca de perfil. Em 48 px ela parecia um bicho marrom qualquer. As cinco versões ilustradas feitas depois no Gemini ficaram detalhadas demais para o tamanho, ou engraçadinhas demais para um app de dinheiro. Ícone de app pede uma ideia só, numa forma compacta. Comparei quatro caminhos abstratos: a pochete; a silhueta da paca, que parecia porquinho e depois anta; os olhos brilhando na toca; e o G do letreiro com uma moeda. A pochete ganhou porque:
 
 - é a assinatura visual da Paçoca, presente em todas as poses da [mascote](03-mascote.md);
-- guarda a grana, e a fivela é a moedinha do logo;
+- guarda a grana, e a fivela é uma moeda;
 - leva as pintas da paca, costuradas na frente;
 - o verde Mata é o oposto do Caramelo no círculo de cores.
 
@@ -83,9 +84,10 @@ Em 48 px aparecem a bolsa, a tampa, a moeda e as pintas. Em 24 px as pintas vira
 
 | Par | Contraste |
 |---|---|
-| Logo Caramelo sobre o fundo Paçoca | 5,21:1 |
-| Logo Caramelo sobre branco | 5,65:1 |
-| Logo escuro sobre o fundo escuro | 8,60:1 |
+| Logo: "Grana" (verde Mata) sobre o fundo Paçoca | 5,15:1 |
+| Logo: "PaCá" (Caramelo) sobre o fundo Paçoca | 5,21:1 |
+| Logo: a paca sobre o fundo Paçoca | 3,74:1 |
+| Logo escuro: "Grana", "PaCá" e a paca sobre o fundo escuro | 8,97:1, 8,60:1 e 7,81:1 |
 | Bolsa verde sobre o fundo Caramelo | 1,01:1 (por isso o disco) |
 | Disco creme sobre o fundo Caramelo | 4,61:1 |
 | Bolsa sobre o disco creme, e pintas sobre a bolsa | 4,56:1 |
@@ -98,9 +100,11 @@ O verde Mata e o Caramelo têm quase a mesma luminância. Direto sobre o Caramel
 ## Usos proibidos
 
 - Recolorir fora das versões desta página, esticar, girar ou inclinar.
-- Pôr contorno, sombra, brilho ou degradê.- Trocar o letreiro por texto digitado em Fredoka ou em outra fonte.
-- Separar a moedinha do "a", ou usá-la como acento em outras palavras.
-- Usar o logo horizontal abaixo do tamanho mínimo, em vez do símbolo.
+- Pôr contorno, sombra, brilho ou degradê.
+- Montar a pochete junto do logo, de qualquer jeito.
+- Trocar o letreiro por texto digitado em qualquer fonte.
+- Tirar a paca ou o acento do logo, ou usá-los soltos.
+- Usar o logo abaixo do tamanho mínimo, em vez do ícone.
 - Pôr o símbolo sobre Caramelo: nesse fundo, use o ícone, com o disco creme.
 - Tirar o disco do ícone claro, ou pôr o disco no ícone escuro ou no símbolo.
 
@@ -109,7 +113,9 @@ O verde Mata e o Caramelo têm quase a mesma luminância. Direto sobre o Caramel
 - **Android:** as medidas das camadas (108 dp, área visível de 72 dp e círculo seguro de 66 dp) e o formato aceito para a camada monocromática [Conferir: developer.android.com, ícones adaptativos].
 - **iOS:** as três aparências (clara, escura e tingida) e os ícones em camadas do iOS 26, feitos no Icon Composer [Conferir: Apple Human Interface Guidelines, App icons].
 - **Exportação:** o pacote flutter_launcher_icons pede imagens PNG [Conferir: pub.dev/packages/flutter_launcher_icons]. Os PNGs saem destes SVGs na Parte 12, com o script `render_png.py` da skill logo-design.
-- **Traços:** o letreiro e a alça da pochete são traços (stroke). Para gravação, recorte ou bordado, expanda os traços num editor vetorial. O ícone monocromático usa máscara, então ele é exportado em PNG.
+- **Traços:** a alça da pochete é um traço (stroke). Para gravação, recorte ou bordado, expanda o traço num editor vetorial. O logo já é feito só de contornos. O ícone monocromático usa máscara, então ele é exportado em PNG.
+- **Letreiro:** as letras do logo vieram de um gerador de imagem e foram traçadas em vetor. Antes de lançar, comparar com fontes comerciais parecidas e fazer a busca de marca [Conferir: INPI].
+- **Traçado:** os contornos são de um traçado automático. Uma limpeza manual das curvas num editor vetorial reduz os 863 pontos e melhora a impressão grande.
 
 ## Próximo
 
