@@ -1,0 +1,96 @@
+name: app
+
+on:
+  push:
+    branches: [main]
+  # No path filter: app-test runs on every PR so it can be a required check.
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.50.0
+
+jobs:
+  app-test:
+    name: app-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # The platform builds run only when the app or this workflow changed.
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            changed=true
+          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(app/|\.github/workflows/app\.yml$)'; then
+            changed=true
+          else
+            changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: app-test
+    if: needs.app-test.outputs.changed == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: web, os: ubuntu-latest, args: web }
+          - { target: linux, os: ubuntu-latest, args: linux }
+          - { target: android, os: ubuntu-latest, args: apk }
+          - { target: windows, os: windows-latest, args: windows }
+          - { target: macos, os: macos-latest, args: macos }
+          - { target: ios, os: macos-latest, args: ios --no-codesign }
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - if: matrix.target == 'android'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - env:
+          ARGS: ${{ matrix.args }}
+        run: flutter build $ARGS
