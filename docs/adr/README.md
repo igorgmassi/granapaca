@@ -17,11 +17,11 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | ADR-009 | Hospedagem em fases com o mesmo Compose e rede privada (Tailscale) por padrão | A escrever |
 | [ADR-010](0010-runtime-em-imagem-chiseled.md) | Runtime padrão em imagem chiseled × Native AOT | Aceito |
 | ADR-011 | Alertas: caixa de entrada no app (MVP) e push via ntfy (v1) | A escrever |
-| ADR-012 | Dado do provedor append-only e versionado + camada de ajustes | A escrever |
-| ADR-013 | Dinheiro em centavos (BIGINT) | A escrever |
-| ADR-014 | Entrada simples com tipos de movimento × partidas dobradas | A escrever |
-| ADR-015 | Tempo: UTC + America/Sao_Paulo; competência × caixa | A escrever |
-| ADR-016 | Criptografia de campo com envelope (AES-GCM do .NET) e master key fora do banco | A escrever |
+| [ADR-012](0012-dado-do-provedor-append-only-e-camada-de-ajustes.md) | Dado do provedor append-only e versionado + camada de ajustes | Aceito |
+| [ADR-013](0013-dinheiro-em-centavos.md) | Dinheiro em centavos (BIGINT) | Aceito |
+| [ADR-014](0014-entrada-simples-com-tipos-de-movimento.md) | Entrada simples com tipos de movimento × partidas dobradas | Aceito |
+| [ADR-015](0015-tempo-e-competencia.md) | Tempo: UTC + America/Sao_Paulo; competência × caixa | Aceito |
+| [ADR-016](0016-criptografia-de-campo-com-envelope.md) | Criptografia de campo com envelope (AES-GCM do .NET) e master key fora do banco | Aceito |
 | [ADR-017](0017-persistencia-dapper-e-dbup.md) | Persistência: Dapper + DbUp (SQL-first) × EF Core, schema por módulo e UUIDv7 | Aceito |
 | ADR-018 | REST + OpenAPI 3.1 com cliente Dart gerado e SSE no chat | A escrever |
 | ADR-019 | Tokens opacos com refresh rotativo e detecção de reuso | A escrever |
