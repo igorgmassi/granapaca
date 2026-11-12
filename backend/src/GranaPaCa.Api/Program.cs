@@ -11,6 +11,13 @@ public sealed class Program
 {
     public static void Main(string[] args)
     {
+        // The chiseled image has no shell or curl, so the container healthcheck runs "dotnet GranaPaCa.Api.dll healthcheck".
+        if (args is ["healthcheck"])
+        {
+            Environment.ExitCode = CheckOwnHealth();
+            return;
+        }
+
         var builder = WebApplication.CreateBuilder(args);
 
         // Read when first resolved, after every configuration source (including test overrides) is in place.
@@ -38,5 +45,19 @@ public sealed class Program
         app.MapSampleEndpoints();
 
         app.Run();
+    }
+
+    private static int CheckOwnHealth()
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        try
+        {
+            // 8080 is the port the .NET container images listen on.
+            return http.GetAsync("http://localhost:8080/health").Result.IsSuccessStatusCode ? 0 : 1;
+        }
+        catch (AggregateException)
+        {
+            return 1;
+        }
     }
 }
