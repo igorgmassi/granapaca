@@ -15,7 +15,7 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | ADR-007 | Offline-first com drift + SQLCipher e sincronização por cursor | A escrever |
 | ADR-008 | Modo demo sem backend, com o mesmo dataset sintético | A escrever |
 | ADR-009 | Hospedagem em fases com o mesmo Compose e rede privada (Tailscale) por padrão | A escrever |
-| ADR-010 | Runtime padrão em imagem chiseled × Native AOT | A escrever |
+| [ADR-010](0010-runtime-em-imagem-chiseled.md) | Runtime padrão em imagem chiseled × Native AOT | Aceito |
 | ADR-011 | Alertas: caixa de entrada no app (MVP) e push via ntfy (v1) | A escrever |
 | ADR-012 | Dado do provedor append-only e versionado + camada de ajustes | A escrever |
 | ADR-013 | Dinheiro em centavos (BIGINT) | A escrever |
