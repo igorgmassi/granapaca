@@ -1,0 +1,2 @@
+# Dependências dos geradores (sharp, potrace): instaladas com --prefix docs/design, nunca versionadas.
+node_modules/
