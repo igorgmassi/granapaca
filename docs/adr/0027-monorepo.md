@@ -19,5 +19,5 @@ Um único repositório, `granapaca`, com as pastas `app/`, `backend/`, `profiles
 
 - Uma mudança de contrato atualiza backend, cliente Dart e app no mesmo PR.
 - Issues, alertas de segurança e releases ficam num só lugar, que também é o que quem visita o portfólio encontra.
-- Os workflows do CI filtram por caminho (`paths`) para não rodar tudo em toda mudança.
+- Os workflows do CI filtram por caminho (`paths`) para não rodar tudo em toda mudança. A exceção é o workflow de um check obrigatório, como o `backend.yml`: ele roda em todo PR, porque o GitHub não deixa mesclar um PR em que um check obrigatório não rodou.
 - Commits seguem Conventional Commits com o escopo da pasta ou do módulo, em branches curtas a partir da `main` (detalhes no guia de contribuição).

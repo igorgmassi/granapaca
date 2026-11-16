@@ -1,0 +1,48 @@
+# Sua instância do GranaPaCá: API + PostgreSQL. Como usar: infra/README.md.
+name: granapaca
+
+services:
+  api:
+    build: ../backend
+    image: granapaca-api:local
+    restart: unless-stopped
+    environment:
+      # Gere a senha em hex (README): ";" ou "'" quebrariam a connection string.
+      ConnectionStrings__Postgres: "Host=db;Database=${POSTGRES_DB:-granapaca};Username=${POSTGRES_USER:-granapaca};Password=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no infra/.env}"
+      TZ: ${TZ:-America/Sao_Paulo}
+    # Só localhost: para acessar de fora, use a rede privada (Tailscale), nunca a porta aberta.
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dotnet", "GranaPaCa.Api.dll", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-granapaca}
+      POSTGRES_USER: ${POSTGRES_USER:-granapaca}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no infra/.env}
+      TZ: ${TZ:-America/Sao_Paulo}
+    # No published port: only the API reaches the database, through the compose network.
+    volumes:
+      # PostgreSQL 18 keeps its data under /var/lib/postgresql/18, so the volume mounts the parent.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+
+volumes:
+  pgdata:
