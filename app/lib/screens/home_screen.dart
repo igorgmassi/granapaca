@@ -1,21 +1,56 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../api/api_models.dart';
 import '../finance/model.dart';
 import '../finance/queries.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 import 'bank_detail_screen.dart';
+import 'connections_screen.dart';
 import 'transaction_detail_sheet.dart';
 
-/// Main overview screen (RF-16, RF-17, RF-05).
+/// Main overview screen (RF-13, RF-16, RF-17, RF-05).
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  Future<void> _handleRefresh(BuildContext context, AppState state) async {
+    if (state.isDemoMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Modo demonstração: na sua instância, arrastar sincroniza os '
+            'bancos conectados (que costumam atualizar uma vez por dia).',
+          ),
+        ),
+      );
+      return;
+    }
+    try {
+      final synced = await state.syncFromServer(triggerBankSync: true);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            synced
+                ? 'Dados sincronizados com o seu servidor.'
+                : 'Sem conexão com o servidor. Exibindo últimos dados salvos.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    if (state.simulateNoConnections) {
+    if (state.simulateNoConnections ||
+        (state.isServerMode && state.effectiveDataset.banks.isEmpty)) {
       return EmptyStateView(
         icon: Icons.account_balance_outlined,
         title: 'Conecte seus bancos para começar',
@@ -23,10 +58,20 @@ class HomeScreen extends StatelessWidget {
             'Reúna contas, cartões e faturas num só lugar, somente leitura '
             'e na sua própria instância.',
         actionLabel: 'Conectar primeiro banco',
-        onAction: () =>
-            showServerOnlyDialog(context, 'Conectar banco via Meu Pluggy'),
-        secondaryActionLabel: 'Voltar aos dados da demo',
-        onSecondaryAction: () => state.setSimulateNoConnections(false),
+        onAction: state.isServerMode
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ConnectionsScreen(),
+                ),
+              )
+            : () =>
+                  showServerOnlyDialog(context, 'Conectar banco via Meu Pluggy'),
+        secondaryActionLabel: state.isDemoMode
+            ? 'Voltar aos dados da demo'
+            : null,
+        onSecondaryAction: state.isDemoMode
+            ? () => state.setSimulateNoConnections(false)
+            : null,
       );
     }
 
@@ -43,6 +88,13 @@ class HomeScreen extends StatelessWidget {
     final essShares = essentialityBreakdown(monthPlainTxs);
     final ranking = categoryRanking(monthPlainTxs);
     final recentTxs = monthHistory.items.take(5).toList(growable: false);
+
+    final firstCardAccount = data.accounts
+        .where((a) => a.kind == AccountKind.creditCard)
+        .firstOrNull;
+    final defaultCardBankId =
+        firstCardAccount?.bankId ??
+        (data.banks.isNotEmpty ? data.banks.first.id : null);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -63,7 +115,13 @@ class HomeScreen extends StatelessWidget {
         final accountsCard = _AccountsSummaryCard(
           summaryData: s,
           hideValues: state.hideValues,
-          onOpenCard: () => _openBank(context, 'aurora'),
+          cardSubtitle: firstCardAccount == null
+              ? 'Sem cartão cadastrado'
+              : '${firstCardAccount.name}'
+                    '${firstCardAccount.lastFourDigits != null ? ' •••• ${firstCardAccount.lastFourDigits}' : ''}',
+          onOpenCard: defaultCardBankId == null
+              ? null
+              : () => _openBank(context, defaultCardBankId),
         );
 
         final banksSection = _BanksSection(
@@ -84,65 +142,73 @@ class HomeScreen extends StatelessWidget {
         );
 
         if (isDesktop) {
-          return ListView(
+          return RefreshIndicator(
+            onRefresh: () => _handleRefresh(context, state),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(GranaSpacing.lg),
+              children: [
+                monthBar,
+                const SizedBox(height: GranaSpacing.lg),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          heroCard,
+                          const SizedBox(height: GranaSpacing.lg),
+                          accountsCard,
+                          const SizedBox(height: GranaSpacing.xl),
+                          banksSection,
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: GranaSpacing.xl),
+                    Expanded(
+                      flex: 5,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _MiniSpendingPreviewCard(
+                            ranking: ranking,
+                            hideValues: state.hideValues,
+                            onOpenSpending: () {
+                              state.setSpendingFilters(month: month);
+                              state.selectTab(2);
+                            },
+                          ),
+                          const SizedBox(height: GranaSpacing.lg),
+                          recentSection,
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () => _handleRefresh(context, state),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(GranaSpacing.lg),
             children: [
               monthBar,
               const SizedBox(height: GranaSpacing.lg),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 6,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        heroCard,
-                        const SizedBox(height: GranaSpacing.lg),
-                        accountsCard,
-                        const SizedBox(height: GranaSpacing.xl),
-                        banksSection,
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: GranaSpacing.xl),
-                  Expanded(
-                    flex: 5,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _MiniSpendingPreviewCard(
-                          ranking: ranking,
-                          hideValues: state.hideValues,
-                          onOpenSpending: () {
-                            state.setSpendingFilters(month: month);
-                            state.selectTab(2);
-                          },
-                        ),
-                        const SizedBox(height: GranaSpacing.lg),
-                        recentSection,
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              heroCard,
+              const SizedBox(height: GranaSpacing.lg),
+              accountsCard,
+              const SizedBox(height: GranaSpacing.xl),
+              banksSection,
+              const SizedBox(height: GranaSpacing.xl),
+              recentSection,
             ],
-          );
-        }
-
-        return ListView(
-          padding: const EdgeInsets.all(GranaSpacing.lg),
-          children: [
-            monthBar,
-            const SizedBox(height: GranaSpacing.lg),
-            heroCard,
-            const SizedBox(height: GranaSpacing.lg),
-            accountsCard,
-            const SizedBox(height: GranaSpacing.xl),
-            banksSection,
-            const SizedBox(height: GranaSpacing.xl),
-            recentSection,
-          ],
+          ),
         );
       },
     );
@@ -369,12 +435,14 @@ class _AccountsSummaryCard extends StatelessWidget {
   const _AccountsSummaryCard({
     required this.summaryData,
     required this.hideValues,
+    required this.cardSubtitle,
     required this.onOpenCard,
   });
 
   final Summary summaryData;
   final bool hideValues;
-  final VoidCallback onOpenCard;
+  final String cardSubtitle;
+  final VoidCallback? onOpenCard;
 
   @override
   Widget build(BuildContext context) {
@@ -456,7 +524,7 @@ class _AccountsSummaryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Cartão Aurora •••• 4821',
+                      cardSubtitle,
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,
@@ -688,14 +756,14 @@ class _MiniSpendingPreviewCard extends StatelessWidget {
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: tokens.colorForCategory(item.category),
+                        color: tokens.colorForOptionalCategory(item.category),
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: GranaSpacing.sm),
                     Expanded(
                       child: Text(
-                        item.category.label,
+                        spendingCategoryLabel(item.category),
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),

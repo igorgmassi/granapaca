@@ -221,6 +221,9 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   Color colorForCategory(SpendingCategory category) =>
       categoryColors[category] ?? const Color(0xFFA3958A);
 
+  Color colorForOptionalCategory(SpendingCategory? category) =>
+      category != null ? colorForCategory(category) : const Color(0xFF7D6E63);
+
   Color colorForEssentiality(Essentiality essentiality) {
     switch (essentiality) {
       case Essentiality.essential:
@@ -308,6 +311,9 @@ IconData iconForCategory(SpendingCategory category) {
       return Icons.category_outlined;
   }
 }
+
+IconData iconForOptionalCategory(SpendingCategory? category) =>
+    category != null ? iconForCategory(category) : Icons.help_outline_rounded;
 
 IconData iconForTxKind(TxKind kind) {
   switch (kind) {

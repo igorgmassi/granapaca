@@ -21,6 +21,7 @@ class WebPreferencesStore implements PreferencesStore {
 
   bool _hideValues = false;
   ThemeMode _themeMode = ThemeMode.system;
+  String? _serverUrl;
 
   void _load() {
     try {
@@ -39,6 +40,10 @@ class WebPreferencesStore implements PreferencesStore {
           }
         }
       }
+      final url = decoded['serverUrl'];
+      if (url is String && url.trim().isNotEmpty) {
+        _serverUrl = url.trim();
+      }
     } catch (_) {
       // Ignore storage read failures in private mode or non-browser runtimes.
     }
@@ -48,7 +53,11 @@ class WebPreferencesStore implements PreferencesStore {
     try {
       _setItem(
         _storageKey,
-        jsonEncode({'hideValues': _hideValues, 'themeMode': _themeMode.name}),
+        jsonEncode({
+          'hideValues': _hideValues,
+          'themeMode': _themeMode.name,
+          'serverUrl': _serverUrl,
+        }),
       );
     } catch (_) {
       // Ignore storage write failures in private mode or non-browser runtimes.
@@ -70,6 +79,15 @@ class WebPreferencesStore implements PreferencesStore {
   @override
   Future<void> writeThemeMode(ThemeMode mode) async {
     _themeMode = mode;
+    _save();
+  }
+
+  @override
+  String? readServerUrl() => _serverUrl;
+
+  @override
+  Future<void> writeServerUrl(String? url) async {
+    _serverUrl = (url == null || url.trim().isEmpty) ? null : url.trim();
     _save();
   }
 }

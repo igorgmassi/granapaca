@@ -25,7 +25,13 @@ class RulesScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Regras de classificação')),
       body: Column(
         children: [
-          const DemoBanner(),
+          if (state.isDemoMode)
+            const DemoBanner()
+          else if (state.isOffline)
+            OfflineBanner(
+              lastSyncedAt: state.lastSyncedAt,
+              onRetry: state.syncFromServer,
+            ),
           Expanded(
             child: state.rules.isEmpty
                 ? EmptyStateView(

@@ -14,6 +14,7 @@ class FilePreferencesStore implements PreferencesStore {
   final File file;
   bool _hideValues = false;
   ThemeMode _themeMode = ThemeMode.system;
+  String? _serverUrl;
 
   void _load() {
     try {
@@ -31,6 +32,10 @@ class FilePreferencesStore implements PreferencesStore {
           }
         }
       }
+      final url = decoded['serverUrl'];
+      if (url is String && url.trim().isNotEmpty) {
+        _serverUrl = url.trim();
+      }
     } catch (_) {
       // Ignore corrupt or unreadable local preference files safely.
     }
@@ -40,7 +45,11 @@ class FilePreferencesStore implements PreferencesStore {
     try {
       await file.parent.create(recursive: true);
       await file.writeAsString(
-        jsonEncode({'hideValues': _hideValues, 'themeMode': _themeMode.name}),
+        jsonEncode({
+          'hideValues': _hideValues,
+          'themeMode': _themeMode.name,
+          'serverUrl': _serverUrl,
+        }),
       );
     } catch (_) {
       // Ignore write failures on restricted sandboxes.
@@ -62,6 +71,15 @@ class FilePreferencesStore implements PreferencesStore {
   @override
   Future<void> writeThemeMode(ThemeMode mode) async {
     _themeMode = mode;
+    await _save();
+  }
+
+  @override
+  String? readServerUrl() => _serverUrl;
+
+  @override
+  Future<void> writeServerUrl(String? url) async {
+    _serverUrl = (url == null || url.trim().isEmpty) ? null : url.trim();
     await _save();
   }
 }
