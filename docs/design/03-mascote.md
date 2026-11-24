@@ -118,7 +118,11 @@ As telas da [Parte 6](06-telas-a.md) em diante usam a Paçoca ilustrada: 12 pose
 A pose de frente está separada em **corpo**, **cabeça** e **olhos**. O corpo sobe 6 px por baixo da cabeça, para a junta do pescoço não abrir quando ela gira. A animação de exemplo respira, inclina a cabeça 2,2° e pisca; com "reduzir movimento" ligado, fica parada.
 
 - **No Rive:** importar o PNG recortado, cortar as mesmas partes e usar as mesmas medidas (pivô da cabeça em 108, 130; olhos em 71, 62 e 144, 62) [Conferir: rive.app/docs, importação de imagens e malhas].
-- **Braços, pés e pochete ainda não estão separados.** Eles se sobrepõem ao corpo, e o que fica por baixo não existe no desenho. O caminho é pedir ao gerador uma folha de partes soltas, no mesmo estilo.
+- **Peças soltas, para montar e animar:** [`mascote/ilustrada/partes`](mascote/ilustrada/partes) tem 10 peças desenhadas inteiras (cabeça, cabeça de olhos fechados, tronco, pochete, dois braços, duas pernas, braço acenando e boca aberta). Vieram de 5 folhas geradas no ChatGPT; a melhor versão de cada peça foi escolhida e recortada com o `recorte.mjs`. O `boneco.mjs` monta a Paçoca nos estados parada, acenando e feliz.
+
+![Paçoca montada com as peças soltas: parada, acenando e feliz, ao lado da pose aprovada](mascote/ilustrada/partes/montagem.png)
+
+- **Ainda a melhorar nas peças:** a cabeça tem um tufo de pelo no topo e a máscara creme no focinho, e lê mais como ursinho do que a pose aprovada. Ao acenar, aparece a ponta do cinto do lado direito.
 - **Versão vetorial descartada por enquanto:** o traçado automático achata o sombreado suave em placas de cor e fica pior que a ilustração. Vetor só vale com redesenho à mão ou com uma arte de origem já chapada.
 
 ## A conferir
