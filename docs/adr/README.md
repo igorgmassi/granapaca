@@ -35,3 +35,4 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | [ADR-027](0027-monorepo.md) | Monorepo | Aceito |
 | [ADR-028](0028-releases-multi-arch-sbom-e-assinatura.md) | Releases multi-arch (`amd64`/`arm64`) no GHCR com SBOM SPDX e assinatura keyless via Cosign/Sigstore | Aceito |
 | [ADR-029](0029-backup-cifrado-com-restic.md) | Backup diário cifrado fora da máquina com restic, separação da master key e restauração testada | Aceito |
+| [ADR-030](0030-modo-local-no-aparelho-e-ia-gratuita.md) | Modo local no aparelho ("Só neste aparelho") e IA gratuita por padrão (Paçoca determinística, presets gratuitos e Ollama) | Aceito |
