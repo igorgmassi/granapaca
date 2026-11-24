@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../finance/model.dart';
 import '../finance/taxonomy.dart';
 
-/// Spacing constants for the GranaPaCá design system ("Mata e Fruta").
+/// Spacing constants for the GranaPaCá design system ("Toca Editorial").
 abstract final class GranaSpacing {
   static const double xs = 4;
   static const double sm = 8;
@@ -26,55 +26,60 @@ abstract final class GranaRadius {
 
 /// Motion helper that respects system reduced-motion preferences.
 abstract final class GranaMotion {
-  static const Duration fast = Duration(milliseconds: 160);
+  static const Duration fast = Duration(milliseconds: 150);
   static const Duration standard = Duration(milliseconds: 240);
+  static const Duration lookTrack = Duration(milliseconds: 120);
+  static const Duration coverEyes = Duration(milliseconds: 220);
+  static const Duration peek = Duration(milliseconds: 180);
+  static const Duration calmError = Duration(milliseconds: 320);
+  static const Duration celebrate = Duration(milliseconds: 520);
 
   static Duration duration(BuildContext context, [Duration normal = standard]) =>
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : normal;
 }
 
-/// Verified "Mata e Fruta" light ColorScheme.
+/// Verified "Toca Editorial" light ColorScheme (WCAG AA 54/54 pairs).
 const ColorScheme granaLightColorScheme = ColorScheme(
   brightness: Brightness.light,
-  primary: Color(0xFFA0521A),
+  primary: Color(0xFFA84C19),
   onPrimary: Color(0xFFFFFFFF),
-  primaryContainer: Color(0xFFFADCC4),
-  onPrimaryContainer: Color(0xFF3D1A03),
-  secondary: Color(0xFF7A5A43),
+  primaryContainer: Color(0xFFFADCC7),
+  onPrimaryContainer: Color(0xFF3D1804),
+  secondary: Color(0xFF6F5A4A),
   onSecondary: Color(0xFFFFFFFF),
-  secondaryContainer: Color(0xFFF3E3D3),
-  onSecondaryContainer: Color(0xFF2E1C0F),
-  tertiary: Color(0xFF6E4AA3),
+  secondaryContainer: Color(0xFFF2EAE1),
+  onSecondaryContainer: Color(0xFF2B1F16),
+  tertiary: Color(0xFF6B489E),
   onTertiary: Color(0xFFFFFFFF),
   tertiaryContainer: Color(0xFFECE1FA),
   onTertiaryContainer: Color(0xFF2A1450),
-  error: Color(0xFFB83A22),
+  error: Color(0xFFB53720),
   onError: Color(0xFFFFFFFF),
   errorContainer: Color(0xFFFCDDD5),
   onErrorContainer: Color(0xFF4D1307),
-  surface: Color(0xFFFBF5EC),
-  onSurface: Color(0xFF2A1C12),
-  onSurfaceVariant: Color(0xFF6B5546),
+  surface: Color(0xFFFAF8F5),
+  onSurface: Color(0xFF231C16),
+  onSurfaceVariant: Color(0xFF63564B),
   surfaceContainerLowest: Color(0xFFFFFFFF),
   surfaceContainerLow: Color(0xFFFFFFFF),
-  surfaceContainer: Color(0xFFF7F0E6),
-  surfaceContainerHigh: Color(0xFFF3ECE2),
-  surfaceContainerHighest: Color(0xFFF0E7DB),
-  outline: Color(0xFF94816E),
-  outlineVariant: Color(0xFFE5D9CA),
+  surfaceContainer: Color(0xFFF6F3EE),
+  surfaceContainerHigh: Color(0xFFF1EDE7),
+  surfaceContainerHighest: Color(0xFFECE8E1),
+  outline: Color(0xFF8A7B6D),
+  outlineVariant: Color(0xFFE8E2DA),
 );
 
-/// Verified "Mata e Fruta" dark ColorScheme.
+/// Verified "Toca Noturna" dark ColorScheme (WCAG AA 54/54 pairs).
 const ColorScheme granaDarkColorScheme = ColorScheme(
   brightness: Brightness.dark,
-  primary: Color(0xFFE8A066),
-  onPrimary: Color(0xFF2A1407),
-  primaryContainer: Color(0xFF6B3410),
-  onPrimaryContainer: Color(0xFFFADCC4),
-  secondary: Color(0xFFDCC1A9),
-  onSecondary: Color(0xFF3A2717),
-  secondaryContainer: Color(0xFF4E3B2C),
-  onSecondaryContainer: Color(0xFFF3E3D3),
+  primary: Color(0xFFE5965C),
+  onPrimary: Color(0xFF211106),
+  primaryContainer: Color(0xFF69320F),
+  onPrimaryContainer: Color(0xFFFADCC7),
+  secondary: Color(0xFFD6C3B3),
+  onSecondary: Color(0xFF362619),
+  secondaryContainer: Color(0xFF3B3129),
+  onSecondaryContainer: Color(0xFFF2EAE1),
   tertiary: Color(0xFFB9A0EE),
   onTertiary: Color(0xFF2A1450),
   tertiaryContainer: Color(0xFF4B357A),
@@ -83,19 +88,19 @@ const ColorScheme granaDarkColorScheme = ColorScheme(
   onError: Color(0xFF4A1004),
   errorContainer: Color(0xFF7A2414),
   onErrorContainer: Color(0xFFFFDAD2),
-  surface: Color(0xFF17110D),
-  onSurface: Color(0xFFF7EFE6),
-  onSurfaceVariant: Color(0xFFC4B2A2),
-  surfaceContainerLowest: Color(0xFF110C09),
-  surfaceContainerLow: Color(0xFF221A14),
-  surfaceContainer: Color(0xFF281F18),
-  surfaceContainerHigh: Color(0xFF2D241B),
-  surfaceContainerHighest: Color(0xFF33291F),
-  outline: Color(0xFF86725F),
-  outlineVariant: Color(0xFF3F342A),
+  surface: Color(0xFF14110F),
+  onSurface: Color(0xFFF5F1EC),
+  onSurfaceVariant: Color(0xFFB5A89C),
+  surfaceContainerLowest: Color(0xFF0E0C0A),
+  surfaceContainerLow: Color(0xFF1E1A17),
+  surfaceContainer: Color(0xFF241F1B),
+  surfaceContainerHigh: Color(0xFF2A241F),
+  surfaceContainerHighest: Color(0xFF312A24),
+  outline: Color(0xFF8A7A6C),
+  outlineVariant: Color(0xFF2E2823),
 );
 
-/// Semantic tokens and tabular monetary styles for GranaPaCá.
+/// Semantic tokens and tabular monetary styles for GranaPaCá ("Toca Editorial").
 @immutable
 class GranaTokens extends ThemeExtension<GranaTokens> {
   const GranaTokens({
@@ -134,13 +139,13 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   ];
 
   static const GranaTokens light = GranaTokens(
-    mata: Color(0xFF2A7550),
+    mata: Color(0xFF1D6B48),
     milho: Color(0xFFE5A62B),
-    sobreMilho: Color(0xFF2A1C12),
+    sobreMilho: Color(0xFF231C16),
     rio: Color(0xFF22649C),
     essencial: Color(0xFF6F340E),
     importante: Color(0xFFA65E28),
-    flexivel: Color(0xFFC17C3E),
+    flexivel: Color(0xFFBC7638),
     categoryColors: {
       SpendingCategory.housing: Color(0xFF8B3E05),
       SpendingCategory.transport: Color(0xFF277BD0),
@@ -153,18 +158,18 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       SpendingCategory.other: Color(0xFFA3958A),
     },
     heatmapScale: [
-      Color(0xFFFADCC4),
-      Color(0xFFEBB68C),
-      Color(0xFFD48952),
-      Color(0xFFB8662B),
-      Color(0xFF8B3E05),
+      Color(0xFFE4A777),
+      Color(0xFFD28B52),
+      Color(0xFFB86E33),
+      Color(0xFF93511B),
+      Color(0xFF67330C),
     ],
     valorDestaque: TextStyle(
-      fontSize: 32,
+      fontSize: 34,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.5,
+      letterSpacing: -0.6,
       height: 1.15,
-      color: Color(0xFF2A1C12),
+      color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
     ),
     valorGrande: TextStyle(
@@ -172,22 +177,22 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       fontWeight: FontWeight.w700,
       letterSpacing: -0.3,
       height: 1.2,
-      color: Color(0xFF2A1C12),
+      color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
     ),
     valorLinha: TextStyle(
       fontSize: 15,
       fontWeight: FontWeight.w600,
       height: 1.3,
-      color: Color(0xFF2A1C12),
+      color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
     ),
   );
 
   static const GranaTokens dark = GranaTokens(
-    mata: Color(0xFF6CC596),
+    mata: Color(0xFF62C493),
     milho: Color(0xFFF3C35A),
-    sobreMilho: Color(0xFF2A1C12),
+    sobreMilho: Color(0xFF231C16),
     rio: Color(0xFF7DB9EA),
     essencial: Color(0xFFF5CBA4),
     importante: Color(0xFFDA955C),
@@ -204,18 +209,18 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       SpendingCategory.other: Color(0xFF8A7D73),
     },
     heatmapScale: [
-      Color(0xFF422715),
-      Color(0xFF66381A),
-      Color(0xFF8F4E22),
-      Color(0xFFC27438),
-      Color(0xFFE8A066),
+      Color(0xFF7A4A26),
+      Color(0xFF9C5E2E),
+      Color(0xFFBE7638),
+      Color(0xFFDA955C),
+      Color(0xFFF5CBA4),
     ],
     valorDestaque: TextStyle(
-      fontSize: 32,
+      fontSize: 34,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.5,
+      letterSpacing: -0.6,
       height: 1.15,
-      color: Color(0xFFF7EFE6),
+      color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
     ),
     valorGrande: TextStyle(
@@ -223,14 +228,14 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       fontWeight: FontWeight.w700,
       letterSpacing: -0.3,
       height: 1.2,
-      color: Color(0xFFF7EFE6),
+      color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
     ),
     valorLinha: TextStyle(
       fontSize: 15,
       fontWeight: FontWeight.w600,
       height: 1.3,
-      color: Color(0xFFF7EFE6),
+      color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
     ),
   );
@@ -422,6 +427,7 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
         color: scheme.onSurface,
         fontSize: 20,
         fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
       ),
     ),
     cardTheme: CardThemeData(
@@ -453,24 +459,24 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
         borderRadius: BorderRadius.circular(GranaRadius.chip),
       ),
       side: BorderSide(color: scheme.outlineVariant),
-      selectedColor: scheme.primaryContainer,
+      selectedColor: scheme.secondaryContainer,
       backgroundColor: scheme.surfaceContainer,
       labelStyle: TextStyle(color: scheme.onSurface),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: scheme.surfaceContainer,
+      fillColor: scheme.surfaceContainerLowest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(GranaRadius.field),
-        borderSide: BorderSide(color: scheme.outlineVariant),
+        borderSide: BorderSide(color: scheme.outline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(GranaRadius.field),
-        borderSide: BorderSide(color: scheme.outlineVariant),
+        borderSide: BorderSide(color: scheme.outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(GranaRadius.field),
-        borderSide: BorderSide(color: scheme.primary, width: 1.5),
+        borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     ),
@@ -492,8 +498,8 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
     ),
     navigationBarTheme: NavigationBarThemeData(
       elevation: 0,
-      backgroundColor: scheme.surfaceContainerLow,
-      indicatorColor: scheme.primaryContainer,
+      backgroundColor: scheme.surfaceContainer,
+      indicatorColor: scheme.secondaryContainer,
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         final selected = states.contains(WidgetState.selected);
         return TextStyle(
@@ -504,9 +510,9 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
       }),
     ),
     navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: scheme.surfaceContainerLow,
-      indicatorColor: scheme.primaryContainer,
-      selectedIconTheme: IconThemeData(color: scheme.onPrimaryContainer),
+      backgroundColor: scheme.surfaceContainer,
+      indicatorColor: scheme.secondaryContainer,
+      selectedIconTheme: IconThemeData(color: scheme.onSecondaryContainer),
       unselectedIconTheme: IconThemeData(color: scheme.onSurfaceVariant),
       selectedLabelTextStyle: TextStyle(
         color: scheme.onSurface,

@@ -6,6 +6,7 @@ import '../finance/queries.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
+import '../theme/pacoca_mascot.dart';
 import 'bank_detail_screen.dart';
 import 'cash_entry_sheet.dart';
 import 'connections_screen.dart';
@@ -142,6 +143,14 @@ class HomeScreen extends StatelessWidget {
           hideValues: state.hideValues,
         );
 
+        final pacocaInsight = monthPlainTxs.isEmpty
+            ? null
+            : _PacocaInsightStrip(
+                summaryData: s,
+                hideValues: state.hideValues,
+                onTap: () => state.selectTab(3),
+              );
+
         final accountsCard = _AccountsSummaryCard(
           summaryData: s,
           hideValues: state.hideValues,
@@ -196,6 +205,10 @@ class HomeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           heroCard,
+                          if (pacocaInsight != null) ...[
+                            const SizedBox(height: GranaSpacing.md),
+                            pacocaInsight,
+                          ],
                           const SizedBox(height: GranaSpacing.lg),
                           accountsCard,
                           const SizedBox(height: GranaSpacing.xl),
@@ -242,6 +255,10 @@ class HomeScreen extends StatelessWidget {
               ],
               const SizedBox(height: GranaSpacing.lg),
               heroCard,
+              if (pacocaInsight != null) ...[
+                const SizedBox(height: GranaSpacing.md),
+                pacocaInsight,
+              ],
               const SizedBox(height: GranaSpacing.lg),
               accountsCard,
               const SizedBox(height: GranaSpacing.xl),
@@ -999,3 +1016,66 @@ class _RecentTransactionsSection extends StatelessWidget {
     );
   }
 }
+
+class _PacocaInsightStrip extends StatelessWidget {
+  const _PacocaInsightStrip({
+    required this.summaryData,
+    required this.hideValues,
+    required this.onTap,
+  });
+
+  final Summary summaryData;
+  final bool hideValues;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final message = hideValues
+        ? 'Seus valores estão ocultos. Toque aqui para conversar com a Paçoca.'
+        : summaryData.leftoverCents >= 0
+        ? 'O mês segue no azul. Bom ritmo — quer revisar algum gasto com a Paçoca?'
+        : 'As saídas passaram das entradas neste mês. Bora ver o que pesou com calma?';
+
+    return Card(
+      key: const Key('home_pacoca_insight_card'),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(GranaRadius.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: GranaSpacing.md,
+            vertical: GranaSpacing.md,
+          ),
+          child: Row(
+            children: [
+              const AnimatedPacocaMascot(
+                mood: PacocaMood.portrait,
+                size: 48,
+                semanticLabel: 'Paçoca',
+              ),
+              const SizedBox(width: GranaSpacing.md),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

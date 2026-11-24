@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../state/demo_profiles.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
+import '../theme/pacoca_mascot.dart';
 
 enum _OnboardingStep {
   welcome,
@@ -19,7 +20,7 @@ enum _OnboardingStep {
 }
 
 /// First-access trail ("Trilha até a toca") and reusable profile guide
-/// (RF-08, RF-63).
+/// styled in Toca Editorial with interactive Paçoca animations (RF-08, RF-63).
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key, this.profileOnly = false});
 
@@ -37,6 +38,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late Set<HomeTrait> _homeTraits;
   late Set<TransportMode> _transportModes;
   final Set<String> _deselectedRuleIds = {};
+  bool _demoPasswordPeek = false;
   bool _initialized = false;
 
   @override
@@ -109,6 +111,54 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  ({PacocaMood mood, double gazeX, double securityProgress}) get _mascotState {
+    switch (_currentStep) {
+      case _OnboardingStep.welcome:
+        return (mood: PacocaMood.welcome, gazeX: 0.0, securityProgress: 0.0);
+      case _OnboardingStep.server:
+        return (
+          mood: PacocaMood.trackingInput,
+          gazeX: 0.25,
+          securityProgress: 0.0,
+        );
+      case _OnboardingStep.login:
+        return (
+          mood: _demoPasswordPeek
+              ? PacocaMood.peekingPassword
+              : PacocaMood.coveringEyes,
+          gazeX: 0.0,
+          securityProgress: 0.0,
+        );
+      case _OnboardingStep.authenticator:
+        return (
+          mood: PacocaMood.securityShield,
+          gazeX: 0.0,
+          securityProgress: 0.67,
+        );
+      case _OnboardingStep.occupation:
+        final g = (_occupations.length.clamp(0, 4) / 4.0) * 1.1 - 0.55;
+        return (mood: PacocaMood.trackingInput, gazeX: g, securityProgress: 0);
+      case _OnboardingStep.home:
+        final g = (_homeTraits.length.clamp(0, 4) / 4.0) * 1.1 - 0.55;
+        return (mood: PacocaMood.trackingInput, gazeX: g, securityProgress: 0);
+      case _OnboardingStep.transport:
+        final g = (_transportModes.length.clamp(0, 4) / 4.0) * 1.1 - 0.55;
+        return (mood: PacocaMood.trackingInput, gazeX: g, securityProgress: 0);
+      case _OnboardingStep.reviewRules:
+        return (
+          mood: PacocaMood.securityShield,
+          gazeX: 0.0,
+          securityProgress: 1.0,
+        );
+      case _OnboardingStep.connectBanks:
+        return (
+          mood: PacocaMood.celebrating,
+          gazeX: 0.0,
+          securityProgress: 1.0,
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -116,7 +166,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final textTheme = Theme.of(context).textTheme;
     final stepNumber = _index + 1;
     final totalSteps = _steps.length;
-    final progress = stepNumber / totalSteps;
+    final mascot = _mascotState;
 
     return Scaffold(
       appBar: AppBar(
@@ -145,12 +195,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               GranaSpacing.lg,
               GranaSpacing.md,
               GranaSpacing.lg,
-              GranaSpacing.sm,
+              GranaSpacing.xs,
             ),
             child: Semantics(
               label: 'Etapa $stepNumber de $totalSteps',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Etapa $stepNumber de $totalSteps',
@@ -160,14 +210,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(GranaRadius.pill),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 6,
-                      backgroundColor: scheme.surfaceContainerHighest,
-                    ),
+                  EditorialStepDots(
+                    total: totalSteps,
+                    currentIndex: _index,
                   ),
                 ],
               ),
@@ -178,8 +223,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 640),
                 child: ListView(
-                  padding: const EdgeInsets.all(GranaSpacing.lg),
-                  children: [_buildStepContent(context, state)],
+                  padding: const EdgeInsets.fromLTRB(
+                    GranaSpacing.lg,
+                    GranaSpacing.xs,
+                    GranaSpacing.lg,
+                    GranaSpacing.lg,
+                  ),
+                  children: [
+                    Center(
+                      child: AnimatedPacocaMascot(
+                        key: const Key('onboarding_pacoca_mascot'),
+                        mood: mascot.mood,
+                        gazeX: mascot.gazeX,
+                        gazeY: 0.3,
+                        securityProgress: mascot.securityProgress,
+                        size: MediaQuery.sizeOf(context).height < 680
+                            ? 76
+                            : 108,
+                      ),
+                    ),
+                    Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          MediaQuery.sizeOf(context).height < 680
+                              ? GranaSpacing.md
+                              : GranaSpacing.lg,
+                        ),
+                        child: _buildStepContent(context, state),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -214,20 +287,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(GranaRadius.card),
-              ),
-              child: Icon(
-                Icons.savings_outlined,
-                size: 34,
-                color: scheme.onPrimaryContainer,
-              ),
-            ),
-            const SizedBox(height: GranaSpacing.xl),
+            const GranaPacaLogo(compact: true, showTagline: true),
+            const SizedBox(height: GranaSpacing.lg),
             Text(
               'Boas-vindas ao GranaPaCá',
               style: textTheme.headlineSmall?.copyWith(
@@ -284,21 +345,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         );
 
       case _OnboardingStep.login:
-        return _LockedDemoStep(
-          title: 'Entrar na instância',
-          subtitle:
-              'A senha fica apenas na sua instância self-hosted, protegida '
-              'sem credenciais padrão.',
-          fields: const [
-            _LockedField(
-              label: 'E-mail',
-              value: 'bia@demo.local',
-              icon: Icons.person_outline,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _LockedDemoStep(
+              title: 'Entrar na instância',
+              subtitle:
+                  'A senha fica apenas na sua instância self-hosted, protegida '
+                  'sem credenciais padrão.',
+              fields: [
+                const _LockedField(
+                  label: 'E-mail',
+                  value: 'bia@demo.local',
+                  icon: Icons.person_outline,
+                ),
+                _LockedField(
+                  label: 'Senha',
+                  value: _demoPasswordPeek ? 'demo-ficticia' : '••••••••••••',
+                  icon: Icons.lock_outline,
+                ),
+              ],
             ),
-            _LockedField(
-              label: 'Senha',
-              value: '••••••••••••',
-              icon: Icons.lock_outline,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('demo_password_peek_toggle'),
+                onPressed: () =>
+                    setState(() => _demoPasswordPeek = !_demoPasswordPeek),
+                icon: Icon(
+                  _demoPasswordPeek
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 18,
+                ),
+                label: Text(
+                  _demoPasswordPeek
+                      ? 'Voltar a cobrir os olhos'
+                      : 'Ver a espiadinha da Paçoca',
+                ),
+              ),
             ),
           ],
         );
