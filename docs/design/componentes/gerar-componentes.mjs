@@ -1,9 +1,9 @@
 // Gera as folhas da biblioteca de componentes em SVG, nos temas claro e escuro, a partir do tokens.json.
 // Uso: node docs/design/componentes/gerar-componentes.mjs
-// As fontes do app (Baloo 2 e Figtree) só aparecem onde estiverem instaladas; no GitHub entra a fonte do sistema.
+// As fontes do app (Plus Jakarta Sans e Inter) só aparecem onde estiverem instaladas; no GitHub entra a fonte do sistema.
 import { readFileSync, writeFileSync } from "node:fs";
 const T = JSON.parse(readFileSync(new URL("../tokens/tokens.json", import.meta.url), "utf8"));
-const INTERFACE = "Figtree, Inter, system-ui, sans-serif", MARCA = "'Baloo 2', ui-rounded, system-ui, sans-serif";
+const INTERFACE = "Inter, system-ui, -apple-system, sans-serif", MARCA = "'Plus Jakarta Sans', Inter, system-ui, sans-serif";
 const W = 960;
 let c; // cores do tema em uso
 

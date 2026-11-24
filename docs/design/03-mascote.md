@@ -122,13 +122,24 @@ A pose de frente está separada em **corpo**, **cabeça** e **olhos**. O corpo s
 
 ![Paçoca montada com as peças soltas: parada, acenando e feliz, ao lado da pose aprovada](mascote/ilustrada/partes/montagem.png)
 
-- **Ainda a melhorar nas peças:** a cabeça tem um tufo de pelo no topo e a máscara creme no focinho, e lê mais como ursinho do que a pose aprovada. Ao acenar, aparece a ponta do cinto do lado direito.
-- **Versão vetorial descartada por enquanto:** o traçado automático achata o sombreado suave em placas de cor e fica pior que a ilustração. Vetor só vale com redesenho à mão ou com uma arte de origem já chapada.
+- **Versão refinada Toca Editorial (2026-11-24):** preserva o acabamento ilustrado suave sem contorno preto, mas **remove a pochete verde da cintura** (deixando a barriga creme contínua e limpa em qualquer tamanho) e **alonga suavemente o focinho** com bochechas arredondadas de paca brasileira e fileiras limpas de pintas creme nas laterais.
+- **Camadas para animação nativa e Rive:** corpo/tronco com pintas, cabeça, pupilas móveis, pálpebras (piscada natural a cada 3–6 s), patas esquerda e direita independentes, escudo/cadeado de segurança e 3 pintas-moedinhas comemorativas.
 
-## A conferir
+## Coreografia na criação de conta (5 animações aprovadas)
 
-- **Ilustração final:** estes SVGs fixam proporções, cores e poses. A versão do Rive pode refinar curvas e detalhes, desde que mantenha essas três coisas e as regras acima.
+Na criação de conta, a Paçoca fica apoiada diretamente sobre a borda superior do cartão de cadastro (sem cenário poluído ao fundo) e reage a cada interação:
+
+| Etapa | Ação da pessoa | Reação animada da Paçoca | Entrada de estado |
+|---|---|---|---|
+| **1. Modo de acesso** | Alterna entre *No celular*, *Meu servidor* e *Demo* | Respiração leve, piscada natural e rotação suave da cabeça/olhar para o cartão selecionado | `modo` + `direcaoOlhar` (−1 a 1) |
+| **2. Nome / E-mail** | Digita no campo de texto | *Eye tracking*: pupilas e leve inclinação do focinho acompanham o comprimento do texto da esquerda para a direita | `olharTexto` (`progressoTexto` 0 a 1) |
+| **3. Senha / PIN** | Foca no campo de senha (ou alterna "mostrar senha") | Levanta as duas patas cobrindo os olhos (`cobrirOlhos`, 220 ms); se tocar no olhinho para revelar a senha, afasta apenas uma pata numa **espiadinha** discreta (`espiadinha`, 180 ms) | `cobrirOlhos` / `espiadinha` |
+| **4. Segurança (2FA / Biometria)** | Digita código de 6 números, ativa biometria ou erra código | Segura um escudo/cadeado luminoso cujas 3 pintas acendem conforme o progresso; em caso de erro, faz um balanço calmo de cabeça (`erroCalmo`, 320 ms), sem drama | `seguranca` (`progressoSeguranca`, `erroCalmo`) |
+| **5. Toca pronta!** | Conclui a criação da conta | Pulinho comemorativo elástico (`pulinhoConclusao`, 520 ms) com 3 pintas-moedinhas subindo em arco limpo | `comemorar` |
+
+> **Reduzir movimento:** com `MediaQuery.disableAnimations` ativo, cada etapa mostra diretamente a pose correspondente (sem *eye tracking* contínuo, pulo ou partículas) com transição suave de 150 ms.
 
 ## Próximo
 
-Parte 4: logo e ícone do app.
+[Parte 4](04-logo-e-icone.md): logo e ícone do app (Opção B — Paca Deitada Evoluída).
+

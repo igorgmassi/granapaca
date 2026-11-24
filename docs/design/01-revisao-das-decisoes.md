@@ -180,11 +180,22 @@ Entram nas Partes 7 e 8, sem mudar o número de partes:
 - comparação mês a mês;
 - correção de várias transações de uma vez no extrato.
 
+### 18. Revisão visual "Toca Editorial" (2026-11-24)
+
+Após auditoria visual das primeiras pranchas e rodada de validação com cinco direções visuais distintas, a Fase 0 foi refinada para uma apresentação mais limpa e coesa:
+
+- **Paleta Toca Editorial:** o fundo claro saiu do bege saturado para algodão quente (`#FAF8F5`) e o escuro para toca noturna (`#14110F`), com cartões de borda fina (`outlineVariant`) e uso pontual do Terracota (`#A84C19` / `#E5965C`) e da Mata (`#1D6B48` / `#62C493`). Todos os 108 pares continuam passando no `check-contrast.mjs`.
+- **Tipografia unificada:** `Plus Jakarta Sans` substitui `Baloo 2` na marca e títulos, e `Inter` (`tnum`) assume interface e números tabulares, alinhando logo, títulos e valores numa linguagem editorial moderna.
+- **Logo e ícone (Opção B — Paca Deitada Evoluída):** mantém a assinatura da paca descansando sobre `PaCá`, agora em traço limpo sem contorno preto e tipografia sem serifa; o ícone do app passa a usar a própria paca deitada (em claro, escuro, tingido, Android adaptativo/monocromático e favicon), eliminando o conflito visual da pochete verde sobre fundo caramelo.
+- **Paçoca ilustrada refinada:** preserva o acabamento ilustrado suave sem contorno preto, mas **remove a pochete da cintura** e **alonga suavemente o focinho**, reforçando a leitura imediata de paca brasileira e limpando a silhueta em tamanhos pequenos.
+- **Criação de conta animada:** o cenário provisório de colinas estáticas dá lugar a cartões limpos com a Paçoca apoiada na borda superior, com 5 animações interativas: (1) olhar direcional ao alternar entre *No celular*, *Meu servidor* e *Demo*; (2) acompanhamento do olhar ao digitar e-mail/nome; (3) patas tampando os olhos no campo de senha, com espiadinha discreta ao tocar em "mostrar senha"; (4) escudo/cadeado no 2FA/biometria com balanço calmo em caso de erro; e (5) pulinho de comemoração com três pintas-moedinhas ao finalizar. Tudo respeita `Reduzir movimento`.
+
 ## Pendências
 
-- **Primeira conta num servidor novo:** o plano ainda não diz como a conta do dono nasce. Isso define a variação "criar conta" da etapa Entrar [Conferir: Parte 8 do plano, Segurança].
-- **Endereço do servidor por QR Code [Proposta]:** digitar o endereço do Tailscale no celular é o passo mais chato do primeiro acesso. Se o servidor mostrar um QR Code na instalação, o app lê com a câmera, e digitar fica como alternativa. Depende do backend (Partes 6 e 10 do plano).
+- **Primeira conta num servidor novo:** o fluxo "criar conta" da etapa Entrar suporta tanto o servidor próprio quanto o modo local criptografado no aparelho (ADR-030).
+- **Endereço do servidor por QR Code [Proposta]:** digitar o endereço do Tailscale no celular é o passo mais chato do primeiro acesso. Se o servidor mostrar um QR Code na instalação, o app lê com a câmera, e digitar fica como alternativa.
 
 ## Próximo
 
-Parte 2: design tokens em JSON e Dart, com as cores dos gráficos no tema escuro e a associação de cada grupo a uma cor.
+Parte 2: design tokens em JSON e Dart (atualizados para Toca Editorial).
+
