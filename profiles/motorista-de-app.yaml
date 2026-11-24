@@ -1,0 +1,40 @@
+id: motorista-de-app
+group: occupation
+label: Motorista de app
+description: Quem gera renda dirigindo por aplicativo e tem custos diretos com veículo, combustível e dados móveis.
+rules:
+  - id: driver-combustivel
+    name: Combustível e abastecimento
+    explanation: Combustível é o principal insumo de quem dirige por aplicativo — sem ele, não há corridas.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [transport]
+      keywords: [posto, combustivel, gasolina, etanol, gnv, shell, ipiranga, petrobras, abastecimento]
+
+  - id: driver-manutencao-veiculo
+    name: Manutenção, pneus e seguro do veículo
+    explanation: Manter o carro revisado e protegido preserva a sua renda e evita ficar dias sem rodar.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [transport]
+      keywords: [oficina, mecanica, troca de oleo, pneu, alinhamento, balanceamento, autopecas, seguro auto]
+
+  - id: driver-plano-dados
+    name: Plano de celular e dados móveis
+    explanation: Os aplicativos de corrida e navegação dependem de sinal de dados o tempo todo na rua.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [claro, vivo, tim, recarga, plano movel, telefonia]
+
+  - id: driver-lavagem-estetica
+    name: Lavagem e cuidados com o carro
+    explanation: Carro limpo melhora o conforto de quem passa horas dirigindo e ajuda na avaliação das corridas.
+    essentiality: important
+    brand: Trabalho
+    match:
+      categories: [transport]
+      keywords: [lava jato, lavajato, lavagem, higienizacao, estetica automotiva]

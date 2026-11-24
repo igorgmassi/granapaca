@@ -1,0 +1,31 @@
+id: casa-pets
+group: home
+label: Tem pets
+description: Quem tem cães, gatos ou outros animais de estimação e reserva parte do mês para alimentação e saúde deles.
+rules:
+  - id: pets-racao-petshop
+    name: Ração, areia e itens básicos de petshop
+    explanation: Ração e itens de higiene são cuidados básicos e previsíveis de quem tem pets.
+    essentiality: essential
+    brand: Pets
+    match:
+      categories: [shopping]
+      keywords: [petshop, pet shop, petz, cobasi, petlove, racao, areia higienica]
+
+  - id: pets-veterinario
+    name: Veterinário, vacinas e remédios pet
+    explanation: Consultas, vacinas e medicamentos mantêm a saúde do animal em dia e evitam urgências.
+    essentiality: essential
+    brand: Pets
+    match:
+      categories: [health]
+      keywords: [veterinario, clinica vet, hospital vet, vacina pet, antipulgas, vermifugo]
+
+  - id: pets-banho-tosa
+    name: Banho, tosa e creche pet
+    explanation: Higiene regular e apoio em dias corridos ajudam no bem-estar do pet.
+    essentiality: important
+    brand: Pets
+    match:
+      categories: [services]
+      keywords: [banho e tosa, tosa, creche pet, hotel pet, dog walker]

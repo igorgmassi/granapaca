@@ -1,0 +1,40 @@
+id: transporte-carro-moto
+group: transport
+label: Carro ou moto
+description: Quem usa veículo próprio no dia a dia e precisa prever combustível, manutenção, pedágio e documentação.
+rules:
+  - id: vehicle-combustivel
+    name: Combustível
+    explanation: Abastecer faz parte da mobilidade básica de quem depende de carro ou moto.
+    essentiality: essential
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [posto, combustivel, gasolina, etanol, diesel, shell, ipiranga, petrobras]
+
+  - id: vehicle-manutencao-seguro
+    name: Oficina, seguro e documentação
+    explanation: Manutenção preventiva, seguro e impostos mantêm o veículo rodando com segurança.
+    essentiality: essential
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [oficina, mecanica, revisao, pneu, seguro auto, seguro moto, ipva, licenciamento, detran]
+
+  - id: vehicle-pedagio-estacionamento
+    name: Pedágio e estacionamento
+    explanation: Pedágios e estacionamentos costumam acompanhar trajetos de trabalho e compromissos.
+    essentiality: important
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [pedagio, sem parar, veloe, conectcar, taggy, estacionamento, estapar, zona azul]
+
+  - id: vehicle-lavagem
+    name: Lavagem e cuidados estéticos
+    explanation: Manter o veículo limpo ajuda na conservação, mas a frequência dá para ajustar no mês.
+    essentiality: flexible
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [lava jato, lavajato, lavagem, polimento]

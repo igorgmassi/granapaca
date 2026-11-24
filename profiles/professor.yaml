@@ -1,0 +1,40 @@
+id: professor
+group: occupation
+label: Professor
+description: Quem leciona em escola, faculdade ou aulas particulares e investe em preparo de aulas e formação continuada.
+rules:
+  - id: teacher-livros-didaticos
+    name: Livros e material didático
+    explanation: Livros de referência e material de apoio servem diretamente para preparar e conduzir as aulas.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [education, shopping]
+      keywords: [livraria, editora, didatico, papelaria, impressao, copia, quadro branco]
+
+  - id: teacher-internet-aulas
+    name: Internet e plataformas de aula
+    explanation: Preparar aulas, corrigir atividades e atender turmas online depende de boa conexão e ferramentas de ensino.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [fibra, internet, zoom, google workspace, meet, canva]
+
+  - id: teacher-formacao-continuada
+    name: Formação continuada e eventos
+    explanation: Especializações, congressos e cursos de extensão mantêm a prática docente atualizada.
+    essentiality: important
+    brand: Estudo
+    match:
+      categories: [education]
+      keywords: [pos graduacao, mestrado, congresso, simposio, curso extensao, seminario]
+
+  - id: teacher-saude-voz
+    name: Cuidados com voz e ergonomia
+    explanation: Quem dá aula usa a voz todos os dias; cuidar dela previne desgaste e afastamentos.
+    essentiality: important
+    brand: Saúde
+    match:
+      categories: [health]
+      keywords: [fonoaudiologo, fonoaudiologia, otorrino, farmacia, pastilha]

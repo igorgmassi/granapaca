@@ -1,0 +1,31 @@
+id: transporte-bicicleta-ape
+group: transport
+label: Bicicleta ou a pé
+description: Quem faz os trajetos do dia a dia de bicicleta ou caminhando.
+rules:
+  - id: active-manutencao-bike
+    name: Bicicletaria, peças e bike compartilhada
+    explanation: Revisão, peças ou plano de bicicleta compartilhada mantêm o meio de transporte funcionando com segurança.
+    essentiality: essential
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [bicicletaria, bike, bicicleta, tembici, bike itau, camara de ar, pneu bike, revisao bike]
+
+  - id: active-calcados-equipamentos
+    name: Tênis, capacete e iluminação
+    explanation: Calçados confortáveis e itens de segurança fazem diferença para quem anda a pé ou pedala todo dia.
+    essentiality: important
+    brand: Transporte
+    match:
+      categories: [shopping, transport]
+      keywords: [decathlon, centauro, tenis caminhada, capacete, lanterna bike, capa de chuva]
+
+  - id: active-transporte-alternativo
+    name: Passagens ou corridas em dias de chuva
+    explanation: Em dias de chuva forte ou trajetos longos, usar ônibus ou app é uma alternativa flexível.
+    essentiality: flexible
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [uber, 99, metro, onibus, bilhete unico]
