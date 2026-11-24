@@ -9,19 +9,19 @@ import '../finance/taxonomy.dart';
 const _food = SpendingCategory.food;
 const _essential = Essentiality.essential;
 const _important = Essentiality.important;
-const _superfluous = Essentiality.superfluous;
+const _flexible = Essentiality.flexible;
 
 /// Card purchases repeated every month: day, description, cents, category,
 /// essentiality.
 const _cardPurchases = [
   (3, 'Supermercado Bom Preço', 48230, _food, _essential),
   (9, 'Posto Estrada Real', 21000, SpendingCategory.transport, _important),
-  (11, 'Restaurante Sabor da Serra', 8950, _food, _superfluous),
+  (11, 'Restaurante Sabor da Serra', 8950, _food, _flexible),
   (14, 'Farmácia Vida Plena', 6420, SpendingCategory.health, _essential),
   (17, 'Supermercado Bom Preço', 39110, _food, _essential),
-  (19, 'Streaming Cine+', 3990, SpendingCategory.services, _superfluous),
+  (19, 'Streaming Cine+', 3990, SpendingCategory.services, _flexible),
   (22, 'Livraria Página Virada', 7480, SpendingCategory.education, _important),
-  (25, 'Loja Tudo pra Casa', 12900, SpendingCategory.shopping, _superfluous),
+  (25, 'Loja Tudo pra Casa', 12900, SpendingCategory.shopping, _flexible),
 ];
 
 /// Debit and Pix spending in the second bank, same shape.
@@ -164,8 +164,22 @@ Dataset demoDataset() {
 
   return Dataset(
     banks: const [
-      Bank('aurora', 'Banco Aurora'),
-      Bank('siriema', 'Banco Siriema'),
+      Bank(
+        'aurora',
+        'Banco Aurora',
+        colorValue: 0xFF8B3E05,
+        lastSyncedLabel: 'Sincronizado hoje às 08:15',
+        connectionStatus: ConnectionStatus.expiringSoon,
+        consentDaysRemaining: 15,
+      ),
+      Bank(
+        'siriema',
+        'Banco Siriema',
+        colorValue: 0xFF2A7550,
+        lastSyncedLabel: 'Sincronizado hoje às 08:16',
+        connectionStatus: ConnectionStatus.connected,
+        consentDaysRemaining: 84,
+      ),
     ],
     accounts: const [
       Account(
@@ -187,6 +201,9 @@ Dataset demoDataset() {
         bankId: 'aurora',
         name: 'Cartão Aurora',
         kind: AccountKind.creditCard,
+        lastFourDigits: '4821',
+        closingDay: 28,
+        dueDay: 10,
       ),
       Account(
         id: 'siriema-cc',

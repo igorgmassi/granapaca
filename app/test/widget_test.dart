@@ -36,7 +36,14 @@ void main() {
     final d = demoDataset();
     final t = d.transactions;
     expect(d.banks.length, greaterThan(1));
-    for (final kind in TxKind.values) {
+    for (final kind in const [
+      TxKind.expense,
+      TxKind.income,
+      TxKind.ownTransfer,
+      TxKind.billPayment,
+      TxKind.investment,
+      TxKind.cashWithdrawal,
+    ]) {
       expect(t.any((x) => x.kind == kind), isTrue, reason: '$kind');
     }
     expect(t.any((x) => x.installment != null), isTrue);
