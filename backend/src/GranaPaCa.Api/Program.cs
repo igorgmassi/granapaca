@@ -43,6 +43,7 @@ public sealed class Program
                 OpaqueBearerAuthenticationHandler.SchemeName,
                 _ => { });
         builder.Services.AddAuthorization();
+        builder.Services.AddOpenApi();
 
         builder.Services.AddKeyringModule(builder.Configuration);
         builder.Services.AddIdentityModule(builder.Configuration);
@@ -76,10 +77,12 @@ public sealed class Program
         app.UseAuthorization();
 
         app.MapHealthChecks("/health").AllowAnonymous();
+        app.MapOpenApi().AllowAnonymous();
         app.MapIdentityEndpoints();
         app.MapAlertsEndpoints();
         app.MapCategorizationEndpoints();
         app.MapBankingEndpoints();
+        app.MapAccountPurgeEndpoints();
 
         app.Run();
     }

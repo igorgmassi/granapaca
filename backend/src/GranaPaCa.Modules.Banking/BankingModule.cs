@@ -37,6 +37,8 @@ public static class BankingModule
         services.AddScoped<IBankingSyncTrigger>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<ITransactionReclassifier>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<BankingQueries>();
+        services.AddScoped<BankingDeltaSyncService>();
+        services.AddSingleton<IBankingPurgeService, BankingPurgeService>();
 
         services.AddHostedService<DailySyncWorker>();
         return services;
@@ -351,6 +353,61 @@ public static class BankingModule
                 summary.TransfersLinked,
                 summary.FailedConnections,
                 message));
+        });
+
+        api.MapGet("/sync/changes", async (
+            string? cursor,
+            ClaimsPrincipal user,
+            BankingDeltaSyncService deltaSync,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, data) = await deltaSync.GetChangesAsync(householdId, cursor, cancellationToken);
+            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
+        });
+
+        api.MapPost("/imports/ofx", async (
+            ImportStatementRequest? request,
+            ClaimsPrincipal user,
+            BankingSyncService syncService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, data) = await syncService.ImportStatementAsync(
+                householdId,
+                "ofx",
+                request,
+                cancellationToken);
+
+            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
+        });
+
+        api.MapPost("/imports/csv", async (
+            ImportStatementRequest? request,
+            ClaimsPrincipal user,
+            BankingSyncService syncService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, data) = await syncService.ImportStatementAsync(
+                householdId,
+                "csv",
+                request,
+                cancellationToken);
+
+            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
         });
 
         return endpoints;

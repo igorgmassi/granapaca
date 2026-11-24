@@ -22,6 +22,7 @@ public static class CategorizationModule
 
         services.AddSingleton<ProfileCatalog>();
         services.AddSingleton<ICategorizationEngine, CategorizationEngine>();
+        services.AddSingleton<ICategorizationPurgeService, CategorizationPurgeService>();
         return services;
     }
 

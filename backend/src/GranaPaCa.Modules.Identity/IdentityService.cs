@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using System.Security.Cryptography;
 using Dapper;
+using GranaPaCa.Modules.Identity.Contracts;
 using GranaPaCa.Modules.Keyring.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -12,7 +13,7 @@ internal sealed class IdentityService(
     NpgsqlDataSource dataSource,
     IEnvelopeEncryptor envelopeEncryptor,
     SessionService sessionService,
-    IConfiguration configuration)
+    IConfiguration configuration) : IIdentityPurgeService
 {
     private const string AppName = "GranaPaCa";
     private const string AppVersion = "0.2.0";
@@ -467,6 +468,99 @@ internal sealed class IdentityService(
             issued.ExpiresAt,
             issued.SessionId,
             issued.Owner));
+    }
+
+    public async Task<bool> VerifyOwnerCredentialsAsync(
+        Guid ownerId,
+        Guid householdId,
+        string password,
+        string totpCode,
+        CancellationToken cancellationToken = default)
+    {
+        if (ownerId == Guid.Empty ||
+            householdId == Guid.Empty ||
+            string.IsNullOrEmpty(password) ||
+            string.IsNullOrWhiteSpace(totpCode))
+        {
+            PasswordHasher.VerifyDummy(password);
+            return false;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var owner = await connection.QuerySingleOrDefaultAsync<OwnerRow>(new CommandDefinition(
+            """
+            SELECT id AS Id,
+                   household_id AS HouseholdId,
+                   email AS Email,
+                   display_name AS DisplayName,
+                   password_hash AS PasswordHash,
+                   totp_secret_enc AS TotpSecretEnc,
+                   totp_enabled AS TotpEnabled
+            FROM identity.owner
+            WHERE id = @OwnerId
+              AND household_id = @HouseholdId
+            """,
+            new { OwnerId = ownerId, HouseholdId = householdId },
+            cancellationToken: cancellationToken));
+
+        if (owner is null)
+        {
+            PasswordHasher.VerifyDummy(password);
+            return false;
+        }
+
+        if (!PasswordHasher.Verify(password, owner.PasswordHash))
+        {
+            return false;
+        }
+
+        if (!owner.TotpEnabled || owner.TotpSecretEnc is null)
+        {
+            return false;
+        }
+
+        var decryptedSecret = await envelopeEncryptor.DecryptAsync(
+            owner.TotpSecretEnc,
+            OwnerTable,
+            TotpSecretColumn,
+            owner.Id,
+            cancellationToken);
+        try
+        {
+            return TotpService.VerifyCode(decryptedSecret, totpCode);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(decryptedSecret);
+        }
+    }
+
+    public async Task PurgeHouseholdAsync(
+        Guid householdId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        // Remove auth attempt entries linked to purged household owners before cascading household delete.
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM identity.auth_attempt a
+            USING identity.owner o
+            WHERE o.household_id = @HouseholdId
+              AND right(a.client_key, length(o.email) + 1) = ':' || o.email
+            """,
+            new { HouseholdId = householdId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM identity.household WHERE id = @HouseholdId",
+            new { HouseholdId = householdId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
     }
 
     private async Task<bool> VerifySecondFactorAsync(
