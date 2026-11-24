@@ -2,15 +2,15 @@
 
 # GranaPaCá
 
-**Todas as suas contas num só lugar, na sua própria máquina.**
+**Todas as suas contas num só lugar, no seu aparelho ou na sua própria máquina.**
 
-App de finanças pessoais open source e self-hosted: Open Finance via Pluggy, categorização por regras e IA, e privacidade em primeiro lugar.
+App de finanças pessoais open source, local-first e self-hosted: comece só no celular ou computador sem servidor, ou suba a sua instância com Open Finance via Pluggy e IA opcional gratuita.
 
 [![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](LICENSE)
 ![Status: em desenvolvimento ativo](https://img.shields.io/badge/status-em%20desenvolvimento%20ativo-brightgreen)
 [![secret-scan](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml)
 
-[English](README.en.md) · [Demo web](https://igorgmassi.github.io/granapaca/) · [Arquitetura](#arquitetura) · [Roadmap](#roadmap) · [Segurança](SECURITY.md) · [Contribuir](CONTRIBUTING.md)
+[English](README.en.md) · [Demo web](https://igorgmassi.github.io/granapaca/) · [Como usar](#como-usar-do-mais-simples-ao-self-hosted) · [Arquitetura](#arquitetura) · [Roadmap](#roadmap) · [Segurança](SECURITY.md) · [Contribuir](CONTRIBUTING.md)
 
 </div>
 
@@ -19,13 +19,21 @@ App de finanças pessoais open source e self-hosted: Open Finance via Pluggy, ca
 
 ## O que é
 
-O GranaPaCá reúne as contas de vários bancos num só lugar, via Open Finance: saldo, extrato, cartões e faturas, com o histórico completo de gastos e ganhos. Regras e IA categorizam cada transação, e um chat responde perguntas sobre as suas finanças mostrando os números e o período usados.
+O GranaPaCá reúne suas finanças pessoais num só lugar — saldo, extrato, cartões, faturas, orçamentos e metas — sem servidor central e sem coletar seus dados. Regras determinísticas e a assistente **Paçoca** categorizam cada transação e respondem perguntas sobre o seu dinheiro mostrando os números e o período usados.
 
-Cada pessoa roda a própria instância (self-hosted, single-tenant), com as próprias credenciais da Pluggy e dos provedores de IA. Não existe servidor central: quem mantém o projeto não tem acesso aos dados de ninguém.
+Você pode começar **direto no próprio aparelho, sem instalar Docker nem banco de dados**, ou rodar a **própria instância (self-hosted, single-tenant)** com as próprias credenciais da Pluggy e provedores de IA opcionais. Não existe servidor central: quem mantém o projeto não tem acesso aos dados de ninguém.
+
+## Como usar (do mais simples ao self-hosted)
+
+Comece do jeito mais simples hoje e evolua quando quiser, sem perder seu histórico ([ADR-030](docs/adr/0030-modo-local-no-aparelho-e-ia-gratuita.md)):
+
+1. **Só neste aparelho (sem servidor):** abra o app, guarde tudo cifrado no próprio celular ou computador, proteja com PIN/biometria, importe extratos OFX/CSV ou notas NFC-e, lance gastos na hora e faça backup/restauração em JSON com 1 toque — **zero Docker, zero PostgreSQL e nenhuma conta de IA paga**.
+2. **Explorar a demo:** teste o app completo direto no navegador ([demo web no GitHub Pages](https://igorgmassi.github.io/granapaca/)) sem instalar nada, com dados 100% sintéticos.
+3. **Instância própria (Docker Compose):** para sincronização automática diária via Open Finance (Pluggy), vários aparelhos sincronizados e backup diário cifrado fora da máquina com `restic`. Veja [Rodando a sua instância](#rodando-a-sua-instância).
 
 ## Princípios
 
-- **Privacidade primeiro.** Os dados ficam na sua instância, segredos nunca chegam ao app e nada vai para a IA sem minimização.
+- **Privacidade primeiro.** Os dados ficam no seu aparelho ou na sua instância, segredos nunca chegam ao app e nada vai para a IA sem minimização.
 - **Somente leitura.** O app nunca inicia pagamentos nem movimenta dinheiro.
 - **IA como assistente, não como decisora.** Toda classificação vem com explicação e pode ser corrigida; regras sugeridas pela IA só valem depois de confirmadas.
 - **Rótulos sem julgamento.** Essencialidade em três níveis: Essencial, Importante e Flexível.
@@ -36,6 +44,7 @@ Cada pessoa roda a própria instância (self-hosted, single-tenant), com as pró
 
 | Área | O que faz | Status |
 |---|---|---|
+| Só neste aparelho | Banco local cifrado no celular/computador, bloqueio por PIN/biometria, lançamento rápido, importação OFX/CSV e NFC-e, e backup/restauração JSON em 1 toque — sem servidor | Em evolução ([ADR-030](docs/adr/0030-modo-local-no-aparelho-e-ia-gratuita.md)) |
 | Modo demo | Testar no navegador ([demo no GitHub Pages](https://igorgmassi.github.io/granapaca/)) ou no app com dados 100% sintéticos, sem conectar banco | Disponível (MVP) |
 | Contas e bancos | Conexão via Meu Pluggy, modo sintético automático, extrato consolidado e por banco, cartões/faturas e sincronização diária | Disponível (MVP) |
 | Categorização por regras | Motor determinístico em camadas (correções manuais, regras do usuário, perfil e sistema), fila "A revisar", histórico e desfazer | Disponível (MVP) |
@@ -44,48 +53,56 @@ Cada pessoa roda a própria instância (self-hosted, single-tenant), com as pró
 | Segurança e operação | 2FA TOTP, tokens opacos com refresh rotativo, criptografia de campo em envelope, cache offline cifrado, alertas na caixa de entrada e backup cifrado com `restic` | Disponível |
 | Importação e exportação | Importação de arquivos OFX/CSV (disponível); exportação em CSV, XLSX, PDF e backup completo em JSON | Parcial (pós-MVP) |
 | Dinheiro físico | Lançamento rápido de gastos em espécie, funcionando offline | Pós-MVP |
-| IA | Categorização do que as regras não resolvem e chat com ferramentas somente leitura (OpenAI, Anthropic, Google ou Ollama local), sempre com minimização e pseudonimização | Pós-MVP |
+| Assistente Paçoca e IA | Motor determinístico local grátis e offline por padrão; IA generativa opcional em camadas gratuitas (Google Gemini Flash, Groq, OpenRouter `:free`), Ollama local ou provedores pagos, sempre com minimização e pseudonimização | Pós-MVP |
 | Comprovantes e NFC-e | Armazenamento cifrado por arquivo no volume local, parser determinístico de XML/QR NFC-e (ES primeiro) e fallback opcional de visão por IA | Pós-MVP |
 | Planejamento e alertas | Orçamentos, metas, projeções, assinaturas esquecidas e notificações push opcionais via `ntfy` | Pós-MVP |
+
+### Assistente Paçoca e IA (nenhuma conta paga é obrigatória)
+
+Você **não precisa de nenhuma conta de IA paga** para usar o GranaPaCá:
+
+- **Grátis e offline por padrão:** a Paçoca funciona sem conta e sem internet usando o motor determinístico local (regras em camadas + perguntas financeiras sobre saldo, categorias, estabelecimentos, orçamentos, metas, regra 50/30/20, projeções e assinaturas), tanto no aparelho quanto no backend (`provider = "none"`).
+- **IA generativa gratuita ou local (opcional):** se quiser respostas generativas, há presets prontos para **Google Gemini Flash** (camada gratuita via Google AI Studio), **Groq** (camada gratuita compatível com OpenAI), **OpenRouter** (modelos `:free`) e **Ollama local** (100% gratuito na sua máquina), além de OpenAI e Anthropic.
+- **Privacidade preservada em qualquer tier:** toda chamada externa passa obrigatoriamente pela minimização e pseudonimização reversível de PII ([ADR-023](docs/adr/0023-minimizacao-e-pseudonimizacao-ia.md)), removendo CPF, CNPJ, contas, telefones e e-mails, com aviso transparente sobre as políticas de retenção de planos gratuitos antes de ativar a chave.
 
 ## Arquitetura
 
 ```mermaid
 flowchart LR
-  app["App Flutter<br/>Android · iOS · Windows · macOS · Linux<br/>cache local cifrado"]
+  app["App Flutter<br/>Android · iOS · Windows · macOS · Linux<br/>modo local cifrado ou cache offline"]
   demo["Demo web<br/>Flutter Web no GitHub Pages<br/>dados sintéticos, sem backend"]
 
-  subgraph instancia["Sua instância (Docker Compose)"]
+  subgraph instancia["Sua instância opcional (Docker Compose)"]
     api["Backend<br/>.NET 10 · ASP.NET Core<br/>monólito modular"]
     db[("PostgreSQL")]
     files[("Comprovantes<br/>volume cifrado")]
   end
 
   pluggy["Pluggy<br/>Open Finance"]
-  ia["Provedores de IA<br/>OpenAI · Anthropic · Google · Ollama"]
+  ia["Provedores de IA (opcionais)<br/>Google Gemini · Groq · OpenRouter<br/>Ollama · OpenAI · Anthropic"]
 
-  app -- "rede privada (Tailscale)" --> api
+  app -- "opcional: rede privada (Tailscale)" --> api
   api --> db
   api --> files
   api -- "somente leitura" --> pluggy
   api -- "dados minimizados" --> ia
 ```
 
-Só o backend fala com a Pluggy e com os provedores de IA, então segredos nunca chegam ao app. Por padrão, a API fica numa rede privada (Tailscale), sem exposição na internet. A demo web roda sozinha no navegador, sem backend.
+No modo **Só neste aparelho**, o app guarda tudo cifrado localmente e roda a Paçoca determinística offline, sem precisar de servidor. Na **instância própria**, só o backend fala com a Pluggy e com os provedores de IA opcionais, então segredos nunca chegam ao app e a API fica numa rede privada (Tailscale) por padrão. A **demo web** roda sozinha no navegador, sem backend.
 
 ## Stack de referência
 
 | Camada | Tecnologia |
 |---|---|
-| App (mobile, desktop e demo web) | Flutter e Dart 3 |
-| Backend | .NET 10 (LTS) e ASP.NET Core, como monólito modular |
-| Dados | PostgreSQL 18, Dapper e DbUp |
-| IA | Clientes HTTP tipados (caminho aberto para Microsoft.Extensions.AI), com OpenAI, Anthropic, Google e Ollama |
-| Integração bancária | Pluggy (Meu Pluggy) e importação de OFX/CSV |
+| App (mobile, desktop e demo web) | Flutter e Dart 3 (modo local cifrado sem servidor, cache offline e demo web) |
+| Backend (instância própria opcional) | .NET 10 (LTS) e ASP.NET Core, como monólito modular |
+| Dados | Armazenamento local cifrado no aparelho; PostgreSQL 18, Dapper e DbUp na instância |
+| IA | Motor determinístico local gratuito (padrão) + clientes HTTP tipados opcionais (Google Gemini Flash, Groq, OpenRouter, Ollama, OpenAI e Anthropic) |
+| Integração bancária | Importação OFX/CSV e NFC-e no aparelho; Pluggy (Meu Pluggy) na instância |
 | Infraestrutura | Docker Compose (amd64 e arm64), Tailscale, Caddy opcional e backup com restic |
 | Qualidade | GitHub Actions, xUnit, Testcontainers, ArchUnitNET e flutter_test |
 
-Todas as 29 decisões de arquitetura estão registradas em [`docs/adr`](docs/adr), e qualquer troca na stack passa por um ADR novo.
+Todas as 30 decisões de arquitetura estão registradas em [`docs/adr`](docs/adr), e qualquer troca na stack passa por um ADR novo.
 
 ## Estrutura do repositório
 
@@ -108,6 +125,9 @@ granapaca/
 Depois do MVP entram dinheiro físico, IA com minimização e pseudonimização, comprovantes e NFC-e, planejamento (orçamentos, metas e projeções), push via `ntfy` e exportação completa.
 
 ## Rodando a sua instância
+
+> [!TIP]
+> **Opcional:** você só precisa subir uma instância se quiser sincronização automática com bancos via Open Finance (Pluggy), múltiplos aparelhos sincronizados ou backup `restic` fora da máquina. Para uso individual sem servidor, basta escolher **Só neste aparelho** ao abrir o app.
 
 Você precisa só do Docker com Compose v2, em `amd64` ou `arm64`:
 

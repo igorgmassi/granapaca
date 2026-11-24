@@ -2,15 +2,15 @@
 
 # GranaPaCá
 
-**All your bank accounts in one place, on your own machine.**
+**All your bank accounts in one place, on your device or on your own machine.**
 
-Open source, self-hosted personal finance app for Brazil: Open Finance through Pluggy, rule-based and AI categorization, and privacy first.
+Open source, local-first, self-hosted personal finance app for Brazil: start right on your phone or computer with no server, or run your own instance with Open Finance through Pluggy and optional free-tier AI.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 ![Status: active development](https://img.shields.io/badge/status-active%20development-brightgreen)
 [![secret-scan](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml)
 
-[Português](README.md) · [Web demo](https://igorgmassi.github.io/granapaca/) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Português](README.md) · [Web demo](https://igorgmassi.github.io/granapaca/) · [Ways to use](#ways-to-use-from-zero-setup-to-self-hosted) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -19,13 +19,21 @@ Open source, self-hosted personal finance app for Brazil: Open Finance through P
 
 ## What it is
 
-GranaPaCá brings accounts from several Brazilian banks together through Open Finance: balances, statements, credit cards and bills, with the full history of spending and income. Rules and AI categorize every transaction, and a chat answers questions about your own finances, always showing the numbers and the period it used.
+GranaPaCá brings your personal finances together in one place — balances, statements, credit cards, bills, budgets, and goals — with no central server and no data harvesting. Deterministic rules and the **Paçoca** assistant categorize transactions and answer questions about your money, always showing the exact numbers and period used.
 
-Each person runs their own instance (self-hosted, single-tenant) with their own Pluggy and AI provider credentials. There is no central server: whoever maintains the project has no access to anyone's data.
+You can start **right on your own device without installing Docker or a database**, or run **your own instance (self-hosted, single-tenant)** with your own Pluggy and optional AI provider credentials. There is no central server: whoever maintains the project has no access to anyone's data.
+
+## Ways to use (from zero-setup to self-hosted)
+
+Start as simply as you want today and grow later without losing your history ([ADR-030](docs/adr/0030-modo-local-no-aparelho-e-ia-gratuita.md), in Portuguese):
+
+1. **On this device only (no server):** open the app, store everything encrypted on your own phone or computer, lock with PIN/biometrics, import OFX/CSV statements or NFC-e receipts, log expenses on the spot, and export/restore a JSON backup in one tap — **zero Docker, zero PostgreSQL, and no paid AI account required**.
+2. **Explore the demo:** try the full app right in your browser ([web demo on GitHub Pages](https://igorgmassi.github.io/granapaca/)) without installing anything, using 100% synthetic data.
+3. **Your own instance (Docker Compose):** for automatic daily bank sync through Open Finance (Pluggy), multiple synced devices, and encrypted daily off-machine backups with `restic`. See [Running your own instance](#running-your-own-instance).
 
 ## Principles
 
-- **Privacy first.** Data stays in your instance, secrets never reach the app, and nothing goes to an AI provider without minimization.
+- **Privacy first.** Data stays on your device or in your instance, secrets never reach the app, and nothing goes to an AI provider without minimization.
 - **Read-only.** The app never initiates payments or moves money.
 - **AI as an assistant, not a decision-maker.** Every classification comes with an explanation and can be corrected; rules suggested by AI only apply after you confirm them.
 - **Non-judgmental labels.** Three levels of essentiality: Essential, Important and Flexible.
@@ -36,6 +44,7 @@ Each person runs their own instance (self-hosted, single-tenant) with their own 
 
 | Area | What it does | Status |
 |---|---|---|
+| On this device only | Encrypted local database on your phone or computer, PIN/biometric lock, quick expense entry, OFX/CSV and NFC-e import, and one-tap JSON backup/restore — no server required | Evolving ([ADR-030](docs/adr/0030-modo-local-no-aparelho-e-ia-gratuita.md)) |
 | Demo mode | Try it in the browser ([GitHub Pages demo](https://igorgmassi.github.io/granapaca/)) or in the app with 100% synthetic data, no bank connection needed | Available (MVP) |
 | Accounts and banks | Connection through Meu Pluggy, automatic synthetic mode, consolidated and per-bank statements, cards/bills and daily sync | Available (MVP) |
 | Rule-based categorization | Layered deterministic engine (manual corrections, user rules, profile rules and system rules), review queue, history and undo | Available (MVP) |
@@ -44,48 +53,56 @@ Each person runs their own instance (self-hosted, single-tenant) with their own 
 | Security and operations | TOTP 2FA, opaque tokens with rotating refresh, envelope field encryption, encrypted offline cache, in-app alerts inbox and encrypted `restic` backups | Available |
 | Import and export | OFX/CSV file import (available); CSV, XLSX, PDF export and full JSON backup | Partial (post-MVP) |
 | Cash | Quick entry of cash expenses, working offline | Post-MVP |
-| AI | Categorizes what rules can't, plus a chat with read-only tools (OpenAI, Anthropic, Google or local Ollama), always with minimization and pseudonymization | Post-MVP |
+| Paçoca assistant & AI | Free offline local deterministic engine by default; optional generative AI via free tiers (Google Gemini Flash, Groq, OpenRouter `:free`), local Ollama, or paid providers, always with minimization and pseudonymization | Post-MVP |
 | Receipts and NFC-e | Per-file encrypted local volume storage, deterministic NFC-e XML/QR parser (ES first) and optional AI vision fallback | Post-MVP |
 | Planning and alerts | Budgets, goals, projections, forgotten subscriptions and optional push notifications via `ntfy` | Post-MVP |
+
+### Paçoca assistant & AI (no paid AI account required)
+
+You **do not need any paid AI account** to use GranaPaCá:
+
+- **Free and offline by default:** Paçoca works with zero accounts and zero internet using the local deterministic engine (layered rules + financial Q&A covering balances, categories, merchants, budgets, goals, 50/30/20 breakdown, projections, and subscriptions), both on-device and in the backend (`provider = "none"`).
+- **Optional free-tier or local generative AI:** if you want generative answers, ready-made presets support **Google Gemini Flash** (free tier via Google AI Studio), **Groq** (free OpenAI-compatible tier), **OpenRouter** (`:free` models), and local **Ollama** (100% free on your own machine), alongside OpenAI and Anthropic.
+- **Privacy preserved even on free tiers:** every external request goes through mandatory PII minimization and reversible pseudonymization ([ADR-023](docs/adr/0023-minimizacao-e-pseudonimizacao-ia.md)), stripping CPF, CNPJ, account numbers, emails, and phone numbers, paired with a clear notice about third-party free-tier retention policies before you enable a key.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  app["Flutter app<br/>Android · iOS · Windows · macOS · Linux<br/>encrypted local cache"]
+  app["Flutter app<br/>Android · iOS · Windows · macOS · Linux<br/>encrypted local mode or offline cache"]
   demo["Web demo<br/>Flutter Web on GitHub Pages<br/>synthetic data, no backend"]
 
-  subgraph instance["Your instance (Docker Compose)"]
+  subgraph instance["Your optional instance (Docker Compose)"]
     api["Backend<br/>.NET 10 · ASP.NET Core<br/>modular monolith"]
     db[("PostgreSQL")]
     files[("Receipts<br/>encrypted volume")]
   end
 
   pluggy["Pluggy<br/>Open Finance"]
-  ai["AI providers<br/>OpenAI · Anthropic · Google · Ollama"]
+  ai["AI providers (optional)<br/>Google Gemini · Groq · OpenRouter<br/>Ollama · OpenAI · Anthropic"]
 
-  app -- "private network (Tailscale)" --> api
+  app -- "optional: private network (Tailscale)" --> api
   api --> db
   api --> files
   api -- "read-only" --> pluggy
   api -- "minimized data" --> ai
 ```
 
-Only the backend talks to Pluggy and to AI providers, so secrets never reach the app. By default the API lives on a private network (Tailscale), not exposed to the internet. The web demo runs entirely in the browser, with no backend.
+In **On this device only** mode, the app keeps everything encrypted locally and runs deterministic Paçoca offline with no server at all. With **your own instance**, only the backend talks to Pluggy and optional AI providers, so secrets never reach the app and the API stays on a private network (Tailscale) by default. The **web demo** runs entirely in the browser with no backend.
 
 ## Reference stack
 
 | Layer | Technology |
 |---|---|
-| App (mobile, desktop and web demo) | Flutter and Dart 3 |
-| Backend | .NET 10 (LTS) and ASP.NET Core, as a modular monolith |
-| Data | PostgreSQL 18, Dapper and DbUp |
-| AI | Typed HTTP clients (open path to Microsoft.Extensions.AI), with OpenAI, Anthropic, Google and Ollama |
-| Banking integration | Pluggy (Meu Pluggy) and OFX/CSV import |
+| App (mobile, desktop and web demo) | Flutter and Dart 3 (serverless encrypted local mode, offline cache and web demo) |
+| Backend (optional self-hosted instance) | .NET 10 (LTS) and ASP.NET Core, as a modular monolith |
+| Data | Encrypted on-device storage; PostgreSQL 18, Dapper and DbUp on the instance |
+| AI | Free local deterministic engine (default) + optional typed HTTP clients (Google Gemini Flash, Groq, OpenRouter, Ollama, OpenAI and Anthropic) |
+| Banking integration | OFX/CSV and NFC-e import on-device; Pluggy (Meu Pluggy) on the instance |
 | Infrastructure | Docker Compose (amd64 and arm64), Tailscale, optional Caddy and restic backups |
 | Quality | GitHub Actions, xUnit, Testcontainers, ArchUnitNET and flutter_test |
 
-All 29 architecture decisions are recorded as ADRs in [`docs/adr`](docs/adr) (in Portuguese), and any change to the stack needs a new ADR.
+All 30 architecture decisions are recorded as ADRs in [`docs/adr`](docs/adr) (in Portuguese), and any change to the stack needs a new ADR.
 
 ## Roadmap
 
@@ -97,6 +114,9 @@ All 29 architecture decisions are recorded as ADRs in [`docs/adr`](docs/adr) (in
 After the MVP come cash entries, AI with minimization and pseudonymization, receipts and NFC-e invoices, planning (budgets, goals and projections), push via `ntfy` and full export.
 
 ## Running your own instance
+
+> [!TIP]
+> **Optional:** you only need a self-hosted instance if you want automatic Open Finance bank sync (Pluggy), multiple synced devices, or off-machine `restic` backups. For individual use with no server, just choose **On this device only** ("Só neste aparelho") when opening the app.
 
 All you need is Docker with Compose v2, on `amd64` or `arm64`:
 
