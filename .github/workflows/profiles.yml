@@ -1,0 +1,39 @@
+name: profiles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - profiles/**
+      - .github/workflows/profiles.yml
+  pull_request:
+    paths:
+      - profiles/**
+      - .github/workflows/profiles.yml
+  workflow_dispatch:
+
+concurrency:
+  group: profiles-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-profiles:
+    name: validate-profiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - name: Validate YAML profiles against schema
+        run: |
+          if [ -f profiles/validate-profiles.mjs ]; then
+            node profiles/validate-profiles.mjs
+          else
+            echo "profiles/validate-profiles.mjs not yet present; skipping."
+          fi

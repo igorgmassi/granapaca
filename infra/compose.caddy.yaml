@@ -1,0 +1,27 @@
+# Optional Caddy HTTPS reverse proxy override for public domain access (ADR-009).
+# Usage: docker compose -f compose.yaml -f compose.caddy.yaml up -d
+# Keep default compose.yaml localhost-only whenever Tailscale private access is enough (see infra/TAILSCALE.md).
+
+services:
+  caddy:
+    image: caddy:2-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GRANAPACA_DOMAIN: ${GRANAPACA_DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
