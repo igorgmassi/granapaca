@@ -28,19 +28,40 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      # Same steps as infra/README.md: copy the example and fill in the password.
-      - run: |
+      - name: Check shell script syntax
+        run: find . -name '*.sh' -exec bash -n {} +
+      # Same steps as infra/README.md: generate Docker secrets and copy the env example.
+      - name: Initialize secrets and env
+        run: |
+          ./init-secrets.sh
           cp .env.example .env
-          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
-      - run: docker compose up --build --detach --wait --wait-timeout 180
-      - run: curl --fail --silent --show-error http://127.0.0.1:8080/health
+      - name: Start compose stack
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: Verify /health and Synthetic provider mode
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8080/health
+          server_info="$(curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/server-info)"
+          echo "$server_info"
+          echo "$server_info" | jq -e '.providerMode == "synthetic"'
+      - name: Ensure database password is not exposed in container env
+        run: |
+          api_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' granapaca-api-1)"
+          db_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' granapaca-db-1)"
+          if printf '%s\n%s\n' "$api_env" "$db_env" | grep -qE '^(POSTGRES_PASSWORD|ConnectionStrings__Postgres)='; then
+            echo "ERROR: database password leaked into container environment variables."
+            exit 1
+          fi
       # A restart keeps the volume: the migrations find nothing pending and the API comes back healthy.
-      - run: docker compose down && docker compose up --detach --wait --wait-timeout 120
-      - run: curl --fail --silent --show-error http://127.0.0.1:8080/health
+      - name: Restart stack preserving volume
+        run: docker compose down && docker compose up --detach --wait --wait-timeout 120
+      - name: Verify /health after restart
+        run: curl --fail --silent --show-error http://127.0.0.1:8080/health
       - if: failure()
         run: docker compose logs
       - if: always()
-        run: docker compose down --volumes
+        run: |
+          docker compose down --volumes
+          rm -rf secrets .env
 
   image-multi-arch:
     name: image-multi-arch

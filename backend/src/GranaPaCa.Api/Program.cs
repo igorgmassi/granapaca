@@ -1,6 +1,11 @@
 using DbUp;
 using DbUp.Postgresql;
-using GranaPaCa.Modules.Sample;
+using GranaPaCa.Modules.Alerts;
+using GranaPaCa.Modules.Banking;
+using GranaPaCa.Modules.Categorization;
+using GranaPaCa.Modules.Identity;
+using GranaPaCa.Modules.Keyring;
+using Microsoft.AspNetCore.Authentication;
 using Npgsql;
 
 namespace GranaPaCa.Api;
@@ -18,20 +23,46 @@ public sealed class Program
             return;
         }
 
+        DapperTypeHandlers.Register();
+
         var builder = WebApplication.CreateBuilder(args);
 
         // Read when first resolved, after every configuration source (including test overrides) is in place.
-        builder.Services.AddSingleton(services => NpgsqlDataSource.Create(
-            services.GetRequiredService<IConfiguration>().GetConnectionString("Postgres")
-            ?? throw new InvalidOperationException("Set the connection string ConnectionStrings__Postgres.")));
-        builder.Services.AddHealthChecks().AddCheck<PostgresHealthCheck>("postgres", timeout: TimeSpan.FromSeconds(5));
+        builder.Services.AddSingleton(services =>
+        {
+            var configuration = services.GetRequiredService<IConfiguration>();
+            var connectionString = PostgresConnectionResolver.ResolveAndValidate(configuration);
+            return NpgsqlDataSource.Create(connectionString);
+        });
+
+        builder.Services.AddHealthChecks()
+            .AddCheck<PostgresHealthCheck>("postgres", timeout: TimeSpan.FromSeconds(5));
+
+        builder.Services.AddAuthentication(OpaqueBearerAuthenticationHandler.SchemeName)
+            .AddScheme<AuthenticationSchemeOptions, OpaqueBearerAuthenticationHandler>(
+                OpaqueBearerAuthenticationHandler.SchemeName,
+                _ => { });
+        builder.Services.AddAuthorization();
+
+        builder.Services.AddKeyringModule(builder.Configuration);
+        builder.Services.AddIdentityModule(builder.Configuration);
+        builder.Services.AddAlertsModule();
+        builder.Services.AddCategorizationModule(builder.Configuration);
+        builder.Services.AddBankingModule(builder.Configuration);
 
         var app = builder.Build();
 
         // Each module embeds its own SQL scripts; the pending ones run here, before the API accepts requests.
         var migration = DeployChanges.To
             .PostgresqlDatabase(new PostgresqlConnectionManager(app.Services.GetRequiredService<NpgsqlDataSource>()))
-            .WithScriptsEmbeddedInAssemblies([typeof(SampleModule).Assembly])
+            .WithScriptsEmbeddedInAssemblies([
+                typeof(Program).Assembly,
+                typeof(KeyringModule).Assembly,
+                typeof(IdentityModule).Assembly,
+                typeof(AlertsModule).Assembly,
+                typeof(CategorizationModule).Assembly,
+                typeof(BankingModule).Assembly,
+            ])
             .WithTransactionPerScript()
             .LogTo(app.Logger)
             .Build()
@@ -41,8 +72,14 @@ public sealed class Program
             throw new InvalidOperationException("Database migration failed, so the API will not start.", migration.Error);
         }
 
-        app.MapHealthChecks("/health");
-        app.MapSampleEndpoints();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.MapHealthChecks("/health").AllowAnonymous();
+        app.MapIdentityEndpoints();
+        app.MapAlertsEndpoints();
+        app.MapCategorizationEndpoints();
+        app.MapBankingEndpoints();
 
         app.Run();
     }

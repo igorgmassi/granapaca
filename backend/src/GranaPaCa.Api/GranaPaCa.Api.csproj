@@ -1,9 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
+    <PackageReference Include="Dapper" />
     <PackageReference Include="dbup-postgresql" />
     <PackageReference Include="Npgsql" />
+    <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\GranaPaCa.Modules.Sample\GranaPaCa.Modules.Sample.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Alerts\GranaPaCa.Modules.Alerts.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Banking\GranaPaCa.Modules.Banking.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Categorization\GranaPaCa.Modules.Categorization.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Identity\GranaPaCa.Modules.Identity.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Keyring\GranaPaCa.Modules.Keyring.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="GranaPaCa.Tests" />
   </ItemGroup>
 </Project>
