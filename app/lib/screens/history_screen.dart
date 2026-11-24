@@ -10,8 +10,9 @@ import 'review_queue_screen.dart';
 import 'transaction_detail_sheet.dart';
 
 /// Unified transaction history with accent-insensitive search, combinable
-/// filters, incremental pagination, review queue indicator, and adjustment
-/// modal (RF-18, RF-19, RF-24, RF-25, RF-26, RF-31).
+/// filters (including payment method, tag, and atypical), multi-select bulk
+/// editing, incremental pagination, review queue indicator, and adjustment
+/// modal (RF-18, RF-19, RF-22..26, RF-31).
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
@@ -21,11 +22,201 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  bool _bulkMode = false;
+  final Set<int> _selectedIds = {};
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _toggleBulkMode() {
+    setState(() {
+      _bulkMode = !_bulkMode;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(int txId) {
+    setState(() {
+      if (_selectedIds.contains(txId)) {
+        _selectedIds.remove(txId);
+      } else {
+        _selectedIds.add(txId);
+      }
+    });
+  }
+
+  Future<void> _openBulkEditDialog(BuildContext context, AppState state) async {
+    if (_selectedIds.isEmpty) return;
+    if (!state.canEditTransactions) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppState.offlineEditBlockedMessage)),
+      );
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    SpendingCategory? chosenCategory;
+    Essentiality? chosenEssentiality;
+    PaymentMethod? chosenPaymentMethod;
+    bool? chosenAtypical;
+
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Correção em lote (${_selectedIds.length} itens)'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Escolha apenas os campos que deseja atualizar nas '
+                    'transações selecionadas.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: GranaSpacing.md),
+                  DropdownButtonFormField<SpendingCategory?>(
+                    key: const Key('bulk_category_dropdown'),
+                    initialValue: chosenCategory,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoria (opcional)',
+                    ),
+                    items: [
+                      const DropdownMenuItem<SpendingCategory?>(
+                        value: null,
+                        child: Text('Manter atual'),
+                      ),
+                      for (final c in SpendingCategory.values)
+                        DropdownMenuItem<SpendingCategory?>(
+                          value: c,
+                          child: Text(c.label),
+                        ),
+                    ],
+                    onChanged: (val) =>
+                        setDialogState(() => chosenCategory = val),
+                  ),
+                  const SizedBox(height: GranaSpacing.md),
+                  DropdownButtonFormField<Essentiality?>(
+                    key: const Key('bulk_essentiality_dropdown'),
+                    initialValue: chosenEssentiality,
+                    decoration: const InputDecoration(
+                      labelText: 'Essencialidade (opcional)',
+                    ),
+                    items: [
+                      const DropdownMenuItem<Essentiality?>(
+                        value: null,
+                        child: Text('Manter atual'),
+                      ),
+                      for (final e in Essentiality.values)
+                        DropdownMenuItem<Essentiality?>(
+                          value: e,
+                          child: Text(e.label),
+                        ),
+                    ],
+                    onChanged: (val) =>
+                        setDialogState(() => chosenEssentiality = val),
+                  ),
+                  const SizedBox(height: GranaSpacing.md),
+                  DropdownButtonFormField<PaymentMethod?>(
+                    key: const Key('bulk_payment_method_dropdown'),
+                    initialValue: chosenPaymentMethod,
+                    decoration: const InputDecoration(
+                      labelText: 'Meio de pagamento (opcional)',
+                    ),
+                    items: [
+                      const DropdownMenuItem<PaymentMethod?>(
+                        value: null,
+                        child: Text('Manter atual'),
+                      ),
+                      for (final pm in PaymentMethod.values)
+                        DropdownMenuItem<PaymentMethod?>(
+                          value: pm,
+                          child: Text(pm.label),
+                        ),
+                    ],
+                    onChanged: (val) =>
+                        setDialogState(() => chosenPaymentMethod = val),
+                  ),
+                  const SizedBox(height: GranaSpacing.md),
+                  DropdownButtonFormField<bool?>(
+                    key: const Key('bulk_atypical_dropdown'),
+                    initialValue: chosenAtypical,
+                    decoration: const InputDecoration(
+                      labelText: 'Despesa atípica (opcional)',
+                    ),
+                    items: const [
+                      DropdownMenuItem<bool?>(
+                        value: null,
+                        child: Text('Manter atual'),
+                      ),
+                      DropdownMenuItem<bool?>(
+                        value: true,
+                        child: Text('Marcar como atípica'),
+                      ),
+                      DropdownMenuItem<bool?>(
+                        value: false,
+                        child: Text('Marcar como normal'),
+                      ),
+                    ],
+                    onChanged: (val) =>
+                        setDialogState(() => chosenAtypical = val),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('bulk_confirm_button'),
+              onPressed:
+                  chosenCategory == null &&
+                      chosenEssentiality == null &&
+                      chosenPaymentMethod == null &&
+                      chosenAtypical == null
+                  ? null
+                  : () {
+                      state.applyBulkAdjustments(
+                        txIds: Set<int>.from(_selectedIds),
+                        category: chosenCategory,
+                        changeCategory: chosenCategory != null,
+                        essentiality: chosenEssentiality,
+                        changeEssentiality: chosenEssentiality != null,
+                        paymentMethod: chosenPaymentMethod,
+                        changePaymentMethod: chosenPaymentMethod != null,
+                        isAtypical: chosenAtypical,
+                        changeAtypical: chosenAtypical != null,
+                      );
+                      Navigator.of(dialogContext).pop(true);
+                    },
+              child: const Text('Aplicar em lote'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (applied == true && mounted) {
+      final count = _selectedIds.length;
+      setState(() {
+        _bulkMode = false;
+        _selectedIds.clear();
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Correção em lote aplicada a $count transação(ões).'),
+        ),
+      );
+    }
   }
 
   @override
@@ -101,6 +292,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
               const SizedBox(height: GranaSpacing.md),
               SingleChildScrollView(
+                key: const Key('history_filter_row_scroll'),
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
@@ -175,6 +367,44 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       active: filter.essentiality != null,
                       onPressed: () =>
                           _pickEssentiality(context, state, filter),
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    _FilterPickerButton(
+                      key: const Key('filter_payment_method_button'),
+                      label: filter.paymentMethod?.label ?? 'Pagamento',
+                      active: filter.paymentMethod != null,
+                      onPressed: () =>
+                          _pickPaymentMethod(context, state, filter),
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    _FilterPickerButton(
+                      key: const Key('filter_tag_button'),
+                      label: filter.tag != null ? '#${filter.tag}' : 'Tag',
+                      active: filter.tag != null && filter.tag!.isNotEmpty,
+                      onPressed: () => _pickTag(context, state, filter),
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    FilterChip(
+                      key: const Key('filter_atypical_button'),
+                      label: const Text('Atípicas'),
+                      selected: filter.atypicalOnly,
+                      onSelected: (val) => state.updateHistoryFilter(
+                        filter.copyWith(atypicalOnly: val),
+                      ),
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    FilterChip(
+                      key: const Key('history_bulk_mode_button'),
+                      avatar: Icon(
+                        _bulkMode
+                            ? Icons.close_rounded
+                            : Icons.checklist_rtl_rounded,
+                        size: 16,
+                      ),
+                      label: Text(_bulkMode ? 'Cancelar lote' : 'Lote'),
+                      selected: _bulkMode,
+                      showCheckmark: false,
+                      onSelected: (_) => _toggleBulkMode(),
                     ),
                   ],
                 ),
@@ -254,6 +484,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           filter.copyWith(clearEssentiality: true),
                         ),
                       ),
+                    if (filter.paymentMethod != null)
+                      InputChip(
+                        label: Text(filter.paymentMethod!.label),
+                        onDeleted: () => state.updateHistoryFilter(
+                          filter.copyWith(clearPaymentMethod: true),
+                        ),
+                      ),
+                    if (filter.tag != null && filter.tag!.isNotEmpty)
+                      InputChip(
+                        label: Text('#${filter.tag}'),
+                        onDeleted: () => state.updateHistoryFilter(
+                          filter.copyWith(clearTag: true),
+                        ),
+                      ),
+                    if (filter.atypicalOnly)
+                      InputChip(
+                        label: const Text('Somente atípicas'),
+                        onDeleted: () => state.updateHistoryFilter(
+                          filter.copyWith(atypicalOnly: false),
+                        ),
+                      ),
                     TextButton(
                       key: const Key('clear_filters_inline'),
                       onPressed: state.clearHistoryFilters,
@@ -312,6 +563,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
           ),
         ),
+
+        if (state.pendingOutboxCount > 0)
+          Material(
+            key: const Key('history_outbox_banner'),
+            color: tokens.milho.withValues(alpha: 0.25),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: GranaSpacing.lg,
+                vertical: GranaSpacing.sm,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.cloud_upload_outlined,
+                    size: 18,
+                    color: tokens.sobreMilho,
+                  ),
+                  const SizedBox(width: GranaSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      '${state.pendingOutboxCount} lançamento(s) em dinheiro '
+                      'aguardando envio ao servidor.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.sobreMilho,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         if (uncategorizedGroups.isNotEmpty)
           Material(
@@ -406,18 +690,64 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     final tx = result.items[index];
                     final account = data.account(tx.accountId);
                     final bank = data.bank(account.bankId);
+                    final isSelected = _selectedIds.contains(tx.id);
                     return Card(
+                      color: isSelected
+                          ? scheme.primaryContainer.withValues(alpha: 0.35)
+                          : null,
                       child: TransactionRow(
                         tx: tx,
                         account: account,
                         bank: bank,
                         hideValues: state.hideValues,
-                        onTap: () => showTransactionDetailSheet(context, tx.id),
+                        leading: _bulkMode
+                            ? Checkbox(
+                                key: Key('bulk_select_${tx.id}'),
+                                value: isSelected,
+                                onChanged: (_) => _toggleSelected(tx.id),
+                              )
+                            : null,
+                        onTap: _bulkMode
+                            ? () => _toggleSelected(tx.id)
+                            : () => showTransactionDetailSheet(context, tx.id),
                       ),
                     );
                   },
                 ),
         ),
+
+        if (_bulkMode)
+          Material(
+            key: const Key('history_bulk_action_bar'),
+            color: scheme.primaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: GranaSpacing.lg,
+                vertical: GranaSpacing.sm,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_selectedIds.length} selecionada(s)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    key: const Key('history_bulk_apply_button'),
+                    onPressed: _selectedIds.isEmpty
+                        ? null
+                        : () => _openBulkEditDialog(context, state),
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    label: const Text('Editar em lote'),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -719,6 +1049,106 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Navigator.of(sheetContext).pop();
               },
             ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickPaymentMethod(
+    BuildContext context,
+    AppState state,
+    TxFilter filter,
+  ) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: GranaSpacing.lg),
+        children: [
+          const ListTile(
+            title: Text(
+              'Filtrar por meio de pagamento',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          ListTile(
+            title: const Text('Todos os meios'),
+            trailing: filter.paymentMethod == null
+                ? const Icon(Icons.check)
+                : null,
+            onTap: () {
+              state.updateHistoryFilter(
+                filter.copyWith(clearPaymentMethod: true),
+              );
+              Navigator.of(sheetContext).pop();
+            },
+          ),
+          for (final pm in PaymentMethod.values)
+            ListTile(
+              key: Key('pick_pm_${pm.name}'),
+              leading: Icon(iconForPaymentMethod(pm)),
+              title: Text(pm.label),
+              trailing: filter.paymentMethod == pm
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                state.updateHistoryFilter(filter.copyWith(paymentMethod: pm));
+                Navigator.of(sheetContext).pop();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickTag(
+    BuildContext context,
+    AppState state,
+    TxFilter filter,
+  ) {
+    final tags = state.allTags;
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: GranaSpacing.lg),
+        children: [
+          const ListTile(
+            title: Text(
+              'Filtrar por tag',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          ListTile(
+            title: const Text('Todas as tags'),
+            trailing: filter.tag == null ? const Icon(Icons.check) : null,
+            onTap: () {
+              state.updateHistoryFilter(filter.copyWith(clearTag: true));
+              Navigator.of(sheetContext).pop();
+            },
+          ),
+          if (tags.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(GranaSpacing.lg),
+              child: Text(
+                'Nenhuma tag cadastrada ainda. Adicione tags nos detalhes de '
+                'uma transação ou ao lançar um gasto em dinheiro.',
+              ),
+            )
+          else
+            for (final tag in tags)
+              ListTile(
+                key: Key('pick_tag_$tag'),
+                leading: const Icon(Icons.label_outline_rounded),
+                title: Text('#$tag'),
+                trailing: filter.tag == tag ? const Icon(Icons.check) : null,
+                onTap: () {
+                  state.updateHistoryFilter(filter.copyWith(tag: tag));
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
         ],
       ),
     );

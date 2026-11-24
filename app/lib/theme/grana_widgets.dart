@@ -405,6 +405,7 @@ class TransactionRow extends StatelessWidget {
     required this.bank,
     required this.hideValues,
     this.onTap,
+    this.leading,
   });
 
   final EffectiveTransaction tx;
@@ -412,6 +413,7 @@ class TransactionRow extends StatelessWidget {
   final Bank bank;
   final bool hideValues;
   final VoidCallback? onTap;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -443,6 +445,10 @@ class TransactionRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (leading != null) ...[
+                leading!,
+                const SizedBox(width: GranaSpacing.xs),
+              ],
               // 4px bank accent strip
               Container(
                 width: 4,
@@ -498,7 +504,10 @@ class TransactionRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${formatShortDate(tx.date)} · ${account.name} · ${bank.name}',
+                      '${formatShortDate(tx.date)} · ${account.name} · '
+                      '${bank.name} · ${tx.paymentMethod.label}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,
@@ -570,6 +579,90 @@ class TransactionRow extends StatelessWidget {
                             ),
                             child: Text(
                               'Parcela ${tx.installment} de ${tx.installmentCount}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        if (tx.isAtypical)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(
+                                GranaRadius.chip,
+                              ),
+                            ),
+                            child: Text(
+                              'Atípica',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onTertiaryContainer,
+                              ),
+                            ),
+                          ),
+                        if (tx.splits.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: tokens.rio.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(
+                                GranaRadius.chip,
+                              ),
+                            ),
+                            child: Text(
+                              'Dividida (${tx.splits.length})',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: tokens.rio,
+                              ),
+                            ),
+                          ),
+                        if (tx.pendingSync)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: tokens.milho.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(
+                                GranaRadius.chip,
+                              ),
+                            ),
+                            child: Text(
+                              'Pendente de envio',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: tokens.sobreMilho,
+                              ),
+                            ),
+                          ),
+                        for (final tag in tx.tags)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(
+                                GranaRadius.chip,
+                              ),
+                            ),
+                            child: Text(
+                              '#$tag',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,

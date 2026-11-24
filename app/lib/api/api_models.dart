@@ -702,9 +702,21 @@ AccountKind parseAccountKind(String? raw) {
     case 'credit_card':
     case 'creditcard':
       return AccountKind.creditCard;
+    case 'cash':
+    case 'wallet':
+      return AccountKind.cash;
     default:
       return AccountKind.checking;
   }
+}
+
+PaymentMethod? parsePaymentMethod(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final normalized = raw.toLowerCase().trim();
+  for (final p in PaymentMethod.values) {
+    if (p.name.toLowerCase() == normalized) return p;
+  }
+  return null;
 }
 
 Account accountFromJson(Map<String, dynamic> json) => Account(
@@ -808,9 +820,27 @@ int stableTransactionId(dynamic rawId) {
   return hash;
 }
 
+TxSplit txSplitFromJson(Map<String, dynamic> json) => TxSplit(
+  id: (json['id'] ?? '').toString(),
+  description: (json['description'] as String?) ?? '',
+  amountCents: (json['amountCents'] as num?)?.toInt() ?? 0,
+  category: parseSpendingCategory(json['category'] as String?),
+  essentiality: parseEssentiality(json['essentiality'] as String?),
+);
+
+Map<String, dynamic> txSplitToJson(TxSplit split) => {
+  'id': split.id,
+  'description': split.description,
+  'amountCents': split.amountCents,
+  'category': split.category?.name,
+  'essentiality': split.essentiality?.name,
+};
+
 Transaction transactionFromJson(Map<String, dynamic> json) {
   final rawDate = (json['date'] ?? json['occurredOn'] ?? '').toString();
   final parsedDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+  final rawTags = (json['tags'] as List<dynamic>?) ?? const [];
+  final rawSplits = (json['splits'] as List<dynamic>?) ?? const [];
   return Transaction(
     id: stableTransactionId(json['id']),
     accountId: (json['accountId'] ?? '').toString(),
@@ -827,6 +857,15 @@ Transaction transactionFromJson(Map<String, dynamic> json) {
     installmentCount:
         (json['installmentCount'] as num?)?.toInt() ??
         (json['installmentTotal'] as num?)?.toInt(),
+    paymentMethod: parsePaymentMethod(json['paymentMethod'] as String?),
+    tags: rawTags.map((e) => e.toString()).toList(growable: false),
+    isAtypical: (json['isAtypical'] as bool?) ?? false,
+    splits: rawSplits
+        .whereType<Map<String, dynamic>>()
+        .map(txSplitFromJson)
+        .toList(growable: false),
+    isCashEntry: (json['isCashEntry'] as bool?) ?? false,
+    pendingSync: (json['pendingSync'] as bool?) ?? false,
   );
 }
 
@@ -841,6 +880,13 @@ Map<String, dynamic> transactionToJson(Transaction tx) => {
   'essentiality': tx.essentiality?.name,
   'installment': tx.installment,
   'installmentCount': tx.installmentCount,
+  if (tx.paymentMethod != null) 'paymentMethod': tx.paymentMethod!.name,
+  if (tx.tags.isNotEmpty) 'tags': tx.tags,
+  if (tx.isAtypical) 'isAtypical': true,
+  if (tx.splits.isNotEmpty)
+    'splits': [for (final s in tx.splits) txSplitToJson(s)],
+  if (tx.isCashEntry) 'isCashEntry': true,
+  if (tx.pendingSync) 'pendingSync': true,
 };
 
 UserRule userRuleFromJson(Map<String, dynamic> json) {

@@ -3,10 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import '../api/api_models.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
-import '../theme/grana_widgets.dart';
 import 'app_lock_screen.dart';
 import 'connections_screen.dart';
 import 'onboarding_screen.dart';
+import 'receipts_export_screen.dart';
 import 'review_queue_screen.dart';
 import 'rules_screen.dart';
 import 'server_auth_screen.dart';
@@ -266,12 +266,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Divider(height: 1),
               ListTile(
                 key: const Key('settings_backup'),
-                leading: const Icon(Icons.cloud_download_outlined),
-                title: const Text('Backup e exportação'),
-                subtitle: const Text('Exportar CSV, XLSX, PDF ou backup JSON'),
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Comprovantes, NFC-e e Exportação'),
+                subtitle: const Text(
+                  'Ler NFC-e, exportar CSV/JSON e importar extratos OFX/CSV',
+                ),
                 trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () =>
-                    showServerOnlyDialog(context, 'Backup e exportação'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ReceiptsExportScreen(),
+                  ),
+                ),
               ),
             ],
           ),

@@ -556,6 +556,282 @@ class GranaPaCaApiClient {
     );
   }
 
+  /// RF-44: records a physical-cash expense on the self-hosted server.
+  Future<Transaction> createCashTransaction({
+    required DateTime date,
+    required String description,
+    required int amountCents,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+    List<String> tags = const [],
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/transactions/cash',
+      body: {
+        'occurredOn': date.toIso8601String().substring(0, 10),
+        'description': description.trim(),
+        'amountCents': -amountCents.abs(),
+        'paymentMethod': PaymentMethod.cash.name,
+        if (category != null) 'category': category.name,
+        if (essentiality != null) 'essentiality': essentiality.name,
+        if (tags.isNotEmpty) 'tags': tags,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível registrar o gasto em dinheiro no servidor.',
+    );
+    return transactionFromJson(_decodeJsonMap(response.body));
+  }
+
+  /// RF-23: replaces tags attached to a transaction.
+  Future<void> updateTransactionTags(int txId, List<String> tags) async {
+    final response = await _sendAuthorized(
+      method: 'PUT',
+      path: '/api/v1/transactions/$txId/tags',
+      body: {'tags': tags},
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível atualizar as tags da transação.',
+    );
+  }
+
+  /// RN-24: replaces transaction splits enforcing exact-cent total on server.
+  Future<void> replaceTransactionSplits(int txId, List<TxSplit> splits) async {
+    final response = await _sendAuthorized(
+      method: 'PUT',
+      path: '/api/v1/transactions/$txId/splits',
+      body: {
+        'splits': [for (final s in splits) txSplitToJson(s)],
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível salvar a divisão da transação.',
+    );
+  }
+
+  /// Applies bulk adjustments across multiple transaction IDs.
+  Future<void> applyBulkAdjustments({
+    required List<int> transactionIds,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+    PaymentMethod? paymentMethod,
+    bool? isAtypical,
+    String? reason,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/transactions/bulk-adjustments',
+      body: {
+        'transactionIds': transactionIds,
+        if (category != null) 'category': category.name,
+        if (essentiality != null) 'essentiality': essentiality.name,
+        if (paymentMethod != null) 'paymentMethod': paymentMethod.name,
+        'isAtypical': ?isAtypical,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível aplicar a correção em lote.',
+    );
+  }
+
+  /// Creates or updates a monthly category budget on the server.
+  Future<void> upsertBudget(Budget budget) async {
+    final response = await _sendAuthorized(
+      method: 'PUT',
+      path: '/api/v1/planning/budgets/${budget.category.name}',
+      body: {
+        'category': budget.category.name,
+        'limitCents': budget.limitCents,
+        'alertThreshold': budget.alertThreshold,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível salvar o orçamento.',
+    );
+  }
+
+  /// Creates a financial goal on the server.
+  Future<void> createGoal(Goal goal) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/planning/goals',
+      body: {
+        'name': goal.name,
+        'targetCents': goal.targetCents,
+        'currentCents': goal.currentCents,
+        if (goal.targetDate != null)
+          'targetDate': goal.targetDate!.toIso8601String().substring(0, 10),
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível criar a meta financeira.',
+    );
+  }
+
+  /// Records a contribution toward an existing financial goal.
+  Future<void> contributeGoal(String goalId, int amountCents) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/planning/goals/$goalId/contributions',
+      body: {'amountCents': amountCents},
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível registrar o aporte na meta.',
+    );
+  }
+
+  /// Registers a custom spending alert threshold rule on the server.
+  Future<void> createSpendingAlertRule(SpendingAlertRule rule) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/planning/alerts',
+      body: {
+        'rawExpression': rule.rawExpression,
+        'label': rule.label,
+        'thresholdCents': rule.thresholdCents,
+        if (rule.category != null) 'category': rule.category!.name,
+        if (rule.keyword != null) 'keyword': rule.keyword,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível criar o alerta de gasto.',
+    );
+  }
+
+  /// Submits an NFC-e XML or SEFAZ QR URL for server parsing and linking.
+  Future<Map<String, dynamic>> submitNfceReceipt({
+    required String rawInput,
+    int? transactionId,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/receipts/nfce',
+      body: {
+        'input': rawInput,
+        'transactionId': ?transactionId,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível processar a nota fiscal no servidor.',
+    );
+    return _decodeJsonMap(response.body);
+  }
+
+  /// Imports an OFX or CSV bank statement on the server.
+  Future<Map<String, dynamic>> importStatement({
+    required String format,
+    required String content,
+    String? accountId,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/imports/statement',
+      body: {
+        'format': format,
+        'content': content,
+        'accountId': ?accountId,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível importar o arquivo de extrato.',
+    );
+    return _decodeJsonMap(response.body);
+  }
+
+  /// Downloads an RFC 4180 CSV export from the server.
+  Future<String> exportTransactionsCsv({DateTime? from, DateTime? to}) async {
+    final response = await _sendAuthorized(
+      method: 'GET',
+      path: '/api/v1/exports/transactions.csv',
+      queryParameters: {
+        if (from != null) 'from': from.toIso8601String().substring(0, 10),
+        if (to != null) 'to': to.toIso8601String().substring(0, 10),
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível exportar o arquivo CSV.',
+    );
+    return response.body;
+  }
+
+  /// Downloads a full JSON backup from the server.
+  Future<String> exportBackupJson() async {
+    final response = await _sendAuthorized(
+      method: 'GET',
+      path: '/api/v1/exports/backup.json',
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível gerar o backup JSON.',
+    );
+    return response.body;
+  }
+
+  /// Sends a read-only question to Paçoca assistant on the self-hosted server.
+  Future<AssistantMessage> askAssistant({
+    required String question,
+    required DateTime month,
+  }) async {
+    final monthParam =
+        '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/assistant/chat',
+      body: {'question': question.trim(), 'month': monthParam},
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível consultar a Paçoca no servidor agora.',
+    );
+    final map = _decodeJsonMap(response.body);
+    final rawFigures = (map['citedFigures'] as List<dynamic>?) ?? const [];
+    return AssistantMessage(
+      id: (map['id'] ?? 'pacoca-${DateTime.now().microsecondsSinceEpoch}')
+          .toString(),
+      isUser: false,
+      text: (map['answer'] ?? map['text'] ?? '').toString(),
+      timestamp:
+          DateTime.tryParse((map['timestamp'] as String?) ?? '') ??
+          DateTime.now(),
+      periodLabel: map['periodLabel'] as String?,
+      citedFigures: rawFigures.map((e) => e.toString()).toList(growable: false),
+    );
+  }
+
+  /// Saves BYOK AI provider configuration on the self-hosted server.
+  Future<void> updateAiProviderConfig(
+    AiProviderConfig config, {
+    String? apiKey,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'PUT',
+      path: '/api/v1/assistant/provider',
+      body: {
+        'provider': config.provider.name,
+        'model': config.model,
+        'endpointUrl': config.endpointUrl,
+        if (apiKey != null && apiKey.trim().isNotEmpty) 'apiKey': apiKey.trim(),
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível salvar a configuração do provedor de IA.',
+    );
+  }
+
   Future<HttpTransportResponse> _sendAuthorized({
     required String method,
     required String path,

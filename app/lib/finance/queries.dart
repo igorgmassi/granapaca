@@ -12,6 +12,65 @@ bool isSpending(Transaction t) => isSpendingKind(t.kind);
 
 bool isIncome(Transaction t) => t.kind == TxKind.income;
 
+/// Infers the payment method for a transaction when not explicitly set (RF-22).
+PaymentMethod inferPaymentMethod(Transaction t, [Account? account]) {
+  if (t.paymentMethod != null) return t.paymentMethod!;
+  if (t.isCashEntry ||
+      account?.kind == AccountKind.cash ||
+      t.kind == TxKind.cashWithdrawal) {
+    return PaymentMethod.cash;
+  }
+  if (account?.kind == AccountKind.creditCard) {
+    return PaymentMethod.credit;
+  }
+  final desc = normalizeText(t.description);
+  if (desc.contains('pix')) return PaymentMethod.pix;
+  if (desc.contains('boleto') ||
+      desc.contains('aluguel') ||
+      desc.contains('conta de luz') ||
+      desc.contains('internet')) {
+    return PaymentMethod.boleto;
+  }
+  if (t.kind == TxKind.ownTransfer ||
+      desc.contains('transferencia') ||
+      desc.contains('salario')) {
+    return PaymentMethod.transfer;
+  }
+  if (t.kind == TxKind.billPayment) return PaymentMethod.boleto;
+  return PaymentMethod.debit;
+}
+
+/// Encodes a clean, unique list of tags into a comma-separated string.
+String encodeTags(Iterable<String> tags) {
+  final seen = <String>{};
+  final cleaned = <String>[];
+  for (final raw in tags) {
+    final trimmed = raw.trim().replaceFirst(RegExp(r'^#+'), '').trim();
+    if (trimmed.isEmpty) continue;
+    final key = normalizeText(trimmed);
+    if (seen.add(key)) {
+      cleaned.add(trimmed);
+    }
+  }
+  return cleaned.join(',');
+}
+
+/// Decodes a comma-separated tag list into clean unique tags.
+List<String> decodeTags(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const [];
+  final seen = <String>{};
+  final result = <String>[];
+  for (final part in raw.split(',')) {
+    final trimmed = part.trim().replaceFirst(RegExp(r'^#+'), '').trim();
+    if (trimmed.isEmpty) continue;
+    final key = normalizeText(trimmed);
+    if (seen.add(key)) {
+      result.add(trimmed);
+    }
+  }
+  return List.unmodifiable(result);
+}
+
 /// First instant of [month] and of the next month, for `from` and `to`.
 (DateTime, DateTime) monthRange(DateTime month) =>
     (DateTime(month.year, month.month), DateTime(month.year, month.month + 1));
@@ -31,7 +90,9 @@ int accountBalanceCents(Dataset data, Account account) => data.transactions
 
 /// RF-16 and RF-17: all accounts, or one bank with [bankId].
 /// The balance adds checking and savings accounts; the open card bill comes
-/// apart. Spent and received only count [isSpending] and [isIncome] in [month].
+/// apart. Physical cash accounts contribute to monthly spending without
+/// distorting bank checking/savings balances.
+/// Spent and received only count [isSpending] and [isIncome] in [month].
 Summary summary(Dataset data, DateTime month, {String? bankId}) {
   bool ofBank(String accountId) =>
       bankId == null || data.account(accountId).bankId == bankId;
@@ -41,7 +102,7 @@ Summary summary(Dataset data, DateTime month, {String? bankId}) {
     final cents = accountBalanceCents(data, a);
     if (a.kind == AccountKind.creditCard) {
       cardBill -= cents;
-    } else {
+    } else if (a.kind != AccountKind.cash) {
       balance += cents;
     }
   }
@@ -62,8 +123,8 @@ Summary summary(Dataset data, DateTime month, {String? bankId}) {
   );
 }
 
-/// Filters of the history (RF-18). Every field is optional and they combine.
-/// The period is [from] inclusive to [to] exclusive.
+/// Filters of the history (RF-18, RF-22, RF-23). Every field is optional and
+/// they combine. The period is [from] inclusive to [to] exclusive.
 class TxFilter {
   const TxFilter({
     this.from,
@@ -75,6 +136,9 @@ class TxFilter {
     this.categories,
     this.uncategorizedOnly = false,
     this.essentiality,
+    this.paymentMethod,
+    this.tag,
+    this.atypicalOnly = false,
     this.search,
     this.spendingOnly = false,
   });
@@ -93,6 +157,15 @@ class TxFilter {
   final bool uncategorizedOnly;
   final Essentiality? essentiality;
 
+  /// Matches transactions with the given payment method (RF-22).
+  final PaymentMethod? paymentMethod;
+
+  /// Matches transactions carrying this tag (accent/case-insensitive, RF-23).
+  final String? tag;
+
+  /// When true, matches only transactions marked as atypical expenses.
+  final bool atypicalOnly;
+
   /// Matches the original or corrected description ignoring case and accents.
   final String? search;
 
@@ -110,6 +183,9 @@ class TxFilter {
       (categories != null && categories!.isNotEmpty) ||
       uncategorizedOnly ||
       essentiality != null ||
+      paymentMethod != null ||
+      (tag != null && tag!.trim().isNotEmpty) ||
+      atypicalOnly ||
       spendingOnly ||
       (search != null && search!.trim().isNotEmpty);
 
@@ -131,6 +207,11 @@ class TxFilter {
     bool? uncategorizedOnly,
     Essentiality? essentiality,
     bool clearEssentiality = false,
+    PaymentMethod? paymentMethod,
+    bool clearPaymentMethod = false,
+    String? tag,
+    bool clearTag = false,
+    bool? atypicalOnly,
     String? search,
     bool clearSearch = false,
     bool? spendingOnly,
@@ -146,6 +227,11 @@ class TxFilter {
     essentiality: clearEssentiality
         ? null
         : (essentiality ?? this.essentiality),
+    paymentMethod: clearPaymentMethod
+        ? null
+        : (paymentMethod ?? this.paymentMethod),
+    tag: clearTag ? null : (tag ?? this.tag),
+    atypicalOnly: atypicalOnly ?? this.atypicalOnly,
     search: clearSearch ? null : (search ?? this.search),
     spendingOnly: spendingOnly ?? this.spendingOnly,
   );
@@ -168,6 +254,27 @@ TxFilter spendingFilter(
 
 typedef History = ({List<Transaction> items, int totalCents});
 
+bool _matchesCategory(Transaction t, SpendingCategory target) {
+  if (t.splits.isNotEmpty) {
+    return t.splits.any((s) => s.category == target);
+  }
+  return t.category == target;
+}
+
+bool _matchesAnyCategory(Transaction t, Set<SpendingCategory> targets) {
+  if (t.splits.isNotEmpty) {
+    return t.splits.any((s) => targets.contains(s.category));
+  }
+  return targets.contains(t.category);
+}
+
+bool _matchesUncategorized(Transaction t) {
+  if (t.splits.isNotEmpty) {
+    return t.splits.any((s) => s.category == null);
+  }
+  return t.category == null;
+}
+
 /// The history under [f], newest first, and its total, so the list and the
 /// total always change together. Optionally matches [correctedDescriptions]
 /// and supports incremental pagination via [offset] and [limit].
@@ -182,10 +289,15 @@ History history(
   final query = (rawSearch == null || rawSearch.isEmpty)
       ? null
       : normalizeText(rawSearch);
+  final tagQuery = (f.tag == null || f.tag!.trim().isEmpty)
+      ? null
+      : normalizeText(f.tag!.trim());
+
   final matched = data.transactions.where((t) {
     if (f.from != null && t.date.isBefore(f.from!)) return false;
     if (f.to != null && !t.date.isBefore(f.to!)) return false;
-    if (f.bankId != null && data.account(t.accountId).bankId != f.bankId) {
+    final acct = data.account(t.accountId);
+    if (f.bankId != null && acct.bankId != f.bankId) {
       return false;
     }
     if (f.accountId != null && t.accountId != f.accountId) return false;
@@ -193,20 +305,30 @@ History history(
     if (f.kind != null && t.kind != f.kind) return false;
     final hasCategories = f.categories != null && f.categories!.isNotEmpty;
     if (f.uncategorizedOnly && hasCategories) {
-      if (t.category != null && !f.categories!.contains(t.category)) {
+      if (!_matchesUncategorized(t) && !_matchesAnyCategory(t, f.categories!)) {
         return false;
       }
     } else if (f.uncategorizedOnly) {
-      if (t.category != null) return false;
+      if (!_matchesUncategorized(t)) return false;
     } else {
-      if (f.category != null && t.category != f.category) return false;
-      if (hasCategories && !f.categories!.contains(t.category)) {
+      if (f.category != null && !_matchesCategory(t, f.category!)) {
+        return false;
+      }
+      if (hasCategories && !_matchesAnyCategory(t, f.categories!)) {
         return false;
       }
     }
     if (f.essentiality != null && t.essentiality != f.essentiality) {
       return false;
     }
+    if (f.paymentMethod != null &&
+        inferPaymentMethod(t, acct) != f.paymentMethod) {
+      return false;
+    }
+    if (tagQuery != null && !t.tags.any((tag) => normalizeText(tag) == tagQuery)) {
+      return false;
+    }
+    if (f.atypicalOnly && !t.isAtypical) return false;
     if (query != null) {
       final originalMatches = normalizeText(t.description).contains(query);
       final corrected = correctedDescriptions?[t.id];
@@ -248,6 +370,10 @@ EffectiveHistory effectiveHistory(
   final query = (rawSearch == null || rawSearch.isEmpty)
       ? null
       : normalizeText(rawSearch);
+  final tagQuery = (f.tag == null || f.tag!.trim().isEmpty)
+      ? null
+      : normalizeText(f.tag!.trim());
+
   final matched = effectiveTransactions.where((t) {
     if (f.from != null && t.date.isBefore(f.from!)) return false;
     if (f.to != null && !t.date.isBefore(f.to!)) return false;
@@ -259,26 +385,62 @@ EffectiveHistory effectiveHistory(
     if (f.kind != null && t.kind != f.kind) return false;
     final hasCategories = f.categories != null && f.categories!.isNotEmpty;
     if (f.uncategorizedOnly && hasCategories) {
-      if (t.category != null && !f.categories!.contains(t.category)) {
-        return false;
-      }
+      final matches = t.splits.isNotEmpty
+          ? t.splits.any(
+              (s) => s.category == null || f.categories!.contains(s.category),
+            )
+          : (t.category == null || f.categories!.contains(t.category));
+      if (!matches) return false;
     } else if (f.uncategorizedOnly) {
-      if (t.category != null) return false;
+      final hasUncat = t.splits.isNotEmpty
+          ? t.splits.any((s) => s.category == null)
+          : t.category == null;
+      if (!hasUncat) return false;
     } else {
-      if (f.category != null && t.category != f.category) return false;
-      if (hasCategories && !f.categories!.contains(t.category)) {
-        return false;
+      if (f.category != null) {
+        final hasCat = t.splits.isNotEmpty
+            ? t.splits.any((s) => s.category == f.category)
+            : t.category == f.category;
+        if (!hasCat) return false;
+      }
+      if (hasCategories) {
+        final hasCat = t.splits.isNotEmpty
+            ? t.splits.any((s) => f.categories!.contains(s.category))
+            : f.categories!.contains(t.category);
+        if (!hasCat) return false;
       }
     }
-    if (f.essentiality != null && t.essentiality != f.essentiality) {
+    if (f.essentiality != null) {
+      final hasEss = t.splits.isNotEmpty
+          ? t.splits.any(
+              (s) => (s.essentiality ?? t.essentiality) == f.essentiality,
+            )
+          : t.essentiality == f.essentiality;
+      if (!hasEss) return false;
+    }
+    if (f.paymentMethod != null && t.paymentMethod != f.paymentMethod) {
       return false;
     }
+    if (tagQuery != null &&
+        !t.tags.any((tag) => normalizeText(tag) == tagQuery)) {
+      return false;
+    }
+    if (f.atypicalOnly && !t.isAtypical) return false;
     if (query != null) {
       final originalMatches = normalizeText(
         t.original.description,
       ).contains(query);
       final effectiveMatches = normalizeText(t.description).contains(query);
-      if (!originalMatches && !effectiveMatches) return false;
+      final tagMatches = t.tags.any((tag) => normalizeText(tag).contains(query));
+      final splitMatches = t.splits.any(
+        (s) => normalizeText(s.description).contains(query),
+      );
+      if (!originalMatches &&
+          !effectiveMatches &&
+          !tagMatches &&
+          !splitMatches) {
+        return false;
+      }
     }
     return true;
   }).toList();
@@ -320,14 +482,24 @@ String spendingCategoryLabel(SpendingCategory? category) =>
 /// ("Sem categoria", RF-31), and [share] is from 0 to 1 of the total.
 typedef CategoryShare = ({SpendingCategory? category, int cents, double share});
 
-/// RF-35 & RF-31: categories by spending, largest first. Uncategorized
+/// RF-35, RF-31 & RN-24: categories by spending, largest first. Uncategorized
 /// spending is kept explicitly under `null` ("Sem categoria") so it is never
-/// silently dropped from monthly totals or merged into "Outros".
+/// silently dropped from monthly totals or merged into "Outros". Split
+/// transactions allocate exact cents across each split's category.
 List<CategoryShare> categoryRanking(Iterable<Transaction> transactions) {
   final totals = <SpendingCategory?, int>{};
   for (final t in transactions.where(isSpending)) {
-    final category = t.category;
-    totals[category] = (totals[category] ?? 0) - t.amountCents;
+    if (t.splits.isNotEmpty) {
+      final sign = t.amountCents < 0 ? 1 : -1;
+      for (final split in t.splits) {
+        final category = split.category ?? t.category;
+        totals[category] =
+            (totals[category] ?? 0) + sign * split.amountCents.abs();
+      }
+    } else {
+      final category = t.category;
+      totals[category] = (totals[category] ?? 0) - t.amountCents;
+    }
   }
   // A category refunded more than it spent has nothing to show.
   totals.removeWhere((_, cents) => cents <= 0);
@@ -364,15 +536,24 @@ typedef EssentialityShare = ({
 });
 
 /// Groups spending by essentiality in natural order (Essencial, Importante,
-/// Flexível).
+/// Flexível), accounting for transaction splits (RN-24).
 List<EssentialityShare> essentialityBreakdown(
   Iterable<Transaction> transactions,
 ) {
   final totals = <Essentiality, int>{};
   for (final t in transactions.where(isSpending)) {
-    final level = t.essentiality;
-    if (level == null) continue;
-    totals[level] = (totals[level] ?? 0) - t.amountCents;
+    if (t.splits.isNotEmpty) {
+      final sign = t.amountCents < 0 ? 1 : -1;
+      for (final split in t.splits) {
+        final level = split.essentiality ?? t.essentiality;
+        if (level == null) continue;
+        totals[level] = (totals[level] ?? 0) + sign * split.amountCents.abs();
+      }
+    } else {
+      final level = t.essentiality;
+      if (level == null) continue;
+      totals[level] = (totals[level] ?? 0) - t.amountCents;
+    }
   }
   totals.removeWhere((_, cents) => cents <= 0);
   final total = totals.values.fold(0, (a, b) => a + b);
@@ -446,7 +627,7 @@ typedef ReviewQueueGroup = ({
 List<ReviewQueueGroup> reviewQueue(Iterable<Transaction> transactions) {
   final groups = <String, List<Transaction>>{};
   for (final t in transactions) {
-    if (t.kind == TxKind.expense && t.category == null) {
+    if (t.kind == TxKind.expense && t.category == null && t.splits.isEmpty) {
       final key = merchantKeyFor(t.description);
       groups.putIfAbsent(key, () => []).add(t);
     }
@@ -491,6 +672,14 @@ TxKind? _parseTxKind(String? raw) {
   return null;
 }
 
+PaymentMethod? _parsePaymentMethod(String? raw) {
+  if (raw == null) return null;
+  for (final p in PaymentMethod.values) {
+    if (p.name == raw) return p;
+  }
+  return null;
+}
+
 /// Computes the set of adjustment IDs that have been undone by later records.
 Set<String> undoneAdjustmentIds(List<TxAdjustment> adjustments) => {
   for (final a in adjustments)
@@ -522,6 +711,8 @@ List<EffectiveTransaction> resolveEffectiveTransactions({
   required List<Transaction> originals,
   required List<UserRule> rules,
   required List<TxAdjustment> adjustments,
+  Map<String, Account>? accountsById,
+  Map<int, List<TxSplit>>? splitsByTxId,
 }) {
   final undone = undoneAdjustmentIds(adjustments);
 
@@ -564,12 +755,18 @@ List<EffectiveTransaction> resolveEffectiveTransactions({
         final kindAdj = latestByTxField[(t.id, AdjustmentField.kind)];
         final catAdj = latestByTxField[(t.id, AdjustmentField.category)];
         final essAdj = latestByTxField[(t.id, AdjustmentField.essentiality)];
+        final pmAdj = latestByTxField[(t.id, AdjustmentField.paymentMethod)];
+        final tagsAdj = latestByTxField[(t.id, AdjustmentField.tags)];
+        final atypicalAdj = latestByTxField[(t.id, AdjustmentField.atypical)];
 
         final adjustedFields = <AdjustmentField>{
           if (descAdj != null) AdjustmentField.description,
           if (kindAdj != null) AdjustmentField.kind,
           if (catAdj != null) AdjustmentField.category,
           if (essAdj != null) AdjustmentField.essentiality,
+          if (pmAdj != null) AdjustmentField.paymentMethod,
+          if (tagsAdj != null) AdjustmentField.tags,
+          if (atypicalAdj != null) AdjustmentField.atypical,
         };
 
         final description = descAdj?.newValue ?? t.description;
@@ -663,6 +860,23 @@ List<EffectiveTransaction> resolveEffectiveTransactions({
           }
         }
 
+        final account = accountsById?[t.accountId];
+        final paymentMethod = pmAdj != null
+            ? (_parsePaymentMethod(pmAdj.newValue) ??
+                  inferPaymentMethod(t, account))
+            : inferPaymentMethod(t, account);
+
+        final tags = tagsAdj != null ? decodeTags(tagsAdj.newValue) : t.tags;
+
+        final isAtypical = atypicalAdj != null
+            ? atypicalAdj.newValue == 'true'
+            : t.isAtypical;
+
+        final resolvedSplits =
+            splitsByTxId != null && splitsByTxId.containsKey(t.id)
+            ? List<TxSplit>.unmodifiable(splitsByTxId[t.id]!)
+            : t.splits;
+
         return EffectiveTransaction(
           original: t,
           description: description,
@@ -676,6 +890,10 @@ List<EffectiveTransaction> resolveEffectiveTransactions({
           essentialityRuleName: essentialityRuleName,
           essentialityRuleExplanation: essentialityRuleExplanation,
           adjustedFields: adjustedFields,
+          paymentMethod: paymentMethod,
+          tags: tags,
+          isAtypical: isAtypical,
+          splits: resolvedSplits,
         );
       }(),
   ];

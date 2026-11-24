@@ -1,14 +1,17 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../demo/demo_data.dart';
 import '../finance/model.dart';
+import '../finance/planning_queries.dart';
 import '../finance/queries.dart';
 import '../finance/taxonomy.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
+import 'receipts_export_screen.dart';
 
 /// Opens the transaction detail & manual adjustment bottom sheet
-/// (RF-24, RF-25, RF-26).
+/// (RF-22, RF-23, RF-24, RF-25, RF-26, RN-24).
 Future<void> showTransactionDetailSheet(BuildContext context, int txId) {
   return showModalBottomSheet<void>(
     context: context,
@@ -35,9 +38,13 @@ class _TransactionDetailSheet extends StatefulWidget {
 class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
   late TextEditingController _descriptionController;
   late TextEditingController _reasonController;
+  late TextEditingController _tagController;
   late TxKind _kind;
   SpendingCategory? _category;
   Essentiality? _essentiality;
+  late PaymentMethod _paymentMethod;
+  late List<String> _tags;
+  late bool _isAtypical;
   bool _initialized = false;
 
   @override
@@ -45,6 +52,7 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
     super.initState();
     _descriptionController = TextEditingController();
     _reasonController = TextEditingController();
+    _tagController = TextEditingController();
   }
 
   @override
@@ -62,12 +70,16 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
     _kind = tx.kind;
     _category = tx.category;
     _essentiality = tx.essentiality;
+    _paymentMethod = tx.paymentMethod;
+    _tags = List<String>.from(tx.tags);
+    _isAtypical = tx.isAtypical;
   }
 
   @override
   void dispose() {
     _descriptionController.dispose();
     _reasonController.dispose();
+    _tagController.dispose();
     super.dispose();
   }
 
@@ -79,7 +91,25 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
     final isSpend = isSpendingKind(_kind);
     final catChanged = isSpend && _category != tx.category;
     final essChanged = isSpend && _essentiality != tx.essentiality;
-    return descChanged || kindChanged || catChanged || essChanged;
+    final pmChanged = _paymentMethod != tx.paymentMethod;
+    final tagsChanged = encodeTags(_tags) != encodeTags(tx.tags);
+    final atypicalChanged = _isAtypical != tx.isAtypical;
+    return descChanged ||
+        kindChanged ||
+        catChanged ||
+        essChanged ||
+        pmChanged ||
+        tagsChanged ||
+        atypicalChanged;
+  }
+
+  void _addTagFromInput() {
+    final parsed = decodeTags(_tagController.text);
+    if (parsed.isEmpty) return;
+    setState(() {
+      _tags = decodeTags(encodeTags([..._tags, ...parsed]));
+      _tagController.clear();
+    });
   }
 
   Future<void> _saveCorrection(AppState state, EffectiveTransaction tx) async {
@@ -99,6 +129,9 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
     final isSpend = isSpendingKind(_kind);
     final catChanged = isSpend && _category != tx.category;
     final essChanged = isSpend && _essentiality != tx.essentiality;
+    final pmChanged = _paymentMethod != tx.paymentMethod;
+    final tagsChanged = encodeTags(_tags) != encodeTags(tx.tags);
+    final atypicalChanged = _isAtypical != tx.isAtypical;
 
     final created = state.adjustTransaction(
       txId: tx.id,
@@ -110,6 +143,12 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
       changeCategory: catChanged,
       essentiality: _essentiality,
       changeEssentiality: essChanged,
+      paymentMethod: _paymentMethod,
+      changePaymentMethod: pmChanged,
+      tags: _tags,
+      changeTags: tagsChanged,
+      isAtypical: _isAtypical,
+      changeAtypical: atypicalChanged,
       reason: _reasonController.text,
     );
     if (created.isEmpty) return;
@@ -155,12 +194,31 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
           );
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Regra criada e aplicada às transações semelhantes.'),
+              content: Text(
+                'Regra criada e aplicada às transações semelhantes.',
+              ),
             ),
           );
         }
       }
     }
+  }
+
+  Future<void> _openSplitEditor(
+    BuildContext context,
+    AppState state,
+    EffectiveTransaction tx,
+  ) {
+    if (!state.canEditTransactions) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppState.offlineEditBlockedMessage)),
+      );
+      return Future<void>.value();
+    }
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _SplitEditorDialog(state: state, tx: tx),
+    );
   }
 
   @override
@@ -266,6 +324,10 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                         label: 'Conta',
                         value: '${account.name} · ${bank.name}',
                       ),
+                      _InfoLine(
+                        label: 'Meio de pagamento',
+                        value: tx.paymentMethod.label,
+                      ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -339,7 +401,7 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                 const SizedBox(height: GranaSpacing.lg),
               ],
 
-              // Manual correction form (RF-24)
+              // Manual correction form (RF-22, RF-23, RF-24)
               Text(
                 'Corrigir transação',
                 style: textTheme.titleMedium?.copyWith(
@@ -456,6 +518,96 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                 ),
               ],
 
+              // Payment method (RF-22)
+              const SizedBox(height: GranaSpacing.lg),
+              Text(
+                'Meio de pagamento',
+                style: textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: GranaSpacing.sm),
+              Wrap(
+                spacing: GranaSpacing.sm,
+                runSpacing: GranaSpacing.sm,
+                children: [
+                  for (final pm in PaymentMethod.values)
+                    ChoiceChip(
+                      key: Key('pm_choice_${pm.name}'),
+                      avatar: Icon(iconForPaymentMethod(pm), size: 16),
+                      label: Text(pm.label),
+                      selected: _paymentMethod == pm,
+                      onSelected: (_) => setState(() => _paymentMethod = pm),
+                    ),
+                ],
+              ),
+
+              // Atypical expense switch
+              if (showSpendingFields) ...[
+                const SizedBox(height: GranaSpacing.md),
+                SwitchListTile(
+                  key: const Key('tx_atypical_switch'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Despesa atípica'),
+                  subtitle: const Text(
+                    'Exclui este gasto pontual do ritmo diário na projeção do mês.',
+                  ),
+                  value: _isAtypical,
+                  onChanged: (val) => setState(() => _isAtypical = val),
+                ),
+              ],
+
+              // Tags editor (RF-23)
+              const SizedBox(height: GranaSpacing.md),
+              Text(
+                'Tags',
+                style: textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: GranaSpacing.sm),
+              if (_tags.isNotEmpty) ...[
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: GranaSpacing.xs,
+                  children: [
+                    for (final tag in _tags)
+                      InputChip(
+                        key: Key('tx_tag_chip_$tag'),
+                        label: Text('#$tag'),
+                        onDeleted: () => setState(() {
+                          _tags = _tags
+                              .where((t) => t != tag)
+                              .toList(growable: false);
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('tx_tag_input'),
+                      controller: _tagController,
+                      decoration: const InputDecoration(
+                        labelText: 'Adicionar tag',
+                        hintText: 'Ex.: viagem, reembolso',
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _addTagFromInput(),
+                    ),
+                  ),
+                  const SizedBox(width: GranaSpacing.sm),
+                  OutlinedButton(
+                    key: const Key('tx_tag_add_button'),
+                    onPressed: _addTagFromInput,
+                    child: const Text('Adicionar'),
+                  ),
+                ],
+              ),
+
               const SizedBox(height: GranaSpacing.lg),
               TextField(
                 key: const Key('tx_reason_field'),
@@ -472,6 +624,98 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                 icon: const Icon(Icons.check_rounded),
                 label: const Text('Salvar correção'),
               ),
+
+              // Splits & NFC-e section (RN-24)
+              if (showSpendingFields) ...[
+                const SizedBox(height: GranaSpacing.xl),
+                Card(
+                  key: const Key('tx_splits_section'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(GranaSpacing.lg),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Divisão em partes e nota fiscal',
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: GranaSpacing.xs),
+                        Text(
+                          tx.splits.isEmpty
+                              ? 'Divida uma compra mista em categorias diferentes '
+                                    '(soma exata em centavos) ou anexe uma NFC-e.'
+                              : '${tx.splits.length} parte(s) registrada(s) com '
+                                    'soma exata de '
+                                    '${state.hideValues ? r'R$ •••' : formatBrl(tx.amountCents.abs())}.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (tx.splits.isNotEmpty) ...[
+                          const SizedBox(height: GranaSpacing.sm),
+                          for (final s in tx.splits)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${s.description} · '
+                                      '${spendingCategoryLabel(s.category)}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                  MoneyText(
+                                    cents: s.amountCents,
+                                    hideValues: state.hideValues,
+                                    style: tokens.valorLinha.copyWith(
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        const SizedBox(height: GranaSpacing.md),
+                        Wrap(
+                          spacing: GranaSpacing.sm,
+                          runSpacing: GranaSpacing.sm,
+                          children: [
+                            OutlinedButton.icon(
+                              key: const Key('tx_edit_splits_button'),
+                              onPressed: () =>
+                                  _openSplitEditor(context, state, tx),
+                              icon: const Icon(Icons.call_split_rounded),
+                              label: Text(
+                                tx.splits.isEmpty
+                                    ? 'Dividir em partes'
+                                    : 'Editar divisão',
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              key: const Key('tx_attach_nfce_button'),
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => ReceiptsExportScreen(
+                                      targetTransactionId: tx.id,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.receipt_long_outlined),
+                              label: const Text('Anexar nota / NFC-e'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: GranaSpacing.xl),
               // Adjustment history (RF-25)
@@ -589,6 +833,25 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
   }
 }
 
+class _SplitDraftRow {
+  _SplitDraftRow({
+    required this.descriptionController,
+    required this.amountController,
+    required this.category,
+    required this.essentiality,
+  });
+
+  final TextEditingController descriptionController;
+  final TextEditingController amountController;
+  SpendingCategory category;
+  Essentiality essentiality;
+
+  void dispose() {
+    descriptionController.dispose();
+    amountController.dispose();
+  }
+}
+
 class _InfoLine extends StatelessWidget {
   const _InfoLine({required this.label, required this.value});
 
@@ -657,6 +920,280 @@ class _ProvenanceLine extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
+      ],
+    );
+  }
+}
+
+class _SplitEditorDialog extends StatefulWidget {
+  const _SplitEditorDialog({required this.state, required this.tx});
+
+  final AppState state;
+  final EffectiveTransaction tx;
+
+  @override
+  State<_SplitEditorDialog> createState() => _SplitEditorDialogState();
+}
+
+class _SplitEditorDialogState extends State<_SplitEditorDialog> {
+  late final List<_SplitDraftRow> _rows;
+
+  @override
+  void initState() {
+    super.initState();
+    final tx = widget.tx;
+    final totalAbs = tx.amountCents.abs();
+    final initialSplits = tx.splits.isNotEmpty
+        ? tx.splits
+        : [
+            TxSplit(
+              id: 'draft-1',
+              description: '${tx.description} (parte 1)',
+              amountCents: totalAbs ~/ 2,
+              category: tx.category ?? SpendingCategory.food,
+              essentiality: tx.essentiality ?? Essentiality.essential,
+            ),
+            TxSplit(
+              id: 'draft-2',
+              description: '${tx.description} (parte 2)',
+              amountCents: totalAbs - (totalAbs ~/ 2),
+              category: SpendingCategory.other,
+              essentiality: Essentiality.flexible,
+            ),
+          ];
+
+    _rows = [
+      for (final s in initialSplits)
+        _SplitDraftRow(
+          descriptionController: TextEditingController(text: s.description),
+          amountController: TextEditingController(
+            text:
+                '${s.amountCents ~/ 100},${(s.amountCents % 100).toString().padLeft(2, '0')}',
+          ),
+          category: s.category ?? SpendingCategory.other,
+          essentiality: s.essentiality ?? Essentiality.important,
+        ),
+    ];
+  }
+
+  @override
+  void dispose() {
+    for (final row in _rows) {
+      row.dispose();
+    }
+    super.dispose();
+  }
+
+  List<TxSplit> _buildCurrentSplits() {
+    final list = <TxSplit>[];
+    for (var i = 0; i < _rows.length; i++) {
+      final cents = parseBrlToCents(_rows[i].amountController.text) ?? 0;
+      list.add(
+        TxSplit(
+          id: 'split-${widget.tx.id}-${i + 1}',
+          description: _rows[i].descriptionController.text.trim().isEmpty
+              ? 'Parte ${i + 1}'
+              : _rows[i].descriptionController.text.trim(),
+          amountCents: cents,
+          category: _rows[i].category,
+          essentiality: _rows[i].essentiality,
+        ),
+      );
+    }
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tx = widget.tx;
+    final state = widget.state;
+    final totalAbs = tx.amountCents.abs();
+    final currentSplits = _buildCurrentSplits();
+    final remaining = splitRemainingCents(tx.amountCents, currentSplits);
+    final isValid = validateSplitTotal(tx.amountCents, currentSplits);
+    final scheme = Theme.of(context).colorScheme;
+    final tokens = GranaTokens.of(context);
+
+    return AlertDialog(
+      title: const Text('Dividir transação (RN-24)'),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: GranaSpacing.sm,
+                runSpacing: GranaSpacing.xs,
+                children: [
+                  Text(
+                    'Total da transação: '
+                    '${state.hideValues ? r'R$ •••' : formatBrl(totalAbs)}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    remaining == 0
+                        ? 'Soma exata fechada'
+                        : (remaining > 0
+                              ? 'Faltam ${formatBrl(remaining)}'
+                              : 'Excede ${formatBrl(remaining.abs())}'),
+                    key: const Key('splits_remaining_label'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: remaining == 0 ? tokens.mata : scheme.error,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: GranaSpacing.md),
+              for (var i = 0; i < _rows.length; i++) ...[
+                Card(
+                  color: scheme.surfaceContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(GranaSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Parte ${i + 1}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (_rows.length > 1)
+                              IconButton(
+                                tooltip: 'Remover parte',
+                                onPressed: () {
+                                  final removed = _rows.removeAt(i);
+                                  removed.dispose();
+                                  setState(() {});
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                ),
+                              ),
+                          ],
+                        ),
+                        TextField(
+                          key: Key('split_desc_$i'),
+                          controller: _rows[i].descriptionController,
+                          decoration: const InputDecoration(
+                            labelText: 'Descrição da parte',
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: GranaSpacing.sm),
+                        TextField(
+                          key: Key('split_amount_$i'),
+                          controller: _rows[i].amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Valor (R\$)',
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        const SizedBox(height: GranaSpacing.sm),
+                        DropdownButtonFormField<SpendingCategory>(
+                          initialValue: _rows[i].category,
+                          decoration: const InputDecoration(
+                            labelText: 'Categoria',
+                            isDense: true,
+                          ),
+                          items: [
+                            for (final c in SpendingCategory.values)
+                              DropdownMenuItem(value: c, child: Text(c.label)),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _rows[i].category = val);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: GranaSpacing.sm),
+                        DropdownButtonFormField<Essentiality>(
+                          initialValue: _rows[i].essentiality,
+                          decoration: const InputDecoration(
+                            labelText: 'Essencialidade',
+                            isDense: true,
+                          ),
+                          items: [
+                            for (final e in Essentiality.values)
+                              DropdownMenuItem(value: e, child: Text(e.label)),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _rows[i].essentiality = val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+              ],
+              OutlinedButton.icon(
+                key: const Key('splits_add_row_button'),
+                onPressed: () {
+                  final rem = remaining > 0 ? remaining : 0;
+                  _rows.add(
+                    _SplitDraftRow(
+                      descriptionController: TextEditingController(
+                        text: 'Parte ${_rows.length + 1}',
+                      ),
+                      amountController: TextEditingController(
+                        text:
+                            '${rem ~/ 100},${(rem % 100).toString().padLeft(2, '0')}',
+                      ),
+                      category: SpendingCategory.other,
+                      essentiality: Essentiality.important,
+                    ),
+                  );
+                  setState(() {});
+                },
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Adicionar parte'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (tx.splits.isNotEmpty)
+          TextButton(
+            key: const Key('splits_clear_button'),
+            onPressed: () {
+              state.replaceSplits(tx.id, const []);
+              Navigator.of(context).pop();
+            },
+            child: const Text('Remover divisão'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const Key('splits_save_button'),
+          onPressed: isValid
+              ? () {
+                  state.replaceSplits(tx.id, currentSplits);
+                  Navigator.of(context).pop();
+                }
+              : null,
+          child: const Text('Salvar divisão'),
+        ),
       ],
     );
   }

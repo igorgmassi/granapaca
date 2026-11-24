@@ -6,6 +6,7 @@ import '../api/api_models.dart';
 import '../api/granapaca_api_client.dart';
 import '../demo/demo_data.dart';
 import '../finance/model.dart';
+import '../finance/planning_queries.dart';
 import '../finance/queries.dart';
 import '../finance/taxonomy.dart';
 import '../security/app_lock.dart';
@@ -72,8 +73,9 @@ class AppAlert {
 }
 
 /// Application state covering demo mode, self-hosted server authentication,
-/// encrypted offline cache + cursor delta sync, app lock, bank connections,
-/// and transaction classification / review queue.
+/// encrypted offline cache + cursor delta sync, cash offline outbox, app lock,
+/// bank connections, transaction classification / splits / bulk edits,
+/// planning (budgets, goals, alert rules), receipts consent, and Paçoca chat.
 class AppState extends ChangeNotifier {
   AppState({
     Dataset? dataset,
@@ -140,13 +142,21 @@ class AppState extends ChangeNotifier {
     final (from, to) = monthRange(_selectedMonth);
     _historyFilter = TxFilter(from: from, to: to);
     _alerts = _mode == AppMode.demo ? _defaultDemoAlerts() : const [];
+
+    if (_mode == AppMode.demo) {
+      _seedDemoPlanningAndAssistant();
+    } else {
+      _seedAssistantWelcome();
+    }
     _recompute();
   }
 
   static const int historyPageSize = 25;
+  static const String cashBankId = 'cash-wallet-bank';
+  static const String cashAccountId = 'cash-wallet';
 
-  /// Clear pt-BR warning when attempting to edit transactions while offline
-  /// (RF-21).
+  /// Clear pt-BR warning when attempting to edit bank transactions while
+  /// offline (RF-21).
   static const String offlineEditBlockedMessage =
       'Você está sem conexão. Corrigir transações exige conexão com o seu '
       'servidor.';
@@ -188,11 +198,31 @@ class AppState extends ChangeNotifier {
   ProfileAnswers _profileAnswers = const ProfileAnswers();
   final List<UserRule> _rules = [];
   final List<TxAdjustment> _adjustments = [];
+  final Map<int, List<TxSplit>> _splitsByTxId = {};
+  final List<PendingOutboxMutation> _outbox = [];
   late List<AppAlert> _alerts;
   bool _simulateNoConnections;
 
+  // Planning state
+  final List<Budget> _budgets = [];
+  final List<Goal> _goals = [];
+  final List<SpendingAlertRule> _spendingAlertRules = [];
+
+  // Assistant ("Paçoca") state
+  final List<AssistantMessage> _assistantMessages = [];
+  AiProviderConfig _aiProviderConfig = const AiProviderConfig();
+  final List<AssistantSuggestion> _assistantSuggestions = [];
+  bool _isAssistantLoading = false;
+
+  // Receipts consent state
+  bool _receiptConsentAccepted = false;
+
   int _adjustmentSeq = 1;
   int _ruleSeq = 1;
+  int _localTxSeq = 100000;
+  int _outboxSeq = 1;
+  int _planningSeq = 1;
+  int _assistantSeq = 1;
 
   late List<EffectiveTransaction> _effectiveTransactions;
   late Dataset _effectiveDataset;
@@ -250,7 +280,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Editing transactions is disabled in server mode while offline (RF-21).
+  /// Editing bank transactions is disabled in server mode while offline (RF-21).
+  /// Physical cash entries remain available offline via the outbox (RF-44).
   bool get canEditTransactions => !(isServerMode && _isOffline);
 
   bool get hideValues => _hideValues;
@@ -268,7 +299,39 @@ class AppState extends ChangeNotifier {
   List<AppAlert> get alerts => List.unmodifiable(_alerts);
   bool get simulateNoConnections => _simulateNoConnections;
 
+  List<PendingOutboxMutation> get pendingOutbox => List.unmodifiable(_outbox);
+  int get pendingOutboxCount => _outbox.length;
+
+  List<Budget> get budgets => List.unmodifiable(_budgets);
+  List<Goal> get goals => List.unmodifiable(_goals);
+  List<SpendingAlertRule> get spendingAlertRules =>
+      List.unmodifiable(_spendingAlertRules);
+
+  List<AssistantMessage> get assistantMessages =>
+      List.unmodifiable(_assistantMessages);
+  AiProviderConfig get aiProviderConfig => _aiProviderConfig;
+  List<AssistantSuggestion> get assistantSuggestions =>
+      List.unmodifiable(_assistantSuggestions);
+  List<AssistantSuggestion> get pendingAssistantSuggestions =>
+      _assistantSuggestions.where((s) => !s.resolved).toList(growable: false);
+  bool get isAssistantLoading => _isAssistantLoading;
+
+  bool get receiptConsentAccepted => _receiptConsentAccepted;
+
   int get unreadAlertCount => _alerts.where((a) => !a.isRead).length;
+
+  /// Sorted unique tags present across all effective transactions (RF-23).
+  List<String> get allTags {
+    final map = <String, String>{};
+    for (final tx in _effectiveTransactions) {
+      for (final tag in tx.tags) {
+        final key = normalizeText(tag);
+        map.putIfAbsent(key, () => tag);
+      }
+    }
+    final list = map.values.toList()..sort();
+    return List.unmodifiable(list);
+  }
 
   /// Uncategorized expenses grouped by normalized merchant name (RF-31).
   List<ReviewQueueGroup> get reviewQueueGroups => reviewQueue([
@@ -294,6 +357,110 @@ class AppState extends ChangeNotifier {
       for (final t in _dataset.transactions) DateTime(t.date.year, t.date.month),
     }.toList()..sort();
     return months;
+  }
+
+  void _seedDemoPlanningAndAssistant() {
+    _budgets
+      ..clear()
+      ..addAll(const [
+        Budget(
+          id: 'budget-demo-food',
+          category: SpendingCategory.food,
+          limitCents: 120000,
+          alertThreshold: 0.8,
+        ),
+        Budget(
+          id: 'budget-demo-housing',
+          category: SpendingCategory.housing,
+          limitCents: 200000,
+          alertThreshold: 0.85,
+        ),
+        Budget(
+          id: 'budget-demo-transport',
+          category: SpendingCategory.transport,
+          limitCents: 35000,
+          alertThreshold: 0.8,
+        ),
+      ]);
+
+    _goals
+      ..clear()
+      ..addAll([
+        Goal(
+          id: 'goal-demo-emergency',
+          name: 'Reserva de emergência',
+          targetCents: 1800000,
+          currentCents: 1500000,
+          targetDate: DateTime(2026, 12, 31),
+        ),
+        Goal(
+          id: 'goal-demo-trip',
+          name: 'Viagem em família',
+          targetCents: 600000,
+          currentCents: 240000,
+          targetDate: DateTime(2027, 7, 1),
+        ),
+      ]);
+
+    // Seed one calm rule that is NOT exceeded in March so default unread alerts
+    // remain strictly 2 on startup.
+    _spendingAlertRules
+      ..clear()
+      ..add(
+        const SpendingAlertRule(
+          id: 'alert-rule-demo-leisure',
+          rawExpression: 'me avise quando lazer passar de R\$ 300',
+          label: 'Lazer > R\$ 300,00',
+          thresholdCents: 30000,
+          category: SpendingCategory.leisure,
+        ),
+      );
+
+    _assistantSuggestions
+      ..clear()
+      ..addAll(const [
+        AssistantSuggestion(
+          id: 'sugg-demo-1',
+          merchantKey: 'loja tudo pra casa',
+          merchantDisplay: 'Loja Tudo pra Casa',
+          suggestedCategory: SpendingCategory.housing,
+          suggestedEssentiality: Essentiality.important,
+          confidence: 0.64,
+          explanation:
+              'Aparece mensalmente com itens domésticos. Confirme se deseja '
+              'criar uma regra para classificar como Moradia · Importante.',
+        ),
+        AssistantSuggestion(
+          id: 'sugg-demo-2',
+          merchantKey: 'corrida de app',
+          merchantDisplay: 'Corrida de app',
+          suggestedCategory: SpendingCategory.transport,
+          suggestedEssentiality: Essentiality.flexible,
+          confidence: 0.58,
+          explanation:
+              'Classificação sugerida com confiança média (58%). Nenhuma regra '
+              'é criada automaticamente sem sua confirmação.',
+        ),
+      ]);
+
+    _seedAssistantWelcome();
+  }
+
+  void _seedAssistantWelcome() {
+    _assistantMessages
+      ..clear()
+      ..add(
+        AssistantMessage(
+          id: 'pacoca-welcome',
+          isUser: false,
+          text:
+              'Olá! Eu sou a Paçoca, sua assistente financeira somente leitura. '
+              'Pergunte sobre sobra do mês, categorias, 50/30/20, projeção ou '
+              'assinaturas — sempre respondo citando o período e os valores exatos.',
+          timestamp: _dataset.today,
+          periodLabel: formatMonthYear(_selectedMonth),
+        ),
+      );
   }
 
   static List<AppAlert> _defaultDemoAlerts() => const [
@@ -360,6 +527,12 @@ class AppState extends ChangeNotifier {
     _rules.clear();
     _adjustments.clear();
     _txIdToUuid.clear();
+    _splitsByTxId.clear();
+    _outbox.clear();
+    _budgets.clear();
+    _goals.clear();
+    _spendingAlertRules.clear();
+    _assistantSuggestions.clear();
     _alerts = const [];
     _dataset = Dataset(
       banks: const [],
@@ -480,6 +653,12 @@ class AppState extends ChangeNotifier {
       _rules.clear();
       _adjustments.clear();
       _txIdToUuid.clear();
+      _splitsByTxId.clear();
+      _outbox.clear();
+      _budgets.clear();
+      _goals.clear();
+      _spendingAlertRules.clear();
+      _assistantSuggestions.clear();
       _alerts = const [];
       _dataset = Dataset(
         banks: const [],
@@ -487,6 +666,7 @@ class AppState extends ChangeNotifier {
         transactions: const [],
         today: DateTime.now(),
       );
+      _seedAssistantWelcome();
       _recompute();
     }
 
@@ -511,11 +691,14 @@ class AppState extends ChangeNotifier {
     _rules.clear();
     _adjustments.clear();
     _txIdToUuid.clear();
+    _splitsByTxId.clear();
+    _outbox.clear();
     _selectedMonth = DateTime(_dataset.today.year, _dataset.today.month);
     _spendingMonth = _selectedMonth;
     final (from, to) = monthRange(_selectedMonth);
     _historyFilter = TxFilter(from: from, to: to);
     unawaited(_preferences.writeHasActiveServerProfile(false));
+    _seedDemoPlanningAndAssistant();
     _recompute();
     notifyListeners();
   }
@@ -649,9 +832,84 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// RF-13 & RF-21: pulls incremental changes using the saved cursor, saves
-  /// the updated encrypted offline snapshot, or gracefully falls back to the
-  /// encrypted cache when the server is unreachable.
+  /// RF-44: replays pending offline cash-entry mutations to the server.
+  Future<int> flushPendingOutbox() async {
+    if (isDemoMode || _outbox.isEmpty || !isAuthenticated) return 0;
+    var flushed = 0;
+    final remaining = <PendingOutboxMutation>[];
+    final flushedLocalIds = <int>{};
+
+    for (final mutation in _outbox) {
+      if (mutation.type == OutboxMutationType.cashEntry) {
+        try {
+          final p = mutation.payload;
+          await _apiClient.createCashTransaction(
+            date: DateTime.parse(p['date'] as String),
+            description: p['description'] as String,
+            amountCents: (p['amountCents'] as num).toInt(),
+            category: parseSpendingCategory(p['category'] as String?),
+            essentiality: parseEssentiality(p['essentiality'] as String?),
+            tags: ((p['tags'] as List<dynamic>?) ?? const [])
+                .map((e) => e.toString())
+                .toList(growable: false),
+          );
+          flushed++;
+          flushedLocalIds.add(mutation.localTxId);
+        } on ApiException catch (error) {
+          if (error.isOffline) {
+            _isOffline = true;
+            remaining.add(mutation);
+          } else {
+            remaining.add(mutation);
+          }
+        }
+      }
+    }
+
+    _outbox
+      ..clear()
+      ..addAll(remaining);
+
+    if (flushedLocalIds.isNotEmpty) {
+      final updatedTxs = [
+        for (final t in _dataset.transactions)
+          flushedLocalIds.contains(t.id)
+              ? Transaction(
+                  id: t.id,
+                  accountId: t.accountId,
+                  date: t.date,
+                  description: t.description,
+                  amountCents: t.amountCents,
+                  kind: t.kind,
+                  category: t.category,
+                  essentiality: t.essentiality,
+                  installment: t.installment,
+                  installmentCount: t.installmentCount,
+                  paymentMethod: t.paymentMethod,
+                  tags: t.tags,
+                  isAtypical: t.isAtypical,
+                  splits: t.splits,
+                  isCashEntry: t.isCashEntry,
+                  pendingSync: false,
+                )
+              : t,
+      ];
+      _dataset = Dataset(
+        banks: _dataset.banks,
+        accounts: _dataset.accounts,
+        transactions: updatedTxs,
+        today: _dataset.today,
+      );
+      _recompute();
+      notifyListeners();
+    }
+    return flushed;
+  }
+
+  /// RF-13, RF-21 & RF-44: flushes pending offline cash entries, pulls
+  /// incremental changes using the saved cursor, saves the updated encrypted
+  /// offline snapshot, or gracefully falls back to the encrypted cache when
+  /// the server is unreachable.
   Future<bool> syncFromServer({bool triggerBankSync = false}) async {
     if (isDemoMode) return false;
     if (_isSyncing) return false;
@@ -659,6 +917,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await flushPendingOutbox();
       if (triggerBankSync) {
         await _apiClient.syncConnections();
       }
@@ -920,11 +1179,14 @@ class AppState extends ChangeNotifier {
   }
 
   void _recompute() {
+    final accountsById = {for (final a in _dataset.accounts) a.id: a};
     _effectiveTransactions = List.unmodifiable(
       resolveEffectiveTransactions(
         originals: _dataset.transactions,
         rules: _rules,
         adjustments: _adjustments,
+        accountsById: accountsById,
+        splitsByTxId: _splitsByTxId,
       ),
     );
     _effectiveDataset = Dataset(
@@ -1087,10 +1349,131 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  /// Ensures the local physical-cash wallet bank & account exist lazily.
+  void _ensureCashAccountExists() {
+    final hasCashBank = _dataset.banks.any((b) => b.id == cashBankId);
+    final hasCashAcct = _dataset.accounts.any((a) => a.id == cashAccountId);
+    if (hasCashBank && hasCashAcct) return;
+
+    final nextBanks = [
+      ..._dataset.banks,
+      if (!hasCashBank)
+        const Bank(
+          cashBankId,
+          'Dinheiro físico',
+          colorValue: 0xFF7A5A43,
+          lastSyncedLabel: 'Lançamentos manuais locais',
+        ),
+    ];
+    final nextAccounts = [
+      ..._dataset.accounts,
+      if (!hasCashAcct)
+        const Account(
+          id: cashAccountId,
+          bankId: cashBankId,
+          name: 'Carteira (Dinheiro)',
+          kind: AccountKind.cash,
+        ),
+    ];
+    _dataset = Dataset(
+      banks: nextBanks,
+      accounts: nextAccounts,
+      transactions: _dataset.transactions,
+      today: _dataset.today,
+    );
+  }
+
+  /// RF-44: Quick-entry for physical cash spending. Works instantaneously in
+  /// demo mode AND while offline in server mode by queueing a
+  /// [PendingOutboxMutation] that flushes on the next sync.
+  Future<EffectiveTransaction> addCashTransaction({
+    required String description,
+    required int amountCents,
+    required DateTime date,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+    List<String> tags = const [],
+  }) async {
+    _ensureCashAccountExists();
+    final cleanedDesc = description.trim().isEmpty
+        ? 'Gasto em dinheiro'
+        : description.trim();
+    final cleanedTags = decodeTags(encodeTags(tags));
+    final localId = _localTxSeq++;
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final signedAmount = -amountCents.abs();
+    var queuedOffline = isServerMode && _isOffline;
+
+    if (isServerMode && !_isOffline && isAuthenticated) {
+      try {
+        await _apiClient.createCashTransaction(
+          date: normalizedDate,
+          description: cleanedDesc,
+          amountCents: amountCents.abs(),
+          category: category,
+          essentiality: essentiality,
+          tags: cleanedTags,
+        );
+      } on ApiException catch (error) {
+        if (error.isOffline) {
+          _isOffline = true;
+          queuedOffline = true;
+        } else {
+          queuedOffline = true;
+        }
+      }
+    }
+
+    final tx = Transaction(
+      id: localId,
+      accountId: cashAccountId,
+      date: normalizedDate,
+      description: cleanedDesc,
+      amountCents: signedAmount,
+      kind: TxKind.expense,
+      category: category,
+      essentiality: essentiality,
+      paymentMethod: PaymentMethod.cash,
+      tags: cleanedTags,
+      isCashEntry: true,
+      pendingSync: queuedOffline,
+    );
+
+    if (queuedOffline) {
+      _outbox.add(
+        PendingOutboxMutation(
+          id: 'outbox-${_outboxSeq++}',
+          type: OutboxMutationType.cashEntry,
+          createdAt: DateTime.now(),
+          localTxId: localId,
+          payload: {
+            'date': normalizedDate.toIso8601String(),
+            'description': cleanedDesc,
+            'amountCents': amountCents.abs(),
+            'category': category?.name,
+            'essentiality': essentiality?.name,
+            'tags': cleanedTags,
+          },
+        ),
+      );
+    }
+
+    _dataset = Dataset(
+      banks: _dataset.banks,
+      accounts: _dataset.accounts,
+      transactions: [..._dataset.transactions, tx],
+      today: _dataset.today,
+    );
+    _recompute();
+    _evaluateSpendingAlertsForMonth(DateTime(date.year, date.month));
+    notifyListeners();
+    return effectiveById(localId);
+  }
+
   /// Appends immutable manual adjustments for only the fields that actually
-  /// changed, keeping category and essentiality strictly independent (RF-24).
-  /// Refuses mutations cleanly when in offline server mode (RF-21).
-  /// When in authenticated online server mode, persists via
+  /// changed, keeping category and essentiality strictly independent (RF-24,
+  /// RF-22, RF-23). Refuses mutations cleanly when in offline server mode
+  /// (RF-21). When in authenticated online server mode, persists via
   /// `POST /api/v1/transactions/{id}/adjustments` and reconciles server IDs.
   List<TxAdjustment> adjustTransaction({
     required int txId,
@@ -1102,6 +1485,12 @@ class AppState extends ChangeNotifier {
     bool changeKind = false,
     String? description,
     bool changeDescription = false,
+    PaymentMethod? paymentMethod,
+    bool changePaymentMethod = false,
+    List<String>? tags,
+    bool changeTags = false,
+    bool? isAtypical,
+    bool changeAtypical = false,
     String? reason,
   }) {
     if (!canEditTransactions) {
@@ -1154,9 +1543,31 @@ class AppState extends ChangeNotifier {
         essentiality?.name,
       );
     }
+    if (changePaymentMethod && paymentMethod != null) {
+      addField(
+        AdjustmentField.paymentMethod,
+        current.paymentMethod.name,
+        paymentMethod.name,
+      );
+    }
+    if (changeTags && tags != null) {
+      final oldEncoded = encodeTags(current.tags);
+      final newEncoded = encodeTags(tags);
+      addField(AdjustmentField.tags, oldEncoded, newEncoded);
+    }
+    if (changeAtypical && isAtypical != null) {
+      addField(
+        AdjustmentField.atypical,
+        current.isAtypical ? 'true' : 'false',
+        isAtypical ? 'true' : 'false',
+      );
+    }
 
     if (created.isNotEmpty) {
       _recompute();
+      _evaluateSpendingAlertsForMonth(
+        DateTime(current.date.year, current.date.month),
+      );
       notifyListeners();
       if (_shouldPersistToServer) {
         final serverTxId = _txIdToUuid[txId] ?? '$txId';
@@ -1187,6 +1598,116 @@ class AppState extends ChangeNotifier {
       }
     }
     return created;
+  }
+
+  /// Replaces splits on [txId], strictly enforcing exact-cent sum (RN-24,
+  /// ADR-013). Passing an empty list clears splits.
+  bool replaceSplits(int txId, List<TxSplit> splits) {
+    if (!canEditTransactions) return false;
+    final current = effectiveById(txId);
+    if (splits.isEmpty) {
+      _splitsByTxId.remove(txId);
+      _recompute();
+      notifyListeners();
+      return true;
+    }
+    if (!validateSplitTotal(current.amountCents, splits)) {
+      return false;
+    }
+    final normalized = [
+      for (var i = 0; i < splits.length; i++)
+        splits[i].copyWith(
+          id: splits[i].id.isEmpty ? 'split-$txId-${i + 1}' : splits[i].id,
+          amountCents: splits[i].amountCents.abs(),
+        ),
+    ];
+    _splitsByTxId[txId] = normalized;
+    _recompute();
+    _evaluateSpendingAlertsForMonth(
+      DateTime(current.date.year, current.date.month),
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// Applies append-only adjustments in batch across multiple selected
+  /// transactions (Bulk Edit). Returns the number of modified transactions.
+  int applyBulkAdjustments({
+    required Set<int> txIds,
+    SpendingCategory? category,
+    bool changeCategory = false,
+    Essentiality? essentiality,
+    bool changeEssentiality = false,
+    PaymentMethod? paymentMethod,
+    bool changePaymentMethod = false,
+    bool? isAtypical,
+    bool changeAtypical = false,
+    String? reason,
+  }) {
+    if (!canEditTransactions || txIds.isEmpty) return 0;
+    var updatedCount = 0;
+    final now = DateTime.now();
+    final trimmedReason = (reason == null || reason.trim().isEmpty)
+        ? 'Correção em lote'
+        : reason.trim();
+
+    for (final txId in txIds) {
+      final current = effectiveById(txId);
+      var changedThis = false;
+
+      void addField(AdjustmentField field, String? oldVal, String? newVal) {
+        if (oldVal == newVal) return;
+        _adjustments.add(
+          TxAdjustment(
+            id: 'adj-${_adjustmentSeq++}',
+            txId: txId,
+            field: field,
+            oldValue: oldVal,
+            newValue: newVal,
+            reason: trimmedReason,
+            timestamp: now,
+          ),
+        );
+        changedThis = true;
+      }
+
+      if (changeCategory && isSpendingKind(current.kind)) {
+        addField(
+          AdjustmentField.category,
+          current.category?.name,
+          category?.name,
+        );
+      }
+      if (changeEssentiality && isSpendingKind(current.kind)) {
+        addField(
+          AdjustmentField.essentiality,
+          current.essentiality?.name,
+          essentiality?.name,
+        );
+      }
+      if (changePaymentMethod && paymentMethod != null) {
+        addField(
+          AdjustmentField.paymentMethod,
+          current.paymentMethod.name,
+          paymentMethod.name,
+        );
+      }
+      if (changeAtypical && isAtypical != null) {
+        addField(
+          AdjustmentField.atypical,
+          current.isAtypical ? 'true' : 'false',
+          isAtypical ? 'true' : 'false',
+        );
+      }
+      if (changedThis) updatedCount++;
+    }
+
+    if (updatedCount > 0) {
+      _recompute();
+      _evaluateSpendingAlertsForMonth(_spendingMonth);
+      notifyListeners();
+    }
+    return updatedCount;
   }
 
   /// Appends an undo record pointing to [adjustmentId] (ADR-012, RF-25).
@@ -1373,6 +1894,289 @@ class AppState extends ChangeNotifier {
     );
     _recompute();
     notifyListeners();
+  }
+
+  // ---- Planning: Budgets, Goals & Custom Spending Alerts ----
+
+  void upsertBudget({
+    required SpendingCategory category,
+    required int limitCents,
+    double alertThreshold = 0.8,
+  }) {
+    if (limitCents <= 0) return;
+    final existingIdx = _budgets.indexWhere((b) => b.category == category);
+    if (existingIdx >= 0) {
+      _budgets[existingIdx] = _budgets[existingIdx].copyWith(
+        limitCents: limitCents,
+        alertThreshold: alertThreshold,
+      );
+    } else {
+      _budgets.add(
+        Budget(
+          id: 'budget-${_planningSeq++}',
+          category: category,
+          limitCents: limitCents,
+          alertThreshold: alertThreshold,
+        ),
+      );
+    }
+    notifyListeners();
+  }
+
+  void deleteBudget(String budgetId) {
+    final before = _budgets.length;
+    _budgets.removeWhere((b) => b.id == budgetId);
+    if (_budgets.length != before) notifyListeners();
+  }
+
+  Goal addGoal({
+    required String name,
+    required int targetCents,
+    int currentCents = 0,
+    DateTime? targetDate,
+  }) {
+    final goal = Goal(
+      id: 'goal-${_planningSeq++}',
+      name: name.trim(),
+      targetCents: targetCents,
+      currentCents: currentCents,
+      targetDate: targetDate,
+    );
+    _goals.add(goal);
+    notifyListeners();
+    return goal;
+  }
+
+  void contributeToGoal(String goalId, int amountCents) {
+    if (amountCents <= 0) return;
+    final idx = _goals.indexWhere((g) => g.id == goalId);
+    if (idx == -1) return;
+    final g = _goals[idx];
+    _goals[idx] = g.copyWith(currentCents: g.currentCents + amountCents);
+    notifyListeners();
+  }
+
+  void deleteGoal(String goalId) {
+    final before = _goals.length;
+    _goals.removeWhere((g) => g.id == goalId);
+    if (_goals.length != before) notifyListeners();
+  }
+
+  /// Parses a natural-language alert expression, registers the rule, and
+  /// immediately raises an in-app alert if the active spending month already
+  /// exceeds the threshold.
+  SpendingAlertRule? addSpendingAlertRuleFromText(String rawExpression) {
+    final parsed = parseSpendingAlertRule(
+      rawExpression,
+      id: 'alert-rule-${_planningSeq++}',
+    );
+    if (parsed == null) return null;
+    _spendingAlertRules.add(parsed);
+    _evaluateSpendingAlertsForMonth(_spendingMonth);
+    notifyListeners();
+    return parsed;
+  }
+
+  void toggleSpendingAlertRule(String ruleId, bool active) {
+    final idx = _spendingAlertRules.indexWhere((r) => r.id == ruleId);
+    if (idx == -1) return;
+    _spendingAlertRules[idx] = _spendingAlertRules[idx].copyWith(
+      isActive: active,
+    );
+    if (active) {
+      _evaluateSpendingAlertsForMonth(_spendingMonth);
+    }
+    notifyListeners();
+  }
+
+  void deleteSpendingAlertRule(String ruleId) {
+    final before = _spendingAlertRules.length;
+    _spendingAlertRules.removeWhere((r) => r.id == ruleId);
+    if (_spendingAlertRules.length != before) notifyListeners();
+  }
+
+  void _evaluateSpendingAlertsForMonth(DateTime month) {
+    final plainTxs = _effectiveDataset.transactions;
+    final monthKey = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+
+    for (final rule in _spendingAlertRules) {
+      if (!rule.isActive) continue;
+      final eval = evaluateSpendingAlertRule(rule, plainTxs, month);
+      if (!eval.triggered) continue;
+
+      final alertId = 'custom-${rule.id}-$monthKey';
+      if (_alerts.any((a) => a.id == alertId)) continue;
+
+      _alerts = [
+        AppAlert(
+          id: alertId,
+          title: 'Alerta atingido: ${rule.label}',
+          body:
+              'Em ${formatMonthYear(month)}, o gasto acumulado chegou a '
+              '${formatBrl(eval.currentCents)}, acima do limite de '
+              '${formatBrl(rule.thresholdCents)} configurado em '
+              '"${rule.rawExpression}".',
+          dateLabel: formatFullDate(_dataset.today),
+          target: AlertTarget.spending,
+        ),
+        ..._alerts,
+      ];
+    }
+  }
+
+  // ---- Paçoca Assistant ----
+
+  Future<AssistantMessage> askAssistant(
+    String question, {
+    DateTime? month,
+  }) async {
+    final trimmed = question.trim();
+    final targetMonth = month ?? _selectedMonth;
+    final userMsg = AssistantMessage(
+      id: 'user-${_assistantSeq++}',
+      isUser: true,
+      text: trimmed,
+      timestamp: DateTime.now(),
+    );
+    _assistantMessages.add(userMsg);
+    _isAssistantLoading = true;
+    notifyListeners();
+
+    AssistantMessage reply;
+    try {
+      if (isServerMode && !_isOffline && isAuthenticated) {
+        try {
+          reply = await _apiClient.askAssistant(
+            question: trimmed,
+            month: targetMonth,
+          );
+        } on ApiException {
+          reply = answerFinancialQuestion(
+            trimmed,
+            _effectiveDataset,
+            targetMonth,
+            budgets: _budgets,
+            goals: _goals,
+            replyId: 'pacoca-${_assistantSeq++}',
+          );
+        }
+      } else {
+        reply = answerFinancialQuestion(
+          trimmed,
+          _effectiveDataset,
+          targetMonth,
+          budgets: _budgets,
+          goals: _goals,
+          replyId: 'pacoca-${_assistantSeq++}',
+        );
+      }
+      _assistantMessages.add(reply);
+      return reply;
+    } finally {
+      _isAssistantLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateAiProviderConfig(
+    AiProviderConfig config, {
+    String? apiKey,
+  }) async {
+    _aiProviderConfig = config.copyWith(
+      hasApiKey:
+          config.hasApiKey || (apiKey != null && apiKey.trim().isNotEmpty),
+    );
+    if (isServerMode && !_isOffline && isAuthenticated) {
+      await _apiClient.updateAiProviderConfig(
+        _aiProviderConfig,
+        apiKey: apiKey,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Explicitly confirms a low-confidence Paçoca suggestion and creates a
+  /// user classification rule.
+  UserRule? confirmAssistantSuggestion(String suggestionId) {
+    final idx = _assistantSuggestions.indexWhere((s) => s.id == suggestionId);
+    if (idx == -1) return null;
+    final sugg = _assistantSuggestions[idx];
+    if (sugg.resolved) return null;
+
+    final rule = UserRule(
+      id: 'user-rule-${_ruleSeq++}',
+      merchantKey: sugg.merchantKey,
+      name: sugg.merchantDisplay,
+      explanation:
+          'Regra confirmada na Paçoca para ${sugg.suggestedCategory.label} · '
+          '${sugg.suggestedEssentiality.label}.',
+      category: sugg.suggestedCategory,
+      essentiality: sugg.suggestedEssentiality,
+      isActive: true,
+      layer: RuleLayer.user,
+    );
+    _rules.add(rule);
+    _assistantSuggestions[idx] = sugg.copyWith(resolved: true, accepted: true);
+    _recompute();
+    notifyListeners();
+    return rule;
+  }
+
+  /// Dismisses a low-confidence suggestion without creating any rule.
+  void dismissAssistantSuggestion(String suggestionId) {
+    final idx = _assistantSuggestions.indexWhere((s) => s.id == suggestionId);
+    if (idx == -1) return;
+    _assistantSuggestions[idx] = _assistantSuggestions[idx].copyWith(
+      resolved: true,
+      accepted: false,
+    );
+    notifyListeners();
+  }
+
+  // ---- Receipts Consent & Statement Import ----
+
+  void acceptReceiptConsent() {
+    if (_receiptConsentAccepted) return;
+    _receiptConsentAccepted = true;
+    notifyListeners();
+  }
+
+  void revokeReceiptConsent() {
+    if (!_receiptConsentAccepted) return;
+    _receiptConsentAccepted = false;
+    notifyListeners();
+  }
+
+  /// Imports parsed statement transactions locally (demo mode preview or
+  /// offline fallback) into the active dataset.
+  int importStatementTransactions(List<Transaction> imported) {
+    if (imported.isEmpty) return 0;
+    final assigned = <Transaction>[];
+    for (final tx in imported) {
+      assigned.add(
+        Transaction(
+          id: _localTxSeq++,
+          accountId: tx.accountId,
+          date: tx.date,
+          description: tx.description,
+          amountCents: tx.amountCents,
+          kind: tx.kind,
+          category: tx.category,
+          essentiality: tx.essentiality,
+          paymentMethod: tx.paymentMethod,
+          tags: tx.tags,
+        ),
+      );
+    }
+    _dataset = Dataset(
+      banks: _dataset.banks,
+      accounts: _dataset.accounts,
+      transactions: [..._dataset.transactions, ...assigned],
+      today: _dataset.today,
+    );
+    _recompute();
+    notifyListeners();
+    return assigned.length;
   }
 
   void markAlertRead(String alertId) {
