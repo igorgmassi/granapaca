@@ -17,6 +17,7 @@ class FilePreferencesStore implements PreferencesStore {
   String? _serverUrl;
   AppLockConfig? _appLockConfig;
   bool _hasActiveServerProfile = false;
+  String? _appMode;
 
   void _load() {
     try {
@@ -46,6 +47,10 @@ class FilePreferencesStore implements PreferencesStore {
       if (activeServer is bool) {
         _hasActiveServerProfile = activeServer;
       }
+      final mode = decoded['appMode'];
+      if (mode is String && mode.trim().isNotEmpty) {
+        _appMode = mode.trim();
+      }
     } catch (_) {
       // Ignore corrupt or unreadable local preference files safely.
     }
@@ -61,6 +66,7 @@ class FilePreferencesStore implements PreferencesStore {
           'serverUrl': _serverUrl,
           'appLockConfig': _appLockConfig?.toJson(),
           'hasActiveServerProfile': _hasActiveServerProfile,
+          'appMode': _appMode,
         }),
       );
     } catch (_) {
@@ -110,6 +116,15 @@ class FilePreferencesStore implements PreferencesStore {
   @override
   Future<void> writeHasActiveServerProfile(bool value) async {
     _hasActiveServerProfile = value;
+    await _save();
+  }
+
+  @override
+  String? readAppMode() => _appMode;
+
+  @override
+  Future<void> writeAppMode(String? mode) async {
+    _appMode = (mode == null || mode.trim().isEmpty) ? null : mode.trim();
     await _save();
   }
 }

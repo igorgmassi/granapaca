@@ -930,8 +930,36 @@ String buildTransactionsCsv(
   return buffer.toString();
 }
 
+/// Parsed contents of a GranaPaCá JSON backup file.
+class BackupPayload {
+  const BackupPayload({
+    required this.banks,
+    required this.accounts,
+    required this.transactions,
+    required this.rules,
+    required this.adjustments,
+    required this.budgets,
+    required this.goals,
+    required this.alertRules,
+    this.receiptConsentAccepted = false,
+    this.exportedAt,
+  });
+
+  final List<Bank> banks;
+  final List<Account> accounts;
+  final List<Transaction> transactions;
+  final List<UserRule> rules;
+  final List<TxAdjustment> adjustments;
+  final List<Budget> budgets;
+  final List<Goal> goals;
+  final List<SpendingAlertRule> alertRules;
+  final bool receiptConsentAccepted;
+  final DateTime? exportedAt;
+}
+
 /// Builds a complete JSON backup payload covering banks, accounts,
-/// transactions, rules, adjustments, budgets, goals, and alert rules.
+/// transactions, rules, adjustments, budgets, goals, alert rules, and receipt
+/// consent.
 String buildBackupJson({
   required Dataset dataset,
   required List<UserRule> rules,
@@ -940,6 +968,7 @@ String buildBackupJson({
   required List<Goal> goals,
   required List<SpendingAlertRule> alertRules,
   required String modeLabel,
+  bool receiptConsentAccepted = false,
   DateTime? exportedAt,
 }) {
   final payload = {
@@ -947,6 +976,7 @@ String buildBackupJson({
     'app': 'GranaPaCa',
     'mode': modeLabel,
     'exportedAt': (exportedAt ?? DateTime.now()).toIso8601String(),
+    'receiptConsentAccepted': receiptConsentAccepted,
     'banks': [for (final b in dataset.banks) bankToJson(b)],
     'accounts': [for (final a in dataset.accounts) accountToJson(a)],
     'transactions': [
@@ -957,53 +987,90 @@ String buildBackupJson({
           'tags': t.tags,
           'isAtypical': t.isAtypical,
           'isCashEntry': t.isCashEntry,
-          'splits': [
-            for (final s in t.splits)
-              {
-                'id': s.id,
-                'description': s.description,
-                'amountCents': s.amountCents,
-                'category': s.category?.name,
-                'essentiality': s.essentiality?.name,
-              },
-          ],
+          'splits': [for (final s in t.splits) txSplitToJson(s)],
         },
     ],
     'rules': [for (final r in rules) userRuleToJson(r)],
     'adjustments': [for (final a in adjustments) adjustmentToJson(a)],
-    'budgets': [
-      for (final b in budgets)
-        {
-          'id': b.id,
-          'category': b.category.name,
-          'limitCents': b.limitCents,
-          'alertThreshold': b.alertThreshold,
-        },
-    ],
-    'goals': [
-      for (final g in goals)
-        {
-          'id': g.id,
-          'name': g.name,
-          'targetCents': g.targetCents,
-          'currentCents': g.currentCents,
-          'targetDate': g.targetDate?.toIso8601String(),
-        },
-    ],
-    'alertRules': [
-      for (final a in alertRules)
-        {
-          'id': a.id,
-          'rawExpression': a.rawExpression,
-          'label': a.label,
-          'thresholdCents': a.thresholdCents,
-          'category': a.category?.name,
-          'keyword': a.keyword,
-          'isActive': a.isActive,
-        },
-    ],
+    'budgets': [for (final b in budgets) budgetToJson(b)],
+    'goals': [for (final g in goals) goalToJson(g)],
+    'alertRules': [for (final a in alertRules) spendingAlertRuleToJson(a)],
   };
   return const JsonEncoder.withIndent('  ').convert(payload);
+}
+
+/// Parses and validates a JSON backup produced by [buildBackupJson].
+/// Throws [FormatException] with a friendly pt-BR error if invalid.
+BackupPayload parseBackupJson(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    throw const FormatException(
+      'Cole o conteúdo do backup JSON para restaurar seus dados.',
+    );
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(trimmed);
+  } on FormatException {
+    throw const FormatException(
+      'O texto informado não é um JSON válido. Confira se copiou o backup completo.',
+    );
+  }
+  if (decoded is! Map<String, dynamic>) {
+    throw const FormatException(
+      'Formato de backup inválido. Esperava um objeto JSON do GranaPaCá.',
+    );
+  }
+  final appName = decoded['app'];
+  final hasCoreKeys =
+      decoded.containsKey('banks') ||
+      decoded.containsKey('accounts') ||
+      decoded.containsKey('transactions');
+  if ((appName != null && appName != 'GranaPaCa') || !hasCoreKeys) {
+    throw const FormatException(
+      'Este arquivo não parece ser um backup gerado pelo GranaPaCá.',
+    );
+  }
+
+  return BackupPayload(
+    banks: ((decoded['banks'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(bankFromJson)
+        .toList(growable: false),
+    accounts: ((decoded['accounts'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(accountFromJson)
+        .toList(growable: false),
+    transactions: ((decoded['transactions'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(transactionFromJson)
+        .toList(growable: false),
+    rules: ((decoded['rules'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(userRuleFromJson)
+        .toList(growable: false),
+    adjustments: ((decoded['adjustments'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(adjustmentFromJson)
+        .toList(growable: false),
+    budgets: ((decoded['budgets'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(budgetFromJson)
+        .toList(growable: false),
+    goals: ((decoded['goals'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(goalFromJson)
+        .toList(growable: false),
+    alertRules: ((decoded['alertRules'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(spendingAlertRuleFromJson)
+        .toList(growable: false),
+    receiptConsentAccepted:
+        (decoded['receiptConsentAccepted'] as bool?) ?? false,
+    exportedAt: decoded['exportedAt'] is String
+        ? DateTime.tryParse(decoded['exportedAt'] as String)
+        : null,
+  );
 }
 
 /// Parses OFX (`<STMTTRN>`) or simple CSV (`data,descricao,valor`) bank
@@ -1143,9 +1210,139 @@ DateTime? _parseFlexibleDate(String raw) {
   return null;
 }
 
-/// Deterministic read-only financial Q&A engine for Paçoca (demo mode &
-/// offline server fallback). Always cites the exact period and exact pt-BR
-/// figures computed directly from [data].
+const Map<String, int> _portugueseFullMonths = {
+  'janeiro': 1,
+  'fevereiro': 2,
+  'marco': 3,
+  'abril': 4,
+  'maio': 5,
+  'junho': 6,
+  'julho': 7,
+  'agosto': 8,
+  'setembro': 9,
+  'outubro': 10,
+  'novembro': 11,
+  'dezembro': 12,
+};
+
+const Map<String, int> _portugueseShortMonths = {
+  'jan': 1,
+  'fev': 2,
+  'mar': 3,
+  'abr': 4,
+  'mai': 5,
+  'jun': 6,
+  'jul': 7,
+  'ago': 8,
+  'set': 9,
+  'out': 10,
+  'nov': 11,
+  'dez': 12,
+};
+
+const Map<String, SpendingCategory> _explicitQaCategories = {
+  'alimentacao': SpendingCategory.food,
+  'comida': SpendingCategory.food,
+  'moradia': SpendingCategory.housing,
+  'transporte': SpendingCategory.transport,
+  'saude': SpendingCategory.health,
+  'educacao': SpendingCategory.education,
+  'lazer': SpendingCategory.leisure,
+  'compras': SpendingCategory.shopping,
+  'servicos': SpendingCategory.services,
+  'outros': SpendingCategory.other,
+};
+
+const Map<String, List<String>> _merchantAliasGroups = {
+  'supermercado': ['supermercado', 'mercado', 'atacadao', 'hortifruti'],
+  'mercado': ['supermercado', 'mercado', 'atacadao', 'hortifruti'],
+  'padaria': ['padaria', 'panificadora', 'confeitaria'],
+  'farmacia': ['farmacia', 'drogaria'],
+  'drogaria': ['farmacia', 'drogaria'],
+  'posto': ['posto', 'combustivel', 'gasolina', 'etanol'],
+  'combustivel': ['posto', 'combustivel', 'gasolina', 'etanol'],
+  'gasolina': ['posto', 'combustivel', 'gasolina', 'etanol'],
+  'restaurante': ['restaurante', 'lanchonete', 'almoco', 'jantar'],
+  'uber': ['uber', '99', 'corrida', 'aplicativo'],
+  'corrida': ['uber', '99', 'corrida', 'aplicativo'],
+  'streaming': ['streaming', 'cine', 'netflix', 'spotify', 'prime', 'disney'],
+  'academia': ['academia', 'pilates', 'crossfit'],
+  'internet': ['internet', 'fibra'],
+  'aluguel': ['aluguel', 'condominio'],
+  'livraria': ['livraria', 'livro'],
+};
+
+({DateTime month, String? matchedWord}) _resolveMonthFromQuestion(
+  String normQ,
+  DateTime fallbackMonth,
+  Dataset data,
+) {
+  int? matchedMonthNum;
+  String? matchedWord;
+
+  for (final entry in _portugueseFullMonths.entries) {
+    if (RegExp('\\b${entry.key}\\b').hasMatch(normQ)) {
+      matchedMonthNum = entry.value;
+      matchedWord = entry.key;
+      break;
+    }
+  }
+
+  if (matchedMonthNum == null) {
+    for (final entry in _portugueseShortMonths.entries) {
+      if (RegExp(
+        '(?:\\b(?:em|de)\\s+${entry.key}\\b|\\b${entry.key}[/\\s]+20\\d{2}\\b)',
+      ).hasMatch(normQ)) {
+        matchedMonthNum = entry.value;
+        matchedWord = entry.key;
+        break;
+      }
+    }
+  }
+
+  if (matchedMonthNum == null) {
+    return (
+      month: DateTime(fallbackMonth.year, fallbackMonth.month),
+      matchedWord: null,
+    );
+  }
+
+  final yearMatch = RegExp(r'\b(20\d{2})\b').firstMatch(normQ);
+  int year;
+  if (yearMatch != null) {
+    year = int.parse(yearMatch.group(1)!);
+  } else {
+    final hasInFallbackYear = data.transactions.any(
+      (t) => t.date.year == fallbackMonth.year && t.date.month == matchedMonthNum,
+    );
+    if (hasInFallbackYear) {
+      year = fallbackMonth.year;
+    } else {
+      final matchingYears = data.transactions
+          .where((t) => t.date.month == matchedMonthNum)
+          .map((t) => t.date.year)
+          .toList()
+        ..sort();
+      year = matchingYears.isNotEmpty ? matchingYears.last : fallbackMonth.year;
+    }
+  }
+
+  return (month: DateTime(year, matchedMonthNum), matchedWord: matchedWord);
+}
+
+SpendingCategory? _matchExplicitQaCategory(String normQ) {
+  for (final entry in _explicitQaCategories.entries) {
+    if (RegExp('\\b${entry.key}\\b').hasMatch(normQ)) {
+      return entry.value;
+    }
+  }
+  return null;
+}
+
+/// Deterministic zero-cost, 100% offline read-only financial Q&A engine for
+/// Paçoca (local-device mode, demo mode & offline server fallback). Always
+/// cites the exact period and exact pt-BR figures computed directly from
+/// [data].
 AssistantMessage answerFinancialQuestion(
   String question,
   Dataset data,
@@ -1155,7 +1352,9 @@ AssistantMessage answerFinancialQuestion(
   DateTime? today,
   String? replyId,
 }) {
-  final targetMonth = DateTime(month.year, month.month);
+  final normQ = normalizeText(question);
+  final resolvedMonth = _resolveMonthFromQuestion(normQ, month, data);
+  final targetMonth = resolvedMonth.month;
   final periodLabel = formatMonthYear(targetMonth);
   final (from, to) = monthRange(targetMonth);
   final s = summary(data, targetMonth);
@@ -1163,8 +1362,25 @@ AssistantMessage answerFinancialQuestion(
       .where((t) => !t.date.isBefore(from) && t.date.isBefore(to))
       .toList(growable: false);
   final ranking = categoryRanking(monthTxs);
-  final normQ = normalizeText(question);
   final now = today ?? data.today;
+  final explicitCategory = _matchExplicitQaCategory(normQ);
+
+  final asksTopIndividualExpenses =
+      normQ.contains('maiores gastos') ||
+      normQ.contains('maiores despesas') ||
+      normQ.contains('maior gasto') ||
+      normQ.contains('maior despesa') ||
+      normQ.contains('top gastos') ||
+      normQ.contains('top despesas') ||
+      normQ.contains('gasto mais alto') ||
+      normQ.contains('gastos mais altos') ||
+      (normQ.contains('onde gastei mais') && !normQ.contains('categoria'));
+
+  final asksComparison =
+      normQ.contains('compar') ||
+      normQ.contains('anterior') ||
+      normQ.contains('diferenca') ||
+      (normQ.contains('passado') && resolvedMonth.matchedWord == null);
 
   String text;
   List<String> figures;
@@ -1194,28 +1410,50 @@ AssistantMessage answerFinancialQuestion(
       normQ.contains('recorrente') ||
       normQ.contains('mensalidade')) {
     final subs = detectSubscriptions(data.transactions);
+    final servicesShare = ranking
+        .where((c) => c.category == SpendingCategory.services)
+        .firstOrNull;
     if (subs.isEmpty) {
-      text =
-          'Ainda não encontrei cobranças recorrentes em pelo menos 2 meses '
-          'até $periodLabel.';
-      figures = ['0 assinaturas detectadas'];
+      if (servicesShare != null && servicesShare.cents > 0) {
+        text =
+            'Em $periodLabel, seus gastos na categoria Serviços e assinaturas '
+            'somaram ${formatBrl(servicesShare.cents)} '
+            '(${formatPercent(servicesShare.share)} dos gastos). Ainda preciso '
+            'de pelo menos 2 meses para detectar cobranças recorrentes '
+            'automaticamente.';
+        figures = [
+          'Serviços e assinaturas: ${formatBrl(servicesShare.cents)}',
+          'Participação: ${formatPercent(servicesShare.share)}',
+        ];
+      } else {
+        text =
+            'Ainda não encontrei cobranças recorrentes em pelo menos 2 meses '
+            'até $periodLabel.';
+        figures = ['0 assinaturas detectadas'];
+      }
     } else {
       final totalMonthly = subs.fold(0, (acc, x) => acc + x.averageCents);
       final topNames = subs
           .take(4)
           .map((x) => '${x.displayName} (${formatBrl(x.averageCents)})')
           .join(', ');
+      final servicesNote = servicesShare != null
+          ? ' Em $periodLabel, a categoria Serviços e assinaturas somou '
+                '${formatBrl(servicesShare.cents)}.'
+          : '';
       text =
           'Detectei ${subs.length} gasto(s) recorrente(s) com base nos meses '
           'disponíveis até $periodLabel, somando cerca de '
-          '${formatBrl(totalMonthly)}/mês. Destaques: $topNames.';
+          '${formatBrl(totalMonthly)}/mês. Destaques: $topNames.$servicesNote';
       figures = [
         '${subs.length} recorrências',
         'Média mensal: ${formatBrl(totalMonthly)}',
+        if (servicesShare != null)
+          'Serviços ($periodLabel): ${formatBrl(servicesShare.cents)}',
       ];
     }
   }
-  // 3. Projection question
+  // 3. Projection question (excludes atypical expenses from daily run-rate)
   else if (normQ.contains('projecao') ||
       normQ.contains('previsao') ||
       normQ.contains('fim do mes')) {
@@ -1237,9 +1475,7 @@ AssistantMessage answerFinancialQuestion(
     ];
   }
   // 4. Month-over-month comparison
-  else if (normQ.contains('anterior') ||
-      normQ.contains('passado') ||
-      normQ.contains('compar')) {
+  else if (asksComparison) {
     final cmp = monthComparison(data.transactions, targetMonth);
     final prevLabel = formatMonthYear(cmp.previousMonth);
     final direction = cmp.deltaCents >= 0 ? 'acima' : 'abaixo';
@@ -1254,47 +1490,108 @@ AssistantMessage answerFinancialQuestion(
       'Diferença: ${cmp.deltaCents >= 0 ? '+' : '−'}${formatBrl(cmp.deltaCents.abs())}',
     ];
   }
-  // 5. Budgets or goals question
+  // 5. Budgets & goals status
   else if (normQ.contains('orcamento') ||
       normQ.contains('limite') ||
-      normQ.contains('meta')) {
+      normQ.contains('meta') ||
+      normQ.contains('reserva') ||
+      normQ.contains('objetivo')) {
+    final asksBudget =
+        normQ.contains('orcamento') || normQ.contains('limite');
+    final asksGoal =
+        normQ.contains('meta') ||
+        normQ.contains('reserva') ||
+        normQ.contains('objetivo');
+    final includeBudgets = asksBudget || !asksGoal;
+    final includeGoals = asksGoal || !asksBudget;
+
     final spentByCat = {for (final c in ranking) c.category: c.cents};
     final parts = <String>[];
     figures = [];
-    if (budgets.isNotEmpty) {
-      final bSummary = budgets
-          .map((b) {
-            final used = spentByCat[b.category] ?? 0;
-            final pct = b.limitCents > 0 ? used / b.limitCents : 0.0;
-            figures.add(
-              '${b.category.label}: ${formatBrl(used)} / ${formatBrl(b.limitCents)}',
-            );
-            return '${b.category.label} (${formatPercent(pct, decimals: 0)})';
-          })
-          .join(', ');
-      parts.add('Orçamentos de $periodLabel: $bSummary');
+
+    if (includeBudgets) {
+      if (budgets.isNotEmpty) {
+        final bSummary = budgets
+            .map((b) {
+              final used = spentByCat[b.category] ?? 0;
+              final pct = b.limitCents > 0 ? used / b.limitCents : 0.0;
+              final status = used > b.limitCents
+                  ? ' — acima do limite'
+                  : (pct >= b.alertThreshold ? ' — perto do limite' : '');
+              figures.add(
+                '${b.category.label}: ${formatBrl(used)} / ${formatBrl(b.limitCents)}',
+              );
+              return '${b.category.label}: ${formatBrl(used)} de '
+                  '${formatBrl(b.limitCents)} (${formatPercent(pct, decimals: 0)}$status)';
+            })
+            .join('; ');
+        parts.add('Orçamentos de $periodLabel: $bSummary');
+      } else if (!includeGoals) {
+        parts.add(
+          'Você ainda não cadastrou orçamentos por categoria para $periodLabel',
+        );
+      }
     }
-    if (goals.isNotEmpty) {
-      final gSummary = goals
-          .map((g) {
-            figures.add(
-              '${g.name}: ${formatPercent(g.progress, decimals: 0)}',
-            );
-            return '${g.name} em ${formatBrl(g.currentCents)} de '
-                '${formatBrl(g.targetCents)}';
-          })
-          .join('; ');
-      parts.add('Metas: $gSummary');
+
+    if (includeGoals) {
+      if (goals.isNotEmpty) {
+        final gSummary = goals
+            .map((g) {
+              figures.add(
+                '${g.name}: ${formatPercent(g.progress, decimals: 0)} (${formatBrl(g.currentCents)} / ${formatBrl(g.targetCents)})',
+              );
+              final remaining = g.isCompleted
+                  ? 'concluída'
+                  : 'faltam ${formatBrl(g.remainingCents)}';
+              return '${g.name} em ${formatBrl(g.currentCents)} de '
+                  '${formatBrl(g.targetCents)} (${formatPercent(g.progress, decimals: 0)}, $remaining)';
+            })
+            .join('; ');
+        parts.add('Metas: $gSummary');
+      } else if (!includeBudgets) {
+        parts.add('Você ainda não cadastrou metas financeiras em $periodLabel');
+      }
     }
+
     text = parts.isEmpty
         ? 'Você ainda não cadastrou orçamentos ou metas para $periodLabel.'
         : '${parts.join('. ')}.';
   }
-  // 6. Top category / biggest spending question
-  else if (normQ.contains('categoria') ||
-      normQ.contains('pesou mais') ||
-      normQ.contains('maior gasto') ||
-      normQ.contains('onde gastei')) {
+  // 6. Top biggest individual expenses
+  else if (asksTopIndividualExpenses) {
+    final expenses =
+        monthTxs.where((t) => t.kind == TxKind.expense).toList()
+          ..sort((a, b) => b.amountCents.abs().compareTo(a.amountCents.abs()));
+    if (expenses.isEmpty) {
+      text = 'Não há gastos registrados em $periodLabel.';
+      figures = ['Gastos: ${formatBrl(0)}'];
+    } else {
+      final topFive = expenses.take(5).toList(growable: false);
+      final listText = topFive
+          .map(
+            (t) =>
+                '${t.description} (${formatBrl(t.amountCents.abs())} em ${formatShortDate(t.date)})',
+          )
+          .join(', ');
+      final topCatNote = ranking.isNotEmpty
+          ? ' Por categoria, a maior foi '
+                '${spendingCategoryLabel(ranking.first.category)} '
+                '(${formatBrl(ranking.first.cents)}).'
+          : '';
+      text =
+          'Em $periodLabel, seus maiores gastos individuais foram: $listText '
+          '(total do mês: ${formatBrl(s.spentCents)}).$topCatNote';
+      figures = [
+        for (final t in topFive.take(4))
+          '${t.description}: ${formatBrl(t.amountCents.abs())}',
+      ];
+    }
+  }
+  // 7. Top category question (only when no specific category was requested)
+  else if (explicitCategory == null &&
+      (normQ.contains('categoria') ||
+          normQ.contains('pesou mais') ||
+          normQ.contains('onde gastei'))) {
     if (ranking.isEmpty) {
       text = 'Não há gastos registrados em $periodLabel.';
       figures = ['Gastos: ${formatBrl(0)}'];
@@ -1319,7 +1616,7 @@ AssistantMessage answerFinancialQuestion(
       ];
     }
   }
-  // 7. Leftover / balance / summary question
+  // 8. Leftover / balance / bill / summary question
   else if (normQ.contains('sobrou') ||
       normQ.contains('saldo') ||
       normQ.contains('sobra') ||
@@ -1340,77 +1637,133 @@ AssistantMessage answerFinancialQuestion(
       'Fatura aberta: ${formatBrl(s.cardBillCents)}',
     ];
   }
-  // 8. Specific category or merchant lookup
+  // 9. Specific category question
+  else if (explicitCategory != null) {
+    final share = ranking
+        .where((c) => c.category == explicitCategory)
+        .firstOrNull;
+    final cents = share?.cents ?? 0;
+    final pct = share?.share ?? 0.0;
+    final catTxs =
+        monthTxs
+            .where(
+              (t) =>
+                  isSpending(t) &&
+                  (t.splits.isNotEmpty
+                      ? t.splits.any(
+                          (sp) => (sp.category ?? t.category) == explicitCategory,
+                        )
+                      : t.category == explicitCategory),
+            )
+            .toList()
+          ..sort((a, b) => b.amountCents.abs().compareTo(a.amountCents.abs()));
+    final examples = catTxs.isEmpty
+        ? ''
+        : ' Principais lançamentos: '
+              '${catTxs.take(3).map((t) => '${t.description} (${formatBrl(t.amountCents.abs())})').join(', ')}.';
+    text =
+        'Em $periodLabel, seus gastos em ${explicitCategory.label} somaram '
+        '${formatBrl(cents)} (${formatPercent(pct)} do total gasto de '
+        '${formatBrl(s.spentCents)}).$examples';
+    figures = [
+      '${explicitCategory.label}: ${formatBrl(cents)}',
+      'Participação: ${formatPercent(pct)}',
+      '${catTxs.length} lançamento(s)',
+    ];
+  }
+  // 10. Merchant / establishment / tag lookup or general period summary
   else {
-    SpendingCategory? matchedCategory;
-    for (final entry in _categorySynonyms.entries) {
-      if (normQ.contains(entry.key)) {
-        matchedCategory = entry.value;
-        break;
+    final strippedQ = resolvedMonth.matchedWord == null
+        ? normQ
+        : normQ.replaceAll(RegExp('\\b${resolvedMonth.matchedWord}\\b'), ' ');
+
+    final rawTokens = strippedQ
+        .replaceAll(RegExp(r'\b20\d{2}\b'), ' ')
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2 && !_stopWords.contains(w))
+        .toList(growable: false);
+
+    // Expand recognized merchant aliases (e.g. "uber" -> corrida/aplicativo,
+    // "supermercado" -> supermercado/mercado, "farmacia" -> farmacia/drogaria).
+    final searchTerms = <String>{};
+    String? explicitAliasLabel;
+    for (final tok in rawTokens) {
+      final aliases = _merchantAliasGroups[tok];
+      if (aliases != null) {
+        explicitAliasLabel ??= tok;
+        searchTerms.addAll(aliases);
+      } else if (tok.length >= 4) {
+        searchTerms.add(tok);
       }
     }
 
-    if (matchedCategory != null) {
-      final share = ranking
-          .where((c) => c.category == matchedCategory)
-          .firstOrNull;
-      final cents = share?.cents ?? 0;
-      final pct = share?.share ?? 0.0;
+    final asksSpending =
+        normQ.contains('gastei') ||
+        normQ.contains('gasto') ||
+        normQ.contains('comprei') ||
+        normQ.contains('paguei');
+
+    final matchedTxs = searchTerms.isEmpty
+        ? const <Transaction>[]
+        : monthTxs
+              .where((t) {
+                if (asksSpending && !isSpending(t)) return false;
+                final descNorm = normalizeText(t.description);
+                return searchTerms.any(
+                  (term) =>
+                      descNorm.contains(term) ||
+                      t.tags.any((tag) => normalizeText(tag).contains(term)) ||
+                      t.splits.any(
+                        (sp) => normalizeText(sp.description).contains(term),
+                      ),
+                );
+              })
+              .toList(growable: false);
+
+    if (matchedTxs.isNotEmpty) {
+      final sum = matchedTxs.fold(
+        0,
+        (acc, t) =>
+            acc + (t.kind == TxKind.refund ? -t.amountCents : t.amountCents.abs()),
+      );
+      final absSum = sum.abs();
+      final itemsList = matchedTxs
+          .take(3)
+          .map(
+            (t) =>
+                '${t.description} (${formatBrl(t.amountCents.abs())} em ${formatShortDate(t.date)})',
+          )
+          .join(', ');
       text =
-          'Em $periodLabel, seus gastos em ${matchedCategory.label} somaram '
-          '${formatBrl(cents)} (${formatPercent(pct)} do total gasto de '
-          '${formatBrl(s.spentCents)}).';
+          'Em $periodLabel, encontrei ${matchedTxs.length} transação(ões) '
+          'relacionada(s), somando ${formatBrl(absSum)}: $itemsList.';
       figures = [
-        '${matchedCategory.label}: ${formatBrl(cents)}',
-        'Participação: ${formatPercent(pct)}',
+        '${matchedTxs.length} transação(ões)',
+        'Total: ${formatBrl(absSum)}',
       ];
+    } else if (explicitAliasLabel != null) {
+      text =
+          'Não encontrei lançamentos relacionados a "$explicitAliasLabel" em '
+          '$periodLabel (total de ${formatBrl(0)}).';
+      figures = ['0 transações', 'Total: ${formatBrl(0)}'];
     } else {
-      // Try matching a merchant or tag term from the question.
-      final tokens = normQ
-          .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-          .split(RegExp(r'\s+'))
-          .where((w) => w.length >= 4 && !_stopWords.contains(w))
-          .toList(growable: false);
-
-      final matchedTxs = tokens.isEmpty
-          ? const <Transaction>[]
-          : monthTxs
-                .where(
-                  (t) => tokens.any(
-                    (tok) =>
-                        normalizeText(t.description).contains(tok) ||
-                        t.tags.any((tag) => normalizeText(tag).contains(tok)),
-                  ),
-                )
-                .toList(growable: false);
-
-      if (matchedTxs.isNotEmpty) {
-        final sum = matchedTxs.fold(0, (acc, t) => acc + t.amountCents.abs());
-        text =
-            'Encontrei ${matchedTxs.length} transação(ões) relacionada(s) em '
-            '$periodLabel, somando ${formatBrl(sum)} '
-            '(${matchedTxs.take(3).map((t) => t.description).join(', ')}).';
-        figures = [
-          '${matchedTxs.length} transação(ões)',
-          'Total: ${formatBrl(sum)}',
-        ];
-      } else {
-        final top = ranking.isNotEmpty ? ranking.first : null;
-        final topNote = top != null
-            ? ' A maior categoria foi ${spendingCategoryLabel(top.category)} '
-                  '(${formatBrl(top.cents)}).'
-            : '';
-        text =
-            'Resumo de $periodLabel: receitas de ${formatBrl(s.receivedCents)}, '
-            'gastos de ${formatBrl(s.spentCents)} e saldo do mês de '
-            '${formatBrl(s.leftoverCents)}.$topNote Você também pode perguntar '
-            'sobre 50/30/20, assinaturas, projeção ou uma categoria específica.';
-        figures = [
-          'Receitas: ${formatBrl(s.receivedCents)}',
-          'Gastos: ${formatBrl(s.spentCents)}',
-          'Saldo do mês: ${formatBrl(s.leftoverCents)}',
-        ];
-      }
+      final top = ranking.isNotEmpty ? ranking.first : null;
+      final topNote = top != null
+          ? ' A maior categoria foi ${spendingCategoryLabel(top.category)} '
+                '(${formatBrl(top.cents)}).'
+          : '';
+      text =
+          'Resumo de $periodLabel: receitas de ${formatBrl(s.receivedCents)}, '
+          'gastos de ${formatBrl(s.spentCents)} e saldo do mês de '
+          '${formatBrl(s.leftoverCents)}.$topNote Você também pode perguntar '
+          'sobre maiores gastos, categorias, estabelecimentos, orçamentos, '
+          'metas, 50/30/20, projeção ou assinaturas.';
+      figures = [
+        'Receitas: ${formatBrl(s.receivedCents)}',
+        'Gastos: ${formatBrl(s.spentCents)}',
+        'Saldo do mês: ${formatBrl(s.leftoverCents)}',
+      ];
     }
   }
 
@@ -1425,11 +1778,29 @@ AssistantMessage answerFinancialQuestion(
 }
 
 const Set<String> _stopWords = {
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'no',
+  'na',
+  'nos',
+  'nas',
+  'em',
+  'com',
+  'por',
+  'mes',
+  'ano',
+  'foi',
+  'foram',
+  'meu',
   'quanto',
   'quais',
   'qual',
   'como',
   'esta',
+  'estao',
   'este',
   'esse',
   'essa',
@@ -1437,10 +1808,16 @@ const Set<String> _stopWords = {
   'gastei',
   'gasto',
   'gastos',
+  'comprei',
+  'paguei',
   'minha',
+  'minhas',
   'meus',
   'tenho',
   'sobre',
   'meses',
   'pacoca',
+  'total',
+  'valor',
+  'dinheiro',
 };

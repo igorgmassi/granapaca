@@ -7,7 +7,10 @@ import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 import 'bank_detail_screen.dart';
+import 'cash_entry_sheet.dart';
 import 'connections_screen.dart';
+import 'local_account_sheet.dart';
+import 'receipts_export_screen.dart';
 import 'transaction_detail_sheet.dart';
 
 /// Main overview screen (RF-13, RF-16, RF-17, RF-05).
@@ -21,6 +24,17 @@ class HomeScreen extends StatelessWidget {
           content: Text(
             'Modo demonstração: na sua instância, arrastar sincroniza os '
             'bancos conectados (que costumam atualizar uma vez por dia).',
+          ),
+        ),
+      );
+      return;
+    }
+    if (state.isLocalDeviceMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Modo local: seus dados ficam cifrados só neste aparelho. Use "+" '
+            'para lançar gastos ou importe um extrato OFX/CSV.',
           ),
         ),
       );
@@ -56,7 +70,7 @@ class HomeScreen extends StatelessWidget {
         title: 'Conecte seus bancos para começar',
         subtitle:
             'Reúna contas, cartões e faturas num só lugar, somente leitura '
-            'e na sua própria instância.',
+            'e na sua própria instância — ou use só neste aparelho sem servidor.',
         actionLabel: 'Conectar primeiro banco',
         onAction: state.isServerMode
             ? () => Navigator.of(context).push(
@@ -72,6 +86,9 @@ class HomeScreen extends StatelessWidget {
         onSecondaryAction: state.isDemoMode
             ? () => state.setSimulateNoConnections(false)
             : null,
+        tertiaryActionKey: const Key('empty_home_use_local_device'),
+        tertiaryActionLabel: 'Usar só neste aparelho (sem servidor)',
+        onTertiaryAction: () => state.startLocalDeviceMode(),
       );
     }
 
@@ -106,6 +123,19 @@ class HomeScreen extends StatelessWidget {
           onSelect: state.selectMonth,
         );
 
+        final localQuickStart =
+            state.isLocalDeviceMode && data.transactions.isEmpty
+            ? _LocalDeviceQuickStartCard(
+                onAddAccount: () => showAddLocalAccountSheet(context),
+                onAddEntry: () => showCashEntrySheet(context),
+                onImportStatement: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ReceiptsExportScreen(),
+                  ),
+                ),
+              )
+            : null;
+
         final heroCard = _HeroSummaryCard(
           summaryData: s,
           essentialityShares: essShares,
@@ -129,6 +159,9 @@ class HomeScreen extends StatelessWidget {
           month: month,
           hideValues: state.hideValues,
           onSelectBank: (bankId) => _openBank(context, bankId),
+          onAddLocalAccount: state.isLocalDeviceMode
+              ? () => showAddLocalAccountSheet(context)
+              : null,
         );
 
         final recentSection = _RecentTransactionsSection(
@@ -149,6 +182,10 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.all(GranaSpacing.lg),
               children: [
                 monthBar,
+                if (localQuickStart != null) ...[
+                  const SizedBox(height: GranaSpacing.lg),
+                  localQuickStart,
+                ],
                 const SizedBox(height: GranaSpacing.lg),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,6 +236,10 @@ class HomeScreen extends StatelessWidget {
             padding: const EdgeInsets.all(GranaSpacing.lg),
             children: [
               monthBar,
+              if (localQuickStart != null) ...[
+                const SizedBox(height: GranaSpacing.lg),
+                localQuickStart,
+              ],
               const SizedBox(height: GranaSpacing.lg),
               heroCard,
               const SizedBox(height: GranaSpacing.lg),
@@ -541,18 +582,97 @@ class _AccountsSummaryCard extends StatelessWidget {
   }
 }
 
+class _LocalDeviceQuickStartCard extends StatelessWidget {
+  const _LocalDeviceQuickStartCard({
+    required this.onAddAccount,
+    required this.onAddEntry,
+    required this.onImportStatement,
+  });
+
+  final VoidCallback onAddAccount;
+  final VoidCallback onAddEntry;
+  final VoidCallback onImportStatement;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tokens = GranaTokens.of(context);
+    final textTheme = Theme.of(context).textTheme;
+
+    return Card(
+      key: const Key('local_mode_quickstart_card'),
+      color: scheme.primaryContainer.withValues(alpha: 0.35),
+      child: Padding(
+        padding: const EdgeInsets.all(GranaSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 18, color: tokens.mata),
+                const SizedBox(width: GranaSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Seu espaço local está pronto (dados cifrados neste aparelho)',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: GranaSpacing.xs),
+            Text(
+              'Adicione seus bancos ou cartões, lance gastos na hora ou '
+              'importe extratos OFX/CSV sem precisar de servidor.',
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: GranaSpacing.md),
+            Wrap(
+              spacing: GranaSpacing.sm,
+              runSpacing: GranaSpacing.sm,
+              children: [
+                FilledButton.icon(
+                  key: const Key('quickstart_add_account_button'),
+                  onPressed: onAddAccount,
+                  icon: const Icon(Icons.add_card_outlined, size: 18),
+                  label: const Text('Adicionar banco/conta'),
+                ),
+                FilledButton.tonalIcon(
+                  key: const Key('quickstart_add_entry_button'),
+                  onPressed: onAddEntry,
+                  icon: const Icon(Icons.payments_outlined, size: 18),
+                  label: const Text('Lançar gasto'),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('quickstart_import_button'),
+                  onPressed: onImportStatement,
+                  icon: const Icon(Icons.file_upload_outlined, size: 18),
+                  label: const Text('Importar OFX / CSV'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BanksSection extends StatelessWidget {
   const _BanksSection({
     required this.data,
     required this.month,
     required this.hideValues,
     required this.onSelectBank,
+    this.onAddLocalAccount,
   });
 
   final Dataset data;
   final DateTime month;
   final bool hideValues;
   final ValueChanged<String> onSelectBank;
+  final VoidCallback? onAddLocalAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -563,9 +683,23 @@ class _BanksSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Seus bancos',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Seus bancos',
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (onAddLocalAccount != null)
+              TextButton.icon(
+                key: const Key('home_add_local_account_button'),
+                onPressed: onAddLocalAccount,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Adicionar conta'),
+              ),
+          ],
         ),
         const SizedBox(height: GranaSpacing.sm),
         for (final bank in data.banks) ...[

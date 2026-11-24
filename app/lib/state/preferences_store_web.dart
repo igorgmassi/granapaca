@@ -24,6 +24,7 @@ class WebPreferencesStore implements PreferencesStore {
   String? _serverUrl;
   AppLockConfig? _appLockConfig;
   bool _hasActiveServerProfile = false;
+  String? _appMode;
 
   void _load() {
     try {
@@ -54,6 +55,10 @@ class WebPreferencesStore implements PreferencesStore {
       if (activeServer is bool) {
         _hasActiveServerProfile = activeServer;
       }
+      final mode = decoded['appMode'];
+      if (mode is String && mode.trim().isNotEmpty) {
+        _appMode = mode.trim();
+      }
     } catch (_) {
       // Ignore storage read failures in private mode or non-browser runtimes.
     }
@@ -69,6 +74,7 @@ class WebPreferencesStore implements PreferencesStore {
           'serverUrl': _serverUrl,
           'appLockConfig': _appLockConfig?.toJson(),
           'hasActiveServerProfile': _hasActiveServerProfile,
+          'appMode': _appMode,
         }),
       );
     } catch (_) {
@@ -118,6 +124,15 @@ class WebPreferencesStore implements PreferencesStore {
   @override
   Future<void> writeHasActiveServerProfile(bool value) async {
     _hasActiveServerProfile = value;
+    _save();
+  }
+
+  @override
+  String? readAppMode() => _appMode;
+
+  @override
+  Future<void> writeAppMode(String? mode) async {
+    _appMode = (mode == null || mode.trim().isEmpty) ? null : mode.trim();
     _save();
   }
 }

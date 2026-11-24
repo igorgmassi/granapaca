@@ -185,6 +185,7 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
           goals: state.goals,
           alertRules: state.spendingAlertRules,
           modeLabel: state.mode.name,
+          receiptConsentAccepted: state.receiptConsentAccepted,
         );
       }
     } else {
@@ -196,6 +197,7 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
         goals: state.goals,
         alertRules: state.spendingAlertRules,
         modeLabel: state.mode.name,
+        receiptConsentAccepted: state.receiptConsentAccepted,
       );
     }
     if (!mounted) return;
@@ -211,6 +213,15 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
       context: context,
       builder: (_) =>
           _StatementImportDialog(state: state, messenger: messenger),
+    );
+  }
+
+  Future<void> _openRestoreBackupDialog(BuildContext context, AppState state) {
+    final messenger = ScaffoldMessenger.of(context);
+    return showDialog<void>(
+      context: context,
+      builder: (_) =>
+          _RestoreBackupDialog(state: state, messenger: messenger),
     );
   }
 
@@ -235,7 +246,7 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
         children: [
           if (state.isDemoMode)
             const DemoBanner()
-          else if (state.isOffline)
+          else if (state.isServerMode && state.isOffline)
             OfflineBanner(
               lastSyncedAt: state.lastSyncedAt,
               onRetry: state.syncFromServer,
@@ -314,8 +325,10 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
                             'Leitura de itens de NFC-e autorizada',
                             style: TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          subtitle: const Text(
-                            'Dados permanecem apenas na sua instância.',
+                          subtitle: Text(
+                            state.isLocalDeviceMode
+                                ? 'Dados permanecem cifrados apenas neste aparelho.'
+                                : 'Dados permanecem apenas na sua instância.',
                           ),
                           trailing: TextButton(
                             onPressed: state.revokeReceiptConsent,
@@ -531,8 +544,10 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
                           children: [
                             Text(
                               'Seus dados pertencem a você. Exporte o extrato '
-                              'em CSV padrão RFC 4180 ou faça um backup completo '
-                              'em JSON, ou importe arquivos OFX/CSV do seu banco.',
+                              'em CSV padrão RFC 4180, faça ou restaure um '
+                              'backup completo em JSON (ideal para trocar de '
+                              'celular no modo local) ou importe extratos '
+                              'OFX/CSV do seu banco.',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: scheme.onSurfaceVariant,
@@ -554,6 +569,13 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
                                   onPressed: () => _generateJson(state),
                                   icon: const Icon(Icons.data_object_rounded),
                                   label: const Text('Gerar Backup JSON'),
+                                ),
+                                OutlinedButton.icon(
+                                  key: const Key('restore_json_backup_button'),
+                                  onPressed: () =>
+                                      _openRestoreBackupDialog(context, state),
+                                  icon: const Icon(Icons.restore_rounded),
+                                  label: const Text('Restaurar backup JSON'),
                                 ),
                                 OutlinedButton.icon(
                                   key: const Key('import_statement_button'),
@@ -641,6 +663,111 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
   }
 }
 
+class _RestoreBackupDialog extends StatefulWidget {
+  const _RestoreBackupDialog({required this.state, required this.messenger});
+
+  final AppState state;
+  final ScaffoldMessengerState messenger;
+
+  @override
+  State<_RestoreBackupDialog> createState() => _RestoreBackupDialogState();
+}
+
+class _RestoreBackupDialogState extends State<_RestoreBackupDialog> {
+  final TextEditingController _controller = TextEditingController();
+  String? _error;
+  bool _restoring = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restore() async {
+    setState(() {
+      _error = null;
+      _restoring = true;
+    });
+    try {
+      final count = await widget.state.restoreFromBackupJson(_controller.text);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Backup restaurado com sucesso ($count transação(ões) salvas '
+            'cifradas neste aparelho).',
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Restaurar backup JSON'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Cole o JSON gerado anteriormente pelo botão "Gerar Backup '
+                'JSON". Todos os bancos, contas, transações, regras, '
+                'orçamentos e metas serão restaurados e salvos cifrados neste '
+                'aparelho.',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: GranaSpacing.md),
+              TextField(
+                key: const Key('restore_backup_json_field'),
+                controller: _controller,
+                maxLines: 7,
+                decoration: const InputDecoration(
+                  labelText: 'Conteúdo do Backup JSON',
+                  hintText: '{"version": 1, "app": "GranaPaCa", ...}',
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: GranaSpacing.sm),
+                Text(
+                  _error!,
+                  key: const Key('restore_backup_error_text'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _restoring ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const Key('restore_backup_confirm_button'),
+          onPressed: _restoring ? null : _restore,
+          child: Text(_restoring ? 'Restaurando...' : 'Restaurar dados'),
+        ),
+      ],
+    );
+  }
+}
+
 class _StatementImportDialog extends StatefulWidget {
   const _StatementImportDialog({required this.state, required this.messenger});
 
@@ -654,7 +781,20 @@ class _StatementImportDialog extends StatefulWidget {
 class _StatementImportDialogState extends State<_StatementImportDialog> {
   final TextEditingController _controller = TextEditingController();
   List<Transaction> _preview = const [];
+  String? _selectedAccountId;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final accounts = widget.state.originalDataset.accounts;
+    final preferred = accounts
+        .where((a) => a.kind != AccountKind.cash)
+        .firstOrNull;
+    _selectedAccountId =
+        preferred?.id ??
+        (accounts.isNotEmpty ? accounts.first.id : AppState.cashAccountId);
+  }
 
   @override
   void dispose() {
@@ -666,9 +806,10 @@ class _StatementImportDialogState extends State<_StatementImportDialog> {
   Widget build(BuildContext context) {
     final state = widget.state;
     final accounts = state.originalDataset.accounts;
-    final defaultAccountId = accounts.isNotEmpty
-        ? accounts.first.id
-        : AppState.cashAccountId;
+    final targetAccountId =
+        accounts.any((a) => a.id == _selectedAccountId)
+        ? _selectedAccountId!
+        : (accounts.isNotEmpty ? accounts.first.id : AppState.cashAccountId);
 
     return AlertDialog(
       title: const Text('Importar extrato (OFX ou CSV)'),
@@ -684,10 +825,40 @@ class _StatementImportDialogState extends State<_StatementImportDialog> {
                     ? 'Cole um trecho OFX (<STMTTRN>) ou CSV '
                           '(data,descrição,valor) para pré-visualizar e '
                           'importar localmente na demonstração.'
+                    : state.isLocalDeviceMode
+                    ? 'Cole um trecho OFX (<STMTTRN>) ou CSV '
+                          '(data,descrição,valor) para importar direto neste '
+                          'aparelho (salvo cifrado).'
                     : 'Cole um trecho OFX ou CSV para importar na sua '
                           'instância self-hosted.',
                 style: const TextStyle(fontSize: 13),
               ),
+              if (accounts.length > 1) ...[
+                const SizedBox(height: GranaSpacing.md),
+                DropdownButtonFormField<String>(
+                  key: const Key('import_target_account_dropdown'),
+                  initialValue: targetAccountId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Conta de destino',
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final acct in accounts)
+                      DropdownMenuItem(
+                        value: acct.id,
+                        child: Text(
+                          '${state.originalDataset.bank(acct.bankId).name} · ${acct.name}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (val) => setState(() {
+                    _selectedAccountId = val;
+                    _preview = const [];
+                  }),
+                ),
+              ],
               const SizedBox(height: GranaSpacing.md),
               TextField(
                 key: const Key('import_statement_field'),
@@ -708,7 +879,7 @@ class _StatementImportDialogState extends State<_StatementImportDialog> {
                   onPressed: () {
                     final parsed = parseStatementImport(
                       _controller.text,
-                      accountId: defaultAccountId,
+                      accountId: targetAccountId,
                     );
                     setState(() {
                       _preview = parsed;
@@ -772,9 +943,11 @@ class _StatementImportDialogState extends State<_StatementImportDialog> {
                   if (state.isServerMode &&
                       !state.isOffline &&
                       state.isAuthenticated) {
-                    final targetAccount = accounts.isNotEmpty
-                        ? accounts.first
-                        : null;
+                    final targetAccount =
+                        accounts
+                            .where((a) => a.id == targetAccountId)
+                            .firstOrNull ??
+                        (accounts.isNotEmpty ? accounts.first : null);
                     final targetBank = targetAccount != null
                         ? state.originalDataset.banks
                               .where((b) => b.id == targetAccount.bankId)

@@ -139,7 +139,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
       body: Column(
         children: [
-          const DemoBanner(),
+          if (state.isDemoMode) const DemoBanner(),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               GranaSpacing.lg,

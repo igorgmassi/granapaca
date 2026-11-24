@@ -327,6 +327,9 @@ class EmptyStateView extends StatelessWidget {
     this.onAction,
     this.secondaryActionLabel,
     this.onSecondaryAction,
+    this.tertiaryActionLabel,
+    this.onTertiaryAction,
+    this.tertiaryActionKey,
   });
 
   final IconData icon;
@@ -336,6 +339,9 @@ class EmptyStateView extends StatelessWidget {
   final VoidCallback? onAction;
   final String? secondaryActionLabel;
   final VoidCallback? onSecondaryAction;
+  final String? tertiaryActionLabel;
+  final VoidCallback? onTertiaryAction;
+  final Key? tertiaryActionKey;
 
   @override
   Widget build(BuildContext context) {
@@ -385,6 +391,15 @@ class EmptyStateView extends StatelessWidget {
                 OutlinedButton(
                   onPressed: onSecondaryAction,
                   child: Text(secondaryActionLabel!),
+                ),
+              ],
+              if (tertiaryActionLabel != null && onTertiaryAction != null) ...[
+                const SizedBox(height: GranaSpacing.sm),
+                FilledButton.tonalIcon(
+                  key: tertiaryActionKey,
+                  onPressed: onTertiaryAction,
+                  icon: const Icon(Icons.smartphone_outlined, size: 18),
+                  label: Text(tertiaryActionLabel!),
                 ),
               ],
             ],

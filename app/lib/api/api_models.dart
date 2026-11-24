@@ -1108,15 +1108,23 @@ SpendingAlertRule spendingAlertRuleFromApiJson(
   );
 }
 
+AiProviderKind parseAiProviderKind(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return AiProviderKind.none;
+  final normalized = raw.toLowerCase().trim();
+  for (final kind in AiProviderKind.values) {
+    if (kind.name.toLowerCase() == normalized) return kind;
+  }
+  return AiProviderKind.none;
+}
+
 AiProviderConfig aiProviderConfigFromApiJson(
   Map<String, dynamic> json, {
   AiProviderConfig? fallback,
 }) {
   final rawProvider = (json['provider'] as String?)?.toLowerCase().trim();
-  final provider = AiProviderKind.values.firstWhere(
-    (k) => k.name == rawProvider,
-    orElse: () => fallback?.provider ?? AiProviderKind.none,
-  );
+  final provider = rawProvider == null || rawProvider.isEmpty
+      ? (fallback?.provider ?? AiProviderKind.none)
+      : parseAiProviderKind(rawProvider);
   return AiProviderConfig(
     provider: provider,
     model: (json['model'] as String?) ?? fallback?.model ?? '',
@@ -1156,4 +1164,77 @@ Map<String, dynamic> outboxMutationToJson(PendingOutboxMutation m) => {
   'createdAt': m.createdAt.toIso8601String(),
   'localTxId': m.localTxId,
   'payload': m.payload,
+};
+
+Budget budgetFromJson(Map<String, dynamic> json) => Budget(
+  id: (json['id'] ?? '').toString(),
+  category:
+      parseSpendingCategory(json['category'] as String?) ??
+      SpendingCategory.other,
+  limitCents: (json['limitCents'] as num?)?.toInt() ?? 0,
+  alertThreshold: (json['alertThreshold'] as num?)?.toDouble() ?? 0.8,
+);
+
+Map<String, dynamic> budgetToJson(Budget budget) => {
+  'id': budget.id,
+  'category': budget.category.name,
+  'limitCents': budget.limitCents,
+  'alertThreshold': budget.alertThreshold,
+};
+
+Goal goalFromJson(Map<String, dynamic> json) => Goal(
+  id: (json['id'] ?? '').toString(),
+  name: (json['name'] as String?) ?? 'Meta',
+  targetCents: (json['targetCents'] as num?)?.toInt() ?? 0,
+  currentCents: (json['currentCents'] as num?)?.toInt() ?? 0,
+  targetDate: json['targetDate'] is String
+      ? DateTime.tryParse(json['targetDate'] as String)
+      : null,
+);
+
+Map<String, dynamic> goalToJson(Goal goal) => {
+  'id': goal.id,
+  'name': goal.name,
+  'targetCents': goal.targetCents,
+  'currentCents': goal.currentCents,
+  'targetDate': goal.targetDate?.toIso8601String(),
+};
+
+SpendingAlertRule spendingAlertRuleFromJson(Map<String, dynamic> json) =>
+    SpendingAlertRule(
+      id: (json['id'] ?? '').toString(),
+      rawExpression: (json['rawExpression'] as String?) ?? '',
+      label: (json['label'] as String?) ?? '',
+      thresholdCents: (json['thresholdCents'] as num?)?.toInt() ?? 0,
+      category: parseSpendingCategory(json['category'] as String?),
+      keyword: json['keyword'] as String?,
+      isActive: (json['isActive'] as bool?) ?? true,
+    );
+
+Map<String, dynamic> spendingAlertRuleToJson(SpendingAlertRule rule) => {
+  'id': rule.id,
+  'rawExpression': rule.rawExpression,
+  'label': rule.label,
+  'thresholdCents': rule.thresholdCents,
+  'category': rule.category?.name,
+  'keyword': rule.keyword,
+  'isActive': rule.isActive,
+};
+
+AiProviderConfig aiProviderConfigFromJson(Map<String, dynamic> json) =>
+    AiProviderConfig(
+      provider: parseAiProviderKind(json['provider'] as String?),
+      model: (json['model'] as String?) ?? '',
+      endpointUrl:
+          (json['baseUrl'] as String?) ??
+          (json['endpointUrl'] as String?) ??
+          '',
+      hasApiKey: (json['hasApiKey'] as bool?) ?? false,
+    );
+
+Map<String, dynamic> aiProviderConfigToJson(AiProviderConfig config) => {
+  'provider': config.provider.name,
+  'model': config.model,
+  'endpointUrl': config.endpointUrl,
+  'hasApiKey': config.hasApiKey,
 };

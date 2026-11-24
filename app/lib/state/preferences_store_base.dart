@@ -48,6 +48,9 @@ abstract class PreferencesStore {
 
   bool readHasActiveServerProfile();
   Future<void> writeHasActiveServerProfile(bool value);
+
+  String? readAppMode();
+  Future<void> writeAppMode(String? mode);
 }
 
 /// In-memory store used on web and for deterministic restart tests.
@@ -58,6 +61,7 @@ class InMemoryPreferencesStore implements PreferencesStore {
     this._serverUrl,
     this._appLockConfig,
     this._hasActiveServerProfile = false,
+    this._appMode,
   });
 
   bool _hideValues;
@@ -65,6 +69,7 @@ class InMemoryPreferencesStore implements PreferencesStore {
   String? _serverUrl;
   AppLockConfig? _appLockConfig;
   bool _hasActiveServerProfile;
+  String? _appMode;
 
   @override
   bool readHideValues() => _hideValues;
@@ -104,5 +109,13 @@ class InMemoryPreferencesStore implements PreferencesStore {
   @override
   Future<void> writeHasActiveServerProfile(bool value) async {
     _hasActiveServerProfile = value;
+  }
+
+  @override
+  String? readAppMode() => _appMode;
+
+  @override
+  Future<void> writeAppMode(String? mode) async {
+    _appMode = mode;
   }
 }

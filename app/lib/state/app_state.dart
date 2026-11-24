@@ -16,7 +16,7 @@ import 'preferences_store.dart';
 
 enum AlertTarget { connections, bankAurora, spending }
 
-enum AppMode { demo, server }
+enum AppMode { demo, localDevice, server }
 
 class AppAlert {
   const AppAlert({
@@ -72,10 +72,11 @@ class AppAlert {
   }
 }
 
-/// Application state covering demo mode, self-hosted server authentication,
-/// encrypted offline cache + cursor delta sync, cash offline outbox, app lock,
-/// bank connections, transaction classification / splits / bulk edits,
-/// planning (budgets, goals, alert rules), receipts consent, and Paçoca chat.
+/// Application state covering demo mode, zero-server encrypted local-device
+/// mode, self-hosted server authentication, encrypted offline cache + cursor
+/// delta sync, cash offline outbox, app lock, bank connections, transaction
+/// classification / splits / bulk edits, planning (budgets, goals, alert
+/// rules), receipts consent, and Paçoca chat.
 class AppState extends ChangeNotifier {
   AppState({
     Dataset? dataset,
@@ -98,11 +99,17 @@ class AppState extends ChangeNotifier {
     _hideValues = _preferences.readHideValues();
     _themeMode = _preferences.readThemeMode();
     _serverUrl = initialServerUrl ?? _preferences.readServerUrl();
+    final savedMode = _preferences.readAppMode();
     _mode =
         initialMode ??
-        ((_serverUrl != null && _serverUrl!.trim().isNotEmpty)
+        (savedMode == AppMode.localDevice.name
+            ? AppMode.localDevice
+            : (_serverUrl != null && _serverUrl!.trim().isNotEmpty)
             ? AppMode.server
             : AppMode.demo);
+    if (_mode == AppMode.localDevice) {
+      _isOffline = false;
+    }
     _dataset =
         dataset ??
         (_mode == AppMode.server
@@ -112,6 +119,8 @@ class AppState extends ChangeNotifier {
                 transactions: const [],
                 today: DateTime.now(),
               )
+            : _mode == AppMode.localDevice
+            ? _createCleanLocalDataset()
             : demoDataset());
     if (_serverUrl != null) {
       final parsed = Uri.tryParse(_serverUrl!);
@@ -155,11 +164,53 @@ class AppState extends ChangeNotifier {
   static const String cashBankId = 'cash-wallet-bank';
   static const String cashAccountId = 'cash-wallet';
 
+  /// Cryptographic AAD namespace isolating on-device encrypted storage from
+  /// any self-hosted server URL.
+  static const String localDeviceNamespace = 'local://device';
+
+  static const List<int> _localBankPalette = [
+    0xFF8B3E05,
+    0xFF2A7550,
+    0xFF22649C,
+    0xFF6E4AA3,
+    0xFF9C4E1A,
+    0xFF3E6B5C,
+  ];
+
   /// Clear pt-BR warning when attempting to edit bank transactions while
   /// offline (RF-21).
   static const String offlineEditBlockedMessage =
       'Você está sem conexão. Corrigir transações exige conexão com o seu '
       'servidor.';
+
+  static Dataset _createCleanLocalDataset({
+    DateTime? today,
+    int walletOpeningBalanceCents = 0,
+  }) {
+    final now = today ?? DateTime.now();
+    final day = DateTime(now.year, now.month, now.day);
+    return Dataset(
+      banks: const [
+        Bank(
+          cashBankId,
+          'Carteira',
+          colorValue: 0xFF7A5A43,
+          lastSyncedLabel: 'Salvo cifrado neste aparelho',
+        ),
+      ],
+      accounts: [
+        Account(
+          id: cashAccountId,
+          bankId: cashBankId,
+          name: 'Carteira',
+          kind: AccountKind.cash,
+          openingBalanceCents: walletOpeningBalanceCents,
+        ),
+      ],
+      transactions: const [],
+      today: day,
+    );
+  }
 
   late Dataset _dataset;
   final PreferencesStore _preferences;
@@ -183,6 +234,7 @@ class AppState extends ChangeNotifier {
   final Map<int, String> _txIdToUuid = {};
   List<SyncCardBillItem> _syncedCardBills = const [];
   Future<void> _mutationChain = Future<void>.value();
+  Future<void> _localPersistChain = Future<void>.value();
 
   late bool _hideValues;
   late ThemeMode _themeMode;
@@ -223,6 +275,8 @@ class AppState extends ChangeNotifier {
   int _outboxSeq = 1;
   int _planningSeq = 1;
   int _assistantSeq = 1;
+  int _localBankSeq = 1;
+  int _localAccountSeq = 1;
 
   late List<EffectiveTransaction> _effectiveTransactions;
   late Dataset _effectiveDataset;
@@ -241,9 +295,11 @@ class AppState extends ChangeNotifier {
   GranaPaCaApiClient get apiClient => _apiClient;
   EncryptedCacheStore get encryptedCache => _encryptedCache;
   AppLockController get appLock => _appLock;
+  PreferencesStore get preferencesStore => _preferences;
 
   AppMode get mode => _mode;
   bool get isDemoMode => _mode == AppMode.demo;
+  bool get isLocalDeviceMode => _mode == AppMode.localDevice;
   bool get isServerMode => _mode == AppMode.server;
   String? get serverUrl => _serverUrl;
   ServerInfo? get serverInfo => _serverInfo;
@@ -288,7 +344,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Editing bank transactions is disabled in server mode while offline (RF-21).
-  /// Physical cash entries remain available offline via the outbox (RF-44).
+  /// Local-device mode and demo mode always allow full editing.
   bool get canEditTransactions => !(isServerMode && _isOffline);
 
   bool get hideValues => _hideValues;
@@ -646,13 +702,14 @@ class AppState extends ChangeNotifier {
     final isSwitchingServer =
         _serverUrl != null && _serverUrl != normalizedString;
     final leavingDemo = _mode == AppMode.demo;
-    if (isSwitchingServer) {
+    final leavingLocalDevice = _mode == AppMode.localDevice;
+    if (isSwitchingServer || leavingLocalDevice) {
       await _apiClient.logout();
       await _encryptedCache.wipe();
       _authTokens = null;
       _activeSessions = const [];
     }
-    if (isSwitchingServer || leavingDemo) {
+    if (isSwitchingServer || leavingDemo || leavingLocalDevice) {
       _syncCursor = null;
       _lastSyncedAt = null;
       _serverConnections = [];
@@ -667,6 +724,8 @@ class AppState extends ChangeNotifier {
       _spendingAlertRules.clear();
       _assistantSuggestions.clear();
       _alerts = const [];
+      _profileAnswers = const ProfileAnswers();
+      _receiptConsentAccepted = false;
       _dataset = Dataset(
         banks: const [],
         accounts: const [],
@@ -683,8 +742,449 @@ class AppState extends ChangeNotifier {
     _isOffline = false;
     _apiClient.setBaseUrl(normalized);
     await _preferences.writeServerUrl(normalizedString);
+    await _preferences.writeAppMode(AppMode.server.name);
     notifyListeners();
     return info;
+  }
+
+  /// Switches cleanly into zero-server encrypted on-device mode
+  /// (`AppMode.localDevice`), initializing a clean personal workspace with a
+  /// `"Carteira"` cash account plus an optional initial bank account, and
+  /// immediately persisting the authenticated ciphertext in
+  /// [EncryptedCacheStore] under [localDeviceNamespace].
+  Future<void> startLocalDeviceMode({
+    String? initialBankName,
+    String? initialAccountName,
+    int openingBalanceCents = 0,
+  }) async {
+    final hasInitialBank =
+        initialBankName != null && initialBankName.trim().isNotEmpty;
+    final now = DateTime.now();
+
+    _mode = AppMode.localDevice;
+    _isOffline = false;
+    _simulateNoConnections = false;
+    _serverConnections = [];
+    _syncCursor = null;
+    _lastSyncedAt = now;
+    _sessionClearedNotice = null;
+    _rules.clear();
+    _adjustments.clear();
+    _splitsByTxId.clear();
+    _outbox.clear();
+    _budgets.clear();
+    _goals.clear();
+    _spendingAlertRules.clear();
+    _assistantSuggestions.clear();
+    _alerts = const [];
+    _profileAnswers = const ProfileAnswers();
+    _receiptConsentAccepted = false;
+    _aiProviderConfig = const AiProviderConfig();
+
+    _dataset = _createCleanLocalDataset(
+      today: now,
+      walletOpeningBalanceCents: hasInitialBank ? 0 : openingBalanceCents,
+    );
+
+    if (hasInitialBank) {
+      final cleanBank = initialBankName.trim();
+      final cleanAccount =
+          (initialAccountName == null || initialAccountName.trim().isEmpty)
+          ? 'Conta corrente'
+          : initialAccountName.trim();
+      final bankId = 'local-bank-${_localBankSeq++}';
+      final acctId = 'local-acct-${_localAccountSeq++}';
+      final color = _localBankPalette[0];
+      _dataset = Dataset(
+        banks: [
+          ..._dataset.banks,
+          Bank(
+            bankId,
+            cleanBank,
+            colorValue: color,
+            lastSyncedLabel: 'Conta local · neste aparelho',
+          ),
+        ],
+        accounts: [
+          ..._dataset.accounts,
+          Account(
+            id: acctId,
+            bankId: bankId,
+            name: cleanAccount,
+            kind: AccountKind.checking,
+            openingBalanceCents: openingBalanceCents,
+          ),
+        ],
+        transactions: const [],
+        today: _dataset.today,
+      );
+    }
+
+    _selectedMonth = DateTime(_dataset.today.year, _dataset.today.month);
+    _spendingMonth = _selectedMonth;
+    final (from, to) = monthRange(_selectedMonth);
+    _historyFilter = TxFilter(from: from, to: to);
+    _seedAssistantWelcome();
+    _recompute();
+
+    await _preferences.writeAppMode(AppMode.localDevice.name);
+    await _persistLocalDeviceIfNeeded();
+    notifyListeners();
+  }
+
+  /// Restores the encrypted local-device workspace saved under
+  /// [localDeviceNamespace] on startup or restart.
+  Future<bool> restoreLocalDeviceFromCache() async {
+    try {
+      final snapshot = await _encryptedCache.loadSnapshot(
+        expectedServerUrl: localDeviceNamespace,
+      );
+      if (snapshot == null) return false;
+
+      _mode = AppMode.localDevice;
+      _isOffline = false;
+      _simulateNoConnections = false;
+      _dataset = snapshot.toDataset();
+      _lastSyncedAt = snapshot.lastSyncedAt;
+      _syncCursor = null;
+      _serverConnections = List<BankConnectionInfo>.from(snapshot.connections);
+      _rules
+        ..clear()
+        ..addAll(snapshot.rules);
+      _adjustments
+        ..clear()
+        ..addAll(snapshot.adjustments);
+      _splitsByTxId
+        ..clear()
+        ..addAll(snapshot.splitsByTxId);
+      for (final tx in _dataset.transactions) {
+        if (tx.splits.isNotEmpty && !_splitsByTxId.containsKey(tx.id)) {
+          _splitsByTxId[tx.id] = tx.splits;
+        }
+      }
+      _budgets
+        ..clear()
+        ..addAll(snapshot.budgets);
+      _goals
+        ..clear()
+        ..addAll(snapshot.goals);
+      _spendingAlertRules
+        ..clear()
+        ..addAll(snapshot.spendingAlertRules);
+      _receiptConsentAccepted = snapshot.receiptConsentAccepted;
+      _profileAnswers = _profileAnswersFromJson(snapshot.profileAnswersJson);
+      _aiProviderConfig = snapshot.aiProviderConfig ?? const AiProviderConfig();
+      _alerts = snapshot.alerts
+          .map(AppAlert.fromSyncItem)
+          .toList(growable: false);
+
+      _advanceSequenceCountersFromState();
+
+      final focusDate = _dataset.transactions.isNotEmpty
+          ? _dataset.transactions.first.date
+          : _dataset.today;
+      _selectedMonth = DateTime(focusDate.year, focusDate.month);
+      _spendingMonth = _selectedMonth;
+      final (from, to) = monthRange(_selectedMonth);
+      _historyFilter = TxFilter(from: from, to: to);
+      _seedAssistantWelcome();
+      _recompute();
+      notifyListeners();
+      return true;
+    } on CacheIntegrityException {
+      return false;
+    }
+  }
+
+  /// Adds a local bank/account/card directly on the device (2-tap setup for
+  /// non-technical users) and persists immediately when in
+  /// [AppMode.localDevice].
+  Future<Account> addLocalBankAccount({
+    required String bankName,
+    required String accountName,
+    required AccountKind kind,
+    int openingBalanceCents = 0,
+    String? lastFourDigits,
+    int? colorValue,
+  }) async {
+    final cleanedBank = bankName.trim().isEmpty ? 'Meu Banco' : bankName.trim();
+    final cleanedAccount = accountName.trim().isEmpty
+        ? kind.label
+        : accountName.trim();
+    final normalizedBank = merchantKeyFor(cleanedBank);
+
+    final existingBank = _dataset.banks
+        .where((b) => merchantKeyFor(b.name) == normalizedBank)
+        .firstOrNull;
+    final bankId = existingBank?.id ?? 'local-bank-${_localBankSeq++}';
+    final nextBanks = existingBank != null
+        ? _dataset.banks
+        : [
+            ..._dataset.banks,
+            Bank(
+              bankId,
+              cleanedBank,
+              colorValue:
+                  colorValue ??
+                  _localBankPalette[_dataset.banks.length %
+                      _localBankPalette.length],
+              lastSyncedLabel: 'Conta local · neste aparelho',
+            ),
+          ];
+
+    final cleanedDigits = lastFourDigits
+        ?.replaceAll(RegExp(r'[^0-9]'), '')
+        .trim();
+    final validLastFour = (cleanedDigits != null && cleanedDigits.isNotEmpty)
+        ? (cleanedDigits.length > 4
+              ? cleanedDigits.substring(cleanedDigits.length - 4)
+              : cleanedDigits)
+        : null;
+
+    final account = Account(
+      id: 'local-acct-${_localAccountSeq++}',
+      bankId: bankId,
+      name: cleanedAccount,
+      kind: kind,
+      openingBalanceCents: openingBalanceCents,
+      lastFourDigits: validLastFour,
+      closingDay: kind == AccountKind.creditCard ? 28 : null,
+      dueDay: kind == AccountKind.creditCard ? 10 : null,
+    );
+
+    _dataset = Dataset(
+      banks: nextBanks,
+      accounts: [..._dataset.accounts, account],
+      transactions: _dataset.transactions,
+      today: _dataset.today,
+    );
+    _recompute();
+    notifyListeners();
+    await _persistLocalDeviceIfNeeded();
+    return account;
+  }
+
+  /// Restores a complete JSON backup produced by [buildBackupJson] directly
+  /// into encrypted on-device storage ([AppMode.localDevice]).
+  /// Returns the number of restored transactions.
+  Future<int> restoreFromBackupJson(String jsonContent) async {
+    final payload = parseBackupJson(jsonContent);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final banksById = <String, Bank>{
+      for (final b in payload.banks)
+        if (b.id.isNotEmpty) b.id: b,
+    };
+    final accountsById = <String, Account>{
+      for (final a in payload.accounts)
+        if (a.id.isNotEmpty) a.id: a,
+    };
+
+    // Ensure every account references a known bank and every transaction
+    // references a known account so Dataset lookups never fail.
+    for (final acct in accountsById.values) {
+      if (!banksById.containsKey(acct.bankId)) {
+        banksById[acct.bankId] = Bank(
+          acct.bankId,
+          acct.bankId == cashBankId ? 'Carteira' : 'Banco restaurado',
+          colorValue: _localBankPalette[0],
+          lastSyncedLabel: 'Restaurado do backup',
+        );
+      }
+    }
+    for (final tx in payload.transactions) {
+      if (!accountsById.containsKey(tx.accountId)) {
+        banksById.putIfAbsent(
+          cashBankId,
+          () => const Bank(
+            cashBankId,
+            'Carteira',
+            colorValue: 0xFF7A5A43,
+            lastSyncedLabel: 'Restaurado do backup',
+          ),
+        );
+        accountsById[tx.accountId] = Account(
+          id: tx.accountId,
+          bankId: cashBankId,
+          name: tx.accountId == cashAccountId ? 'Carteira' : 'Conta restaurada',
+          kind: tx.accountId == cashAccountId
+              ? AccountKind.cash
+              : AccountKind.checking,
+        );
+      }
+    }
+    if (banksById.isEmpty && accountsById.isEmpty) {
+      final clean = _createCleanLocalDataset(today: today);
+      for (final b in clean.banks) {
+        banksById[b.id] = b;
+      }
+      for (final a in clean.accounts) {
+        accountsById[a.id] = a;
+      }
+    }
+
+    _mode = AppMode.localDevice;
+    _isOffline = false;
+    _simulateNoConnections = false;
+    _serverConnections = [];
+    _syncCursor = null;
+    _lastSyncedAt = now;
+    _outbox.clear();
+    _assistantSuggestions.clear();
+    _alerts = const [];
+
+    _dataset = Dataset(
+      banks: banksById.values.toList(growable: false),
+      accounts: accountsById.values.toList(growable: false),
+      transactions: payload.transactions,
+      today: today,
+    );
+    _rules
+      ..clear()
+      ..addAll(payload.rules);
+    _adjustments
+      ..clear()
+      ..addAll(payload.adjustments);
+    _splitsByTxId.clear();
+    for (final tx in payload.transactions) {
+      if (tx.splits.isNotEmpty) {
+        _splitsByTxId[tx.id] = tx.splits;
+      }
+    }
+    _budgets
+      ..clear()
+      ..addAll(payload.budgets);
+    _goals
+      ..clear()
+      ..addAll(payload.goals);
+    _spendingAlertRules
+      ..clear()
+      ..addAll(payload.alertRules);
+    _receiptConsentAccepted = payload.receiptConsentAccepted;
+
+    _advanceSequenceCountersFromState();
+
+    final focusDate = _dataset.transactions.isNotEmpty
+        ? _dataset.transactions.first.date
+        : today;
+    _selectedMonth = DateTime(focusDate.year, focusDate.month);
+    _spendingMonth = _selectedMonth;
+    final (from, to) = monthRange(_selectedMonth);
+    _historyFilter = TxFilter(from: from, to: to);
+    _seedAssistantWelcome();
+    _recompute();
+
+    await _preferences.writeAppMode(AppMode.localDevice.name);
+    await _persistLocalDeviceIfNeeded();
+    notifyListeners();
+    return payload.transactions.length;
+  }
+
+  /// Waits for any queued local-device encrypted persistence write to complete.
+  Future<void> flushLocalPersistence() => _localPersistChain;
+
+  Future<void> _persistLocalDeviceIfNeeded() {
+    if (!isLocalDeviceMode) return Future<void>.value();
+    _lastSyncedAt = DateTime.now();
+    _localPersistChain = _localPersistChain
+        .catchError((_) {})
+        .then(
+          (_) => _persistEncryptedCache(namespaceOverride: localDeviceNamespace),
+        );
+    return _localPersistChain;
+  }
+
+  void _advanceSequenceCountersFromState() {
+    var maxTx = _localTxSeq;
+    for (final t in _dataset.transactions) {
+      if (t.id >= maxTx) maxTx = t.id + 1;
+    }
+    _localTxSeq = maxTx;
+
+    int nextSeqFromIds(Iterable<String> ids, String prefix, int current) {
+      var next = current;
+      for (final id in ids) {
+        if (id.startsWith(prefix)) {
+          final parsed = int.tryParse(id.substring(prefix.length));
+          if (parsed != null && parsed >= next) next = parsed + 1;
+        }
+      }
+      return next;
+    }
+
+    _adjustmentSeq = nextSeqFromIds(
+      _adjustments.map((a) => a.id),
+      'adj-',
+      _adjustmentSeq,
+    );
+    _ruleSeq = nextSeqFromIds(
+      _rules.map((r) => r.id),
+      'user-rule-',
+      _ruleSeq,
+    );
+    _planningSeq = nextSeqFromIds(
+      [
+        ..._budgets.map((b) => b.id),
+        ..._goals.map((g) => g.id),
+        ..._spendingAlertRules.map((a) => a.id),
+      ],
+      'budget-',
+      _planningSeq,
+    );
+    _planningSeq = nextSeqFromIds(
+      _goals.map((g) => g.id),
+      'goal-',
+      _planningSeq,
+    );
+    _planningSeq = nextSeqFromIds(
+      _spendingAlertRules.map((a) => a.id),
+      'alert-rule-',
+      _planningSeq,
+    );
+    _localBankSeq = nextSeqFromIds(
+      _dataset.banks.map((b) => b.id),
+      'local-bank-',
+      _localBankSeq,
+    );
+    _localAccountSeq = nextSeqFromIds(
+      _dataset.accounts.map((a) => a.id),
+      'local-acct-',
+      _localAccountSeq,
+    );
+  }
+
+  static Map<String, dynamic> _profileAnswersToJson(ProfileAnswers answers) => {
+    'occupations': [for (final o in answers.occupations) o.name],
+    'homeTraits': [for (final h in answers.homeTraits) h.name],
+    'transportModes': [for (final t in answers.transportModes) t.name],
+  };
+
+  static ProfileAnswers _profileAnswersFromJson(Map<String, dynamic> json) {
+    final occNames = ((json['occupations'] as List<dynamic>?) ?? const [])
+        .map((e) => e.toString())
+        .toSet();
+    final homeNames = ((json['homeTraits'] as List<dynamic>?) ?? const [])
+        .map((e) => e.toString())
+        .toSet();
+    final transportNames =
+        ((json['transportModes'] as List<dynamic>?) ?? const [])
+            .map((e) => e.toString())
+            .toSet();
+    return ProfileAnswers(
+      occupations: {
+        for (final o in ProfileOccupation.values)
+          if (occNames.contains(o.name)) o,
+      },
+      homeTraits: {
+        for (final h in HomeTrait.values)
+          if (homeNames.contains(h.name)) h,
+      },
+      transportModes: {
+        for (final t in TransportMode.values)
+          if (transportNames.contains(t.name)) t,
+      },
+    );
   }
 
   /// Switches back into Demo Mode with deterministic fictitious data (RF-63).
@@ -707,6 +1207,7 @@ class AppState extends ChangeNotifier {
     unawaited(_preferences.writeHasActiveServerProfile(false));
     _seedDemoPlanningAndAssistant();
     _recompute();
+    _preferences.writeAppMode(AppMode.demo.name);
     notifyListeners();
   }
 
@@ -823,7 +1324,7 @@ class AppState extends ChangeNotifier {
 
   /// RF-14: refreshes the list of bank connections from the server.
   Future<List<BankConnectionInfo>> refreshConnections() async {
-    if (isDemoMode) return connections;
+    if (!isServerMode) return connections;
     try {
       final items = await _apiClient.fetchConnections();
       _serverConnections = List<BankConnectionInfo>.from(items);
@@ -843,7 +1344,7 @@ class AppState extends ChangeNotifier {
   /// idempotent `clientMutationId`, replacing synthetic local IDs with the
   /// canonical server transaction so subsequent delta sync never duplicates it.
   Future<int> flushPendingOutbox() async {
-    if (isDemoMode || _outbox.isEmpty || !isAuthenticated) return 0;
+    if (!isServerMode || _outbox.isEmpty || !isAuthenticated) return 0;
     var flushed = 0;
     final remaining = <PendingOutboxMutation>[];
     final replacedByLocalId = <int, Transaction>{};
@@ -952,7 +1453,7 @@ class AppState extends ChangeNotifier {
   /// offline snapshot, or gracefully falls back to the encrypted cache when
   /// the server is unreachable.
   Future<bool> syncFromServer({bool triggerBankSync = false}) async {
-    if (isDemoMode) return false;
+    if (!isServerMode) return false;
     if (_isSyncing) return false;
     _isSyncing = true;
     notifyListeners();
@@ -1027,6 +1528,19 @@ class AppState extends ChangeNotifier {
           _localTxSeq = m.localTxId + 1;
         }
       }
+      _splitsByTxId
+        ..clear()
+        ..addAll(snapshot.splitsByTxId);
+      _budgets
+        ..clear()
+        ..addAll(snapshot.budgets);
+      _goals
+        ..clear()
+        ..addAll(snapshot.goals);
+      _spendingAlertRules
+        ..clear()
+        ..addAll(snapshot.spendingAlertRules);
+      _receiptConsentAccepted = snapshot.receiptConsentAccepted;
       if (snapshot.alerts.isNotEmpty) {
         _alerts = snapshot.alerts
             .where((a) => !a.isResolved)
@@ -1187,9 +1701,9 @@ class AppState extends ChangeNotifier {
     _recompute();
   }
 
-  Future<void> _persistEncryptedCache() async {
-    final url = _serverUrl;
-    if (url == null || url.isEmpty) return;
+  Future<void> _persistEncryptedCache({String? namespaceOverride}) async {
+    final namespace = namespaceOverride ?? _serverUrl;
+    if (namespace == null || namespace.isEmpty) return;
 
     final derivedBills = <CachedCardBill>[];
     for (final acct in _dataset.accounts) {
@@ -1211,7 +1725,7 @@ class AppState extends ChangeNotifier {
     }
 
     final snapshot = CachedSnapshot(
-      serverUrl: url,
+      serverUrl: namespace,
       lastSyncedAt: _lastSyncedAt ?? DateTime.now(),
       syncCursor: _syncCursor,
       banks: _dataset.banks,
@@ -1224,6 +1738,13 @@ class AppState extends ChangeNotifier {
       alerts: [for (final a in _alerts) a.toSyncItem()],
       transactionUuidById: Map<int, String>.from(_txIdToUuid),
       pendingOutbox: List<PendingOutboxMutation>.from(_outbox),
+      budgets: _budgets,
+      goals: _goals,
+      spendingAlertRules: _spendingAlertRules,
+      receiptConsentAccepted: _receiptConsentAccepted,
+      splitsByTxId: _splitsByTxId,
+      profileAnswersJson: _profileAnswersToJson(_profileAnswers),
+      aiProviderConfig: _aiProviderConfig,
     );
     await _encryptedCache.saveSnapshot(snapshot);
   }
@@ -1434,9 +1955,10 @@ class AppState extends ChangeNotifier {
   }
 
   /// RF-44: Quick-entry for physical cash spending. Works instantaneously in
-  /// demo mode AND while offline in server mode by queueing a persisted
-  /// [PendingOutboxMutation] with idempotent `clientMutationId` that flushes on
-  /// the next sync. Validation errors (HTTP 4xx) are surfaced and never queued.
+  /// demo mode, encrypted local-device mode, AND while offline in server mode
+  /// by queueing a persisted [PendingOutboxMutation] with idempotent
+  /// `clientMutationId` that flushes on the next sync. Validation errors
+  /// (HTTP 4xx) are surfaced and never queued.
   Future<EffectiveTransaction> addCashTransaction({
     required String description,
     required int amountCents,
@@ -1560,7 +2082,71 @@ class AppState extends ChangeNotifier {
       await _persistEncryptedCache();
     }
     notifyListeners();
+    await _persistLocalDeviceIfNeeded();
     return effectiveById(tx.id);
+  }
+
+  /// Manual entry for ANY payment method (`Dinheiro`, `Pix`, `Débito`,
+  /// `Crédito`, `Boleto`, etc.) into any local account in
+  /// [AppMode.localDevice] (or demo mode), persisted encrypted on device.
+  Future<EffectiveTransaction> addManualTransaction({
+    required String description,
+    required int amountCents,
+    required DateTime date,
+    required String accountId,
+    required PaymentMethod paymentMethod,
+    TxKind kind = TxKind.expense,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+    List<String> tags = const [],
+  }) async {
+    var resolvedAccountId = accountId;
+    if (!_dataset.accounts.any((a) => a.id == resolvedAccountId)) {
+      _ensureCashAccountExists();
+      resolvedAccountId = cashAccountId;
+    }
+
+    final cleanedDesc = description.trim().isEmpty
+        ? (kind == TxKind.income ? 'Receita manual' : 'Gasto manual')
+        : description.trim();
+    final cleanedTags = decodeTags(encodeTags(tags));
+    final localId = _localTxSeq++;
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final signedAmount =
+        (kind == TxKind.income ||
+            kind == TxKind.refund ||
+            kind == TxKind.redemption)
+        ? amountCents.abs()
+        : -amountCents.abs();
+    final isExpenseLike = isSpendingKind(kind);
+
+    final tx = Transaction(
+      id: localId,
+      accountId: resolvedAccountId,
+      date: normalizedDate,
+      description: cleanedDesc,
+      amountCents: signedAmount,
+      kind: kind,
+      category: isExpenseLike ? category : null,
+      essentiality: isExpenseLike ? essentiality : null,
+      paymentMethod: paymentMethod,
+      tags: cleanedTags,
+      isCashEntry:
+          paymentMethod == PaymentMethod.cash &&
+          resolvedAccountId == cashAccountId,
+    );
+
+    _dataset = Dataset(
+      banks: _dataset.banks,
+      accounts: _dataset.accounts,
+      transactions: [..._dataset.transactions, tx],
+      today: _dataset.today,
+    );
+    _recompute();
+    _evaluateSpendingAlertsForMonth(DateTime(date.year, date.month));
+    notifyListeners();
+    await _persistLocalDeviceIfNeeded();
+    return effectiveById(localId);
   }
 
   /// Appends immutable manual adjustments for only the fields that actually
@@ -1661,6 +2247,7 @@ class AppState extends ChangeNotifier {
       _evaluateSpendingAlertsForMonth(
         DateTime(current.date.year, current.date.month),
       );
+      _persistLocalDeviceIfNeeded();
       notifyListeners();
       if (_shouldPersistToServer) {
         final serverTxId = _txIdToUuid[txId] ?? '$txId';
@@ -1718,6 +2305,7 @@ class AppState extends ChangeNotifier {
     if (splits.isEmpty) {
       _splitsByTxId.remove(txId);
       _recompute();
+      _persistLocalDeviceIfNeeded();
       notifyListeners();
       if (_shouldPersistToServer) {
         final serverTxId = _txIdToUuid[txId] ?? '$txId';
@@ -1755,6 +2343,7 @@ class AppState extends ChangeNotifier {
     _evaluateSpendingAlertsForMonth(
       DateTime(current.date.year, current.date.month),
     );
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
     if (_shouldPersistToServer) {
       final serverTxId = _txIdToUuid[txId] ?? '$txId';
@@ -1862,6 +2451,7 @@ class AppState extends ChangeNotifier {
     if (updatedCount > 0) {
       _recompute();
       _evaluateSpendingAlertsForMonth(_spendingMonth);
+      _persistLocalDeviceIfNeeded();
       notifyListeners();
       if (_shouldPersistToServer) {
         final serverTxUuids = [
@@ -1911,6 +2501,7 @@ class AppState extends ChangeNotifier {
     );
     _adjustments.add(optimistic);
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -1969,6 +2560,7 @@ class AppState extends ChangeNotifier {
     );
     _rules.add(rule);
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer && (category != null || essentiality != null)) {
@@ -2007,6 +2599,7 @@ class AppState extends ChangeNotifier {
     final previous = _rules[index];
     _rules[index] = previous.copyWith(isActive: active);
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2041,6 +2634,7 @@ class AppState extends ChangeNotifier {
     if (index == -1) return;
     final removed = _rules.removeAt(index);
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2072,6 +2666,7 @@ class AppState extends ChangeNotifier {
       ),
     );
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
   }
 
@@ -2101,6 +2696,7 @@ class AppState extends ChangeNotifier {
     } else {
       _budgets.add(optimistic);
     }
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2134,6 +2730,7 @@ class AppState extends ChangeNotifier {
     final index = _budgets.indexWhere((b) => b.id == budgetId);
     if (index == -1) return;
     final removed = _budgets.removeAt(index);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2163,6 +2760,7 @@ class AppState extends ChangeNotifier {
       targetDate: targetDate,
     );
     _goals.add(goal);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2191,6 +2789,7 @@ class AppState extends ChangeNotifier {
     _goals[idx] = previous.copyWith(
       currentCents: previous.currentCents + amountCents,
     );
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2221,6 +2820,7 @@ class AppState extends ChangeNotifier {
     final index = _goals.indexWhere((g) => g.id == goalId);
     if (index == -1) return;
     final removed = _goals.removeAt(index);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2247,6 +2847,7 @@ class AppState extends ChangeNotifier {
     if (parsed == null) return null;
     _spendingAlertRules.add(parsed);
     _evaluateSpendingAlertsForMonth(_spendingMonth);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2277,6 +2878,7 @@ class AppState extends ChangeNotifier {
     if (active) {
       _evaluateSpendingAlertsForMonth(_spendingMonth);
     }
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
   }
 
@@ -2285,6 +2887,7 @@ class AppState extends ChangeNotifier {
     final index = _spendingAlertRules.indexWhere((r) => r.id == ruleId);
     if (index == -1) return;
     final removed = _spendingAlertRules.removeAt(index);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2429,6 +3032,7 @@ class AppState extends ChangeNotifier {
     }
     _aiProviderConfig = nextConfig;
     notifyListeners();
+    await _persistLocalDeviceIfNeeded();
   }
 
   /// Explicitly confirms a low-confidence Paçoca suggestion and creates a
@@ -2455,6 +3059,7 @@ class AppState extends ChangeNotifier {
     _rules.add(rule);
     _assistantSuggestions[idx] = sugg.copyWith(resolved: true, accepted: true);
     _recompute();
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2532,6 +3137,7 @@ class AppState extends ChangeNotifier {
   void acceptReceiptConsent() {
     if (!canEditTransactions || _receiptConsentAccepted) return;
     _receiptConsentAccepted = true;
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2549,6 +3155,7 @@ class AppState extends ChangeNotifier {
   void revokeReceiptConsent() {
     if (!canEditTransactions || !_receiptConsentAccepted) return;
     _receiptConsentAccepted = false;
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
 
     if (_shouldPersistToServer) {
@@ -2563,16 +3170,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Imports parsed statement transactions locally (demo mode preview or
-  /// offline fallback) into the active dataset.
+  /// Imports parsed statement transactions locally (local-device mode, demo
+  /// mode preview, or offline fallback) into the active dataset.
   int importStatementTransactions(List<Transaction> imported) {
     if (imported.isEmpty) return 0;
+    final wasEmpty = _dataset.transactions.isEmpty;
+    final knownAccountIds = {for (final a in _dataset.accounts) a.id};
     final assigned = <Transaction>[];
     for (final tx in imported) {
+      var targetAccountId = tx.accountId;
+      if (!knownAccountIds.contains(targetAccountId)) {
+        _ensureCashAccountExists();
+        knownAccountIds.add(cashAccountId);
+        targetAccountId = cashAccountId;
+      }
       assigned.add(
         Transaction(
           id: _localTxSeq++,
-          accountId: tx.accountId,
+          accountId: targetAccountId,
           date: tx.date,
           description: tx.description,
           amountCents: tx.amountCents,
@@ -2590,7 +3205,16 @@ class AppState extends ChangeNotifier {
       transactions: [..._dataset.transactions, ...assigned],
       today: _dataset.today,
     );
+    if (wasEmpty && isLocalDeviceMode && _dataset.transactions.isNotEmpty) {
+      final latest = _dataset.transactions.first.date;
+      _selectedMonth = DateTime(latest.year, latest.month);
+      _spendingMonth = _selectedMonth;
+      final (from, to) = monthRange(_selectedMonth);
+      _historyFilter = TxFilter(from: from, to: to);
+    }
     _recompute();
+    _evaluateSpendingAlertsForMonth(_spendingMonth);
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
     return assigned.length;
   }
@@ -2602,6 +3226,7 @@ class AppState extends ChangeNotifier {
       for (var i = 0; i < _alerts.length; i++)
         i == index ? _alerts[i].copyWith(isRead: true) : _alerts[i],
     ];
+    _persistLocalDeviceIfNeeded();
     notifyListeners();
   }
 
