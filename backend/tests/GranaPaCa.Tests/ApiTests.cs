@@ -16,12 +16,16 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
     [
         "GranaPaCa.Api.Migrations.0001_drop_sample_schema.sql",
         "GranaPaCa.Modules.Alerts.Migrations.0001_create_alerts_schema.sql",
+        "GranaPaCa.Modules.Assistant.Migrations.0001_create_assistant_schema.sql",
         "GranaPaCa.Modules.Banking.Migrations.0001_create_banking_schema.sql",
         "GranaPaCa.Modules.Banking.Migrations.0002_add_sync_updated_at.sql",
+        "GranaPaCa.Modules.Banking.Migrations.0003_cash_tags_splits_payment_method.sql",
         "GranaPaCa.Modules.Categorization.Migrations.0001_create_categorization_schema.sql",
         "GranaPaCa.Modules.Categorization.Migrations.0002_add_rule_updated_at.sql",
         "GranaPaCa.Modules.Identity.Migrations.0001_create_identity_schema.sql",
         "GranaPaCa.Modules.Keyring.Migrations.0001_create_keyring_schema.sql",
+        "GranaPaCa.Modules.Planning.Migrations.0001_create_planning_schema.sql",
+        "GranaPaCa.Modules.Receipts.Migrations.0001_create_receipts_schema.sql",
     ];
 
     [Fact]

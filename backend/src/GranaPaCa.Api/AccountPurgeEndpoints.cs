@@ -1,10 +1,13 @@
 using System.Security.Claims;
 using Dapper;
 using GranaPaCa.Modules.Alerts.Contracts;
+using GranaPaCa.Modules.Assistant.Contracts;
 using GranaPaCa.Modules.Banking.Contracts;
 using GranaPaCa.Modules.Categorization.Contracts;
 using GranaPaCa.Modules.Identity.Contracts;
 using GranaPaCa.Modules.Keyring.Contracts;
+using GranaPaCa.Modules.Planning.Contracts;
+using GranaPaCa.Modules.Receipts.Contracts;
 using Npgsql;
 
 namespace GranaPaCa.Api;
@@ -24,6 +27,9 @@ internal static class AccountPurgeEndpoints
             IBankingPurgeService bankingPurge,
             ICategorizationPurgeService categorizationPurge,
             IAlertsPurgeService alertsPurge,
+            IPlanningPurgeService planningPurge,
+            IReceiptsPurgeService receiptsPurge,
+            IAssistantPurgeService assistantPurge,
             IEnvelopeEncryptor envelopeEncryptor,
             CancellationToken cancellationToken) =>
         {
@@ -88,6 +94,9 @@ internal static class AccountPurgeEndpoints
                     transaction: transaction,
                     cancellationToken: cancellationToken));
 
+                await assistantPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
+                await receiptsPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
+                await planningPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await bankingPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await categorizationPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await alertsPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);

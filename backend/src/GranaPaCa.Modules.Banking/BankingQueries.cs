@@ -328,6 +328,8 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         string? essentiality,
         string? brand,
         string? search,
+        string? paymentMethod,
+        string? tag,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
@@ -336,7 +338,7 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         pageSize = Math.Clamp(pageSize, 1, 200);
         var offset = (page - 1) * pageSize;
 
-        var where = new StringBuilder("WHERE household_id = @HouseholdId");
+        var where = new StringBuilder("WHERE te.household_id = @HouseholdId");
         var parameters = new DynamicParameters();
         parameters.Add("HouseholdId", householdId);
         parameters.Add("PageSize", pageSize);
@@ -344,31 +346,31 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
 
         if (from.HasValue)
         {
-            where.Append(" AND occurred_on >= @From");
+            where.Append(" AND te.occurred_on >= @From");
             parameters.Add("From", from.Value);
         }
 
         if (to.HasValue)
         {
-            where.Append(" AND occurred_on <= @To");
+            where.Append(" AND te.occurred_on <= @To");
             parameters.Add("To", to.Value);
         }
 
         if (bankId.HasValue)
         {
-            where.Append(" AND connection_id = @BankId");
+            where.Append(" AND te.connection_id = @BankId");
             parameters.Add("BankId", bankId.Value);
         }
 
         if (accountId.HasValue)
         {
-            where.Append(" AND account_id = @AccountId");
+            where.Append(" AND te.account_id = @AccountId");
             parameters.Add("AccountId", accountId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(kind))
         {
-            where.Append(" AND effective_kind = @Kind");
+            where.Append(" AND te.effective_kind = @Kind");
             parameters.Add("Kind", kind.Trim().ToLowerInvariant());
         }
 
@@ -377,33 +379,51 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             var normalizedCategory = category.Trim().ToLowerInvariant();
             if (normalizedCategory == "uncategorized")
             {
-                where.Append(" AND effective_category IS NULL");
+                where.Append(" AND te.effective_category IS NULL");
             }
             else
             {
-                where.Append(" AND effective_category = @Category");
+                where.Append(" AND te.effective_category = @Category");
                 parameters.Add("Category", normalizedCategory);
             }
         }
 
         if (!string.IsNullOrWhiteSpace(essentiality))
         {
-            where.Append(" AND effective_essentiality = @Essentiality");
+            where.Append(" AND te.effective_essentiality = @Essentiality");
             parameters.Add("Essentiality", essentiality.Trim().ToLowerInvariant());
         }
 
         if (!string.IsNullOrWhiteSpace(brand))
         {
-            where.Append(" AND effective_brand IS NOT NULL AND banking.fold_text(effective_brand) = banking.fold_text(@Brand)");
+            where.Append(" AND te.effective_brand IS NOT NULL AND banking.fold_text(te.effective_brand) = banking.fold_text(@Brand)");
             parameters.Add("Brand", brand.Trim());
         }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             where.Append(
-                " AND (strpos(banking.fold_text(effective_description), banking.fold_text(@Search)) > 0" +
-                " OR strpos(banking.fold_text(original_description), banking.fold_text(@Search)) > 0)");
+                " AND (strpos(banking.fold_text(te.effective_description), banking.fold_text(@Search)) > 0" +
+                " OR strpos(banking.fold_text(te.original_description), banking.fold_text(@Search)) > 0)");
             parameters.Add("Search", search.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(paymentMethod))
+        {
+            where.Append(" AND te.effective_payment_method = @PaymentMethod");
+            parameters.Add("PaymentMethod", paymentMethod.Trim().ToLowerInvariant());
+        }
+
+        if (!string.IsNullOrWhiteSpace(tag))
+        {
+            where.Append(
+                " AND EXISTS (" +
+                "SELECT 1 FROM banking.transaction_tag tt " +
+                "JOIN banking.tag tg ON tg.id = tt.tag_id " +
+                "WHERE tt.transaction_id = te.id " +
+                "AND tg.household_id = @HouseholdId " +
+                "AND lower(tg.name) = lower(@Tag))");
+            parameters.Add("Tag", tag.Trim());
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -412,49 +432,89 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             $"""
             SELECT
                 COUNT(*)::int AS TotalCount,
-                COALESCE(SUM(amount_cents), 0)::bigint AS TotalCents
-            FROM banking.transaction_effective
+                COALESCE(SUM(te.amount_cents), 0)::bigint AS TotalCents
+            FROM banking.transaction_effective te
             {where}
             """,
             parameters,
             cancellationToken: cancellationToken));
 
-        var items = (await connection.QueryAsync<TransactionListItemDto>(new CommandDefinition(
+        var rows = (await connection.QueryAsync<TransactionListRow>(new CommandDefinition(
             $"""
             SELECT
-                id AS Id,
-                account_id AS AccountId,
-                account_name AS AccountName,
-                account_kind AS AccountKind,
-                connection_id AS BankId,
-                institution_name AS InstitutionName,
-                brand_color AS BrandColor,
-                occurred_on AS OccurredOn,
-                purchase_on AS PurchaseOn,
-                effective_description AS Description,
-                original_description AS OriginalDescription,
-                merchant_cnpj AS MerchantCnpj,
-                amount_cents AS AmountCents,
-                currency AS Currency,
-                status AS Status,
-                effective_kind AS Kind,
-                effective_category AS Category,
-                effective_essentiality AS Essentiality,
-                effective_brand AS Brand,
-                bill_id AS BillId,
-                installment_number AS InstallmentNumber,
-                installment_total AS InstallmentTotal,
-                has_manual_adjustments AS HasManualAdjustments,
-                deciding_layer AS DecidingLayer,
-                deciding_rule_name AS DecidingRuleName,
-                explanation AS Explanation
-            FROM banking.transaction_effective
+                te.id AS Id,
+                te.account_id AS AccountId,
+                te.account_name AS AccountName,
+                te.account_kind AS AccountKind,
+                te.connection_id AS BankId,
+                te.institution_name AS InstitutionName,
+                te.brand_color AS BrandColor,
+                te.occurred_on AS OccurredOn,
+                te.purchase_on AS PurchaseOn,
+                te.effective_description AS Description,
+                te.original_description AS OriginalDescription,
+                te.merchant_cnpj AS MerchantCnpj,
+                te.amount_cents AS AmountCents,
+                te.currency AS Currency,
+                te.status AS Status,
+                te.effective_kind AS Kind,
+                te.effective_category AS Category,
+                te.effective_essentiality AS Essentiality,
+                te.effective_brand AS Brand,
+                te.effective_payment_method AS PaymentMethod,
+                te.effective_is_atypical AS IsAtypical,
+                te.bill_id AS BillId,
+                te.installment_number AS InstallmentNumber,
+                te.installment_total AS InstallmentTotal,
+                te.has_manual_adjustments AS HasManualAdjustments,
+                te.deciding_layer AS DecidingLayer,
+                te.deciding_rule_name AS DecidingRuleName,
+                te.explanation AS Explanation
+            FROM banking.transaction_effective te
             {where}
-            ORDER BY occurred_on DESC, id DESC
+            ORDER BY te.occurred_on DESC, te.id DESC
             LIMIT @PageSize OFFSET @Offset
             """,
             parameters,
             cancellationToken: cancellationToken))).ToList();
+
+        var tagsByTx = await LoadTagsByTransactionIdsAsync(
+            connection,
+            rows.Select(r => r.Id).ToArray(),
+            cancellationToken);
+
+        var items = rows
+            .Select(r => new TransactionListItemDto(
+                r.Id,
+                r.AccountId,
+                r.AccountName,
+                r.AccountKind,
+                r.BankId,
+                r.InstitutionName,
+                r.BrandColor,
+                r.OccurredOn,
+                r.PurchaseOn,
+                r.Description,
+                r.OriginalDescription,
+                r.MerchantCnpj,
+                r.AmountCents,
+                r.Currency,
+                r.Status,
+                r.Kind,
+                r.Category,
+                r.Essentiality,
+                r.Brand,
+                r.PaymentMethod,
+                r.IsAtypical,
+                tagsByTx.TryGetValue(r.Id, out var txTags) ? txTags : [],
+                r.BillId,
+                r.InstallmentNumber,
+                r.InstallmentTotal,
+                r.HasManualAdjustments,
+                r.DecidingLayer,
+                r.DecidingRuleName,
+                r.Explanation))
+            .ToList();
 
         var hasMore = (long)page * pageSize < totals.TotalCount;
 
@@ -486,7 +546,9 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             request.Essentiality is null &&
             request.Brand is null &&
             request.Kind is null &&
-            request.Description is null)
+            request.Description is null &&
+            request.PaymentMethod is null &&
+            request.IsAtypical is null)
         {
             return (400, "Informe ao menos um campo para ajustar.", null);
         }
@@ -541,6 +603,16 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             }
         }
 
+        string? normalizedPaymentMethod = null;
+        if (request.PaymentMethod is not null)
+        {
+            normalizedPaymentMethod = request.PaymentMethod.Trim().ToLowerInvariant();
+            if (!BankingTaxonomy.PaymentMethods.Contains(normalizedPaymentMethod))
+            {
+                return (400, "Forma de pagamento inválida; use pix, debit, credit, cash, boleto, transfer ou other.", null);
+            }
+        }
+
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -576,6 +648,19 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         if (normalizedDescription is not null && !string.Equals(current.Description, normalizedDescription, StringComparison.Ordinal))
         {
             toInsert.Add(("description", current.Description, normalizedDescription));
+        }
+
+        if (normalizedPaymentMethod is not null && !string.Equals(current.PaymentMethod, normalizedPaymentMethod, StringComparison.Ordinal))
+        {
+            toInsert.Add(("payment_method", current.PaymentMethod, normalizedPaymentMethod));
+        }
+
+        if (request.IsAtypical.HasValue && current.IsAtypical != request.IsAtypical.Value)
+        {
+            toInsert.Add((
+                "is_atypical",
+                current.IsAtypical ? "true" : "false",
+                request.IsAtypical.Value ? "true" : "false"));
         }
 
         var applied = new List<AdjustmentDto>(toInsert.Count);
@@ -716,6 +801,8 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             "brand" => current.Brand,
             "kind" => current.Kind,
             "description" => current.Description,
+            "payment_method" => current.PaymentMethod,
+            "is_atypical" => current.IsAtypical ? "true" : "false",
             _ => null
         };
 
@@ -1197,12 +1284,34 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var rows = (await connection.QueryAsync<SpendingCategoryRow>(new CommandDefinition(
             $"""
+            WITH filtered AS (
+                SELECT
+                    id,
+                    amount_cents,
+                    effective_category
+                FROM banking.transaction_effective
+                {where}
+            ),
+            expanded AS (
+                SELECT
+                    COALESCE(s.category, f.effective_category, 'uncategorized') AS category,
+                    s.amount_cents
+                FROM filtered f
+                JOIN banking.transaction_split s ON s.transaction_id = f.id
+                UNION ALL
+                SELECT
+                    COALESCE(f.effective_category, 'uncategorized') AS category,
+                    f.amount_cents
+                FROM filtered f
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM banking.transaction_split s WHERE s.transaction_id = f.id
+                )
+            )
             SELECT
-                COALESCE(effective_category, 'uncategorized') AS Category,
+                category AS Category,
                 COALESCE(-SUM(amount_cents), 0)::bigint AS Cents
-            FROM banking.transaction_effective
-            {where}
-            GROUP BY COALESCE(effective_category, 'uncategorized')
+            FROM expanded
+            GROUP BY category
             HAVING COALESCE(-SUM(amount_cents), 0) > 0
             ORDER BY Cents DESC, Category ASC
             """,
@@ -1221,7 +1330,39 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         return (from, to, totalCents, items);
     }
 
-    private static async Task<TransactionDetailDto?> LoadTransactionDetailAsync(
+    internal static async Task<Dictionary<Guid, IReadOnlyList<string>>> LoadTagsByTransactionIdsAsync(
+        NpgsqlConnection connection,
+        Guid[] transactionIds,
+        CancellationToken cancellationToken,
+        NpgsqlTransaction? transaction = null)
+    {
+        if (transactionIds.Length == 0)
+        {
+            return [];
+        }
+
+        var rows = await connection.QueryAsync<TransactionTagNameRow>(new CommandDefinition(
+            """
+            SELECT
+                tt.transaction_id AS TransactionId,
+                tg.name AS Name
+            FROM banking.transaction_tag tt
+            JOIN banking.tag tg ON tg.id = tt.tag_id
+            WHERE tt.transaction_id = ANY(@TransactionIds)
+            ORDER BY lower(tg.name) ASC, tg.id ASC
+            """,
+            new { TransactionIds = transactionIds },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        return rows
+            .GroupBy(r => r.TransactionId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(x => x.Name).ToList());
+    }
+
+    internal static async Task<TransactionDetailDto?> LoadTransactionDetailAsync(
         NpgsqlConnection connection,
         Guid householdId,
         Guid transactionId,
@@ -1253,6 +1394,9 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
                 effective_category AS EffectiveCategory,
                 effective_essentiality AS EffectiveEssentiality,
                 effective_brand AS EffectiveBrand,
+                original_payment_method AS OriginalPaymentMethod,
+                effective_payment_method AS EffectivePaymentMethod,
+                effective_is_atypical AS EffectiveIsAtypical,
                 classified_kind AS ClassifiedKind,
                 classified_category AS ClassifiedCategory,
                 classified_essentiality AS ClassifiedEssentiality,
@@ -1291,6 +1435,34 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             new { TransactionId = transactionId },
             cancellationToken: cancellationToken))).ToList();
 
+        var tags = (await connection.QueryAsync<string>(new CommandDefinition(
+            """
+            SELECT tg.name
+            FROM banking.transaction_tag tt
+            JOIN banking.tag tg ON tg.id = tt.tag_id
+            WHERE tt.transaction_id = @TransactionId
+            ORDER BY lower(tg.name) ASC, tg.id ASC
+            """,
+            new { TransactionId = transactionId },
+            cancellationToken: cancellationToken))).ToList();
+
+        var splits = (await connection.QueryAsync<TransactionSplitDto>(new CommandDefinition(
+            """
+            SELECT
+                id AS Id,
+                part_index AS PartIndex,
+                description AS Description,
+                amount_cents AS AmountCents,
+                category AS Category,
+                essentiality AS Essentiality,
+                created_at AS CreatedAt
+            FROM banking.transaction_split
+            WHERE transaction_id = @TransactionId
+            ORDER BY part_index ASC
+            """,
+            new { TransactionId = transactionId },
+            cancellationToken: cancellationToken))).ToList();
+
         return new TransactionDetailDto(
             row.Id,
             row.AccountId,
@@ -1312,19 +1484,26 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             row.EffectiveCategory,
             row.EffectiveEssentiality,
             row.EffectiveBrand,
+            row.EffectivePaymentMethod,
+            row.EffectiveIsAtypical,
+            tags,
+            splits,
             new TransactionEffectiveFieldsDto(
                 row.EffectiveDescription,
                 row.EffectiveKind,
                 row.EffectiveCategory,
                 row.EffectiveEssentiality,
-                row.EffectiveBrand),
+                row.EffectiveBrand,
+                row.EffectivePaymentMethod,
+                row.EffectiveIsAtypical),
             new TransactionOriginalFieldsDto(
                 row.OriginalDescription,
                 row.MerchantCnpj,
                 row.OccurredOn,
                 row.PurchaseOn,
                 row.AmountCents,
-                row.VersionNumber),
+                row.VersionNumber,
+                row.OriginalPaymentMethod),
             new TransactionClassificationDto(
                 row.ClassifiedKind,
                 row.ClassifiedCategory,
@@ -1408,6 +1587,38 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
 
     private sealed record TransactionTotalsRow(int TotalCount, long TotalCents);
 
+    private sealed record TransactionTagNameRow(Guid TransactionId, string Name);
+
+    private sealed record TransactionListRow(
+        Guid Id,
+        Guid AccountId,
+        string AccountName,
+        string AccountKind,
+        Guid BankId,
+        string InstitutionName,
+        string BrandColor,
+        DateOnly OccurredOn,
+        DateOnly? PurchaseOn,
+        string Description,
+        string OriginalDescription,
+        string? MerchantCnpj,
+        long AmountCents,
+        string Currency,
+        string Status,
+        string Kind,
+        string? Category,
+        string? Essentiality,
+        string? Brand,
+        string? PaymentMethod,
+        bool IsAtypical,
+        Guid? BillId,
+        int? InstallmentNumber,
+        int? InstallmentTotal,
+        bool HasManualAdjustments,
+        string DecidingLayer,
+        string? DecidingRuleName,
+        string Explanation);
+
     private sealed record TransactionDetailRow(
         Guid Id,
         Guid AccountId,
@@ -1432,6 +1643,9 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
         string? EffectiveCategory,
         string? EffectiveEssentiality,
         string? EffectiveBrand,
+        string? OriginalPaymentMethod,
+        string? EffectivePaymentMethod,
+        bool EffectiveIsAtypical,
         string? ClassifiedKind,
         string? ClassifiedCategory,
         string? ClassifiedEssentiality,
@@ -1569,6 +1783,9 @@ internal sealed record TransactionListItemDto(
     string? Category,
     string? Essentiality,
     string? Brand,
+    string? PaymentMethod,
+    bool IsAtypical,
+    IReadOnlyList<string> Tags,
     Guid? BillId,
     int? InstallmentNumber,
     int? InstallmentTotal,
@@ -1590,7 +1807,9 @@ internal sealed record TransactionEffectiveFieldsDto(
     string Kind,
     string? Category,
     string? Essentiality,
-    string? Brand);
+    string? Brand,
+    string? PaymentMethod,
+    bool IsAtypical);
 
 internal sealed record TransactionOriginalFieldsDto(
     string Description,
@@ -1598,7 +1817,8 @@ internal sealed record TransactionOriginalFieldsDto(
     DateOnly OccurredOn,
     DateOnly? PurchaseOn,
     long AmountCents,
-    int VersionNumber);
+    int VersionNumber,
+    string? PaymentMethod);
 
 internal sealed record TransactionClassificationDto(
     string? Kind,
@@ -1617,6 +1837,15 @@ internal sealed record AdjustmentDto(
     string? NewValue,
     string? Reason,
     Guid? UndoesId,
+    DateTimeOffset CreatedAt);
+
+internal sealed record TransactionSplitDto(
+    Guid Id,
+    int PartIndex,
+    string Description,
+    long AmountCents,
+    string? Category,
+    string? Essentiality,
     DateTimeOffset CreatedAt);
 
 internal sealed record TransactionDetailDto(
@@ -1640,6 +1869,10 @@ internal sealed record TransactionDetailDto(
     string? Category,
     string? Essentiality,
     string? Brand,
+    string? PaymentMethod,
+    bool IsAtypical,
+    IReadOnlyList<string> Tags,
+    IReadOnlyList<TransactionSplitDto> Splits,
     TransactionEffectiveFieldsDto Effective,
     TransactionOriginalFieldsDto Original,
     TransactionClassificationDto Classification,
@@ -1647,12 +1880,14 @@ internal sealed record TransactionDetailDto(
     IReadOnlyList<AdjustmentDto> Adjustments);
 
 internal sealed record ApplyAdjustmentsRequest(
-    string? Category,
-    string? Essentiality,
-    string? Brand,
-    string? Kind,
-    string? Description,
-    string? Reason);
+    string? Category = null,
+    string? Essentiality = null,
+    string? Brand = null,
+    string? Kind = null,
+    string? Description = null,
+    string? Reason = null,
+    string? PaymentMethod = null,
+    bool? IsAtypical = null);
 
 internal sealed record ApplyAdjustmentsResponse(
     TransactionDetailDto Transaction,

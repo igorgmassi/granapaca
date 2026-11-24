@@ -1218,14 +1218,14 @@ internal sealed class BankingSyncService(
         var newLinks = new List<(Guid OutflowId, Guid InflowId)>();
         var outflows = activeTransactions
             .Where(t => !linkedTxIds.Contains(t.TransactionId) &&
-                        t.AccountKind != "credit_card" &&
+                        t.AccountKind is not ("credit_card" or "cash") &&
                         t.AmountCents < 0 &&
                         IsTransferCandidate(t))
             .ToList();
 
         var inflows = activeTransactions
             .Where(t => !linkedTxIds.Contains(t.TransactionId) &&
-                        t.AccountKind != "credit_card" &&
+                        t.AccountKind is not ("credit_card" or "cash") &&
                         t.AmountCents > 0 &&
                         IsTransferCandidate(t))
             .ToList();
@@ -1349,14 +1349,17 @@ internal sealed class BankingSyncService(
                     deciding_rule_name = EXCLUDED.deciding_rule_name,
                     explanation = EXCLUDED.explanation,
                     classified_at = now()
-                WHERE banking.classification.tx_kind IS DISTINCT FROM EXCLUDED.tx_kind
-                   OR banking.classification.category IS DISTINCT FROM EXCLUDED.category
-                   OR banking.classification.essentiality IS DISTINCT FROM EXCLUDED.essentiality
-                   OR banking.classification.brand IS DISTINCT FROM EXCLUDED.brand
-                   OR banking.classification.deciding_layer IS DISTINCT FROM EXCLUDED.deciding_layer
-                   OR banking.classification.deciding_rule_id IS DISTINCT FROM EXCLUDED.deciding_rule_id
-                   OR banking.classification.deciding_rule_name IS DISTINCT FROM EXCLUDED.deciding_rule_name
-                   OR banking.classification.explanation IS DISTINCT FROM EXCLUDED.explanation
+                WHERE banking.classification.deciding_layer <> 'manual'
+                  AND (
+                      banking.classification.tx_kind IS DISTINCT FROM EXCLUDED.tx_kind
+                      OR banking.classification.category IS DISTINCT FROM EXCLUDED.category
+                      OR banking.classification.essentiality IS DISTINCT FROM EXCLUDED.essentiality
+                      OR banking.classification.brand IS DISTINCT FROM EXCLUDED.brand
+                      OR banking.classification.deciding_layer IS DISTINCT FROM EXCLUDED.deciding_layer
+                      OR banking.classification.deciding_rule_id IS DISTINCT FROM EXCLUDED.deciding_rule_id
+                      OR banking.classification.deciding_rule_name IS DISTINCT FROM EXCLUDED.deciding_rule_name
+                      OR banking.classification.explanation IS DISTINCT FROM EXCLUDED.explanation
+                  )
                 """,
                 new
                 {

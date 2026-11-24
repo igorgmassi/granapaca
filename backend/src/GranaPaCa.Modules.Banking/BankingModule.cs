@@ -37,6 +37,11 @@ public static class BankingModule
         services.AddScoped<IBankingSyncTrigger>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<ITransactionReclassifier>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<BankingQueries>();
+        services.AddScoped<BankingAnalyticsService>();
+        services.AddScoped<IBankingAnalyticsReader>(sp => sp.GetRequiredService<BankingAnalyticsService>());
+        services.AddScoped<IBankingSplitWriter>(sp => sp.GetRequiredService<BankingAnalyticsService>());
+        services.AddScoped<BankingExtensionsService>();
+        services.AddScoped<BankingExportService>();
         services.AddScoped<BankingDeltaSyncService>();
         services.AddSingleton<IBankingPurgeService, BankingPurgeService>();
 
@@ -133,6 +138,8 @@ public static class BankingModule
             string? essentiality,
             string? brand,
             string? search,
+            string? paymentMethod,
+            string? tag,
             int? page,
             int? pageSize,
             ClaimsPrincipal user,
@@ -155,11 +162,56 @@ public static class BankingModule
                 essentiality,
                 brand,
                 search,
+                paymentMethod,
+                tag,
                 page ?? 1,
                 pageSize ?? 50,
                 cancellationToken);
 
             return Results.Ok(data);
+        });
+
+        api.MapPost("/transactions/cash", async (
+            CreateCashTransactionRequest? request,
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (statusCode, error, data) = await extensions.CreateCashTransactionAsync(
+                householdId,
+                request,
+                cancellationToken);
+
+            return statusCode switch
+            {
+                201 => Results.Created($"/api/v1/transactions/{data!.Id}", data),
+                200 => Results.Ok(data),
+                _ => Results.BadRequest(new { error })
+            };
+        });
+
+        api.MapPost("/transactions/bulk-adjustments", async (
+            BulkAdjustmentsRequest? request,
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (statusCode, error, data) = await extensions.ApplyBulkAdjustmentsAsync(
+                householdId,
+                request,
+                cancellationToken);
+
+            return statusCode == 200 ? Results.Ok(data) : Results.BadRequest(new { error });
         });
 
         api.MapGet("/transactions/review-queue", async (
@@ -446,6 +498,180 @@ public static class BankingModule
         .Produces<ImportResponse>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized);
+
+        api.MapGet("/tags", async (
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var data = await extensions.GetTagsAsync(householdId, cancellationToken);
+            return Results.Ok(data);
+        });
+
+        api.MapPost("/tags", async (
+            CreateTagRequest? request,
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (statusCode, error, data) = await extensions.CreateTagAsync(householdId, request, cancellationToken);
+            return statusCode switch
+            {
+                201 => Results.Created($"/api/v1/tags/{data!.Id}", data),
+                409 => Results.Conflict(new { error }),
+                _ => Results.BadRequest(new { error })
+            };
+        });
+
+        api.MapDelete("/tags/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var deleted = await extensions.DeleteTagAsync(householdId, id, cancellationToken);
+            return deleted ? Results.NoContent() : Results.NotFound();
+        });
+
+        api.MapPut("/transactions/{id:guid}/tags", async (
+            Guid id,
+            ReplaceTransactionTagsRequest? request,
+            ClaimsPrincipal user,
+            BankingExtensionsService extensions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (statusCode, error, data) = await extensions.ReplaceTransactionTagsAsync(
+                householdId,
+                id,
+                request,
+                cancellationToken);
+
+            return statusCode switch
+            {
+                200 => Results.Ok(data),
+                404 => Results.NotFound(),
+                _ => Results.BadRequest(new { error })
+            };
+        });
+
+        api.MapGet("/transactions/{id:guid}/splits", async (
+            Guid id,
+            ClaimsPrincipal user,
+            BankingAnalyticsService analytics,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var data = await analytics.GetTransactionSplitsAsync(householdId, id, cancellationToken);
+            return data is null ? Results.NotFound() : Results.Ok(data);
+        });
+
+        api.MapPut("/transactions/{id:guid}/splits", async (
+            Guid id,
+            ReplaceTransactionSplitsRequest? request,
+            ClaimsPrincipal user,
+            BankingAnalyticsService analytics,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (statusCode, error, data) = await analytics.ReplaceTransactionSplitsEndpointAsync(
+                householdId,
+                id,
+                request,
+                cancellationToken);
+
+            return statusCode switch
+            {
+                200 => Results.Ok(data),
+                404 => Results.NotFound(),
+                _ => Results.BadRequest(new { error })
+            };
+        });
+
+        api.MapGet("/export/transactions.csv", async (
+            DateOnly? from,
+            DateOnly? to,
+            ClaimsPrincipal user,
+            BankingExportService exportService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, bytes, fileName) = await exportService.ExportTransactionsCsvAsync(
+                householdId,
+                from,
+                to,
+                cancellationToken);
+
+            return ok
+                ? Results.File(bytes!, "text/csv; charset=utf-8", fileName)
+                : Results.BadRequest(new { error });
+        });
+
+        api.MapGet("/export/backup.json", async (
+            ClaimsPrincipal user,
+            BankingExportService exportService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (bytes, fileName) = await exportService.ExportBackupJsonAsync(householdId, cancellationToken);
+            return Results.File(bytes, "application/json; charset=utf-8", fileName);
+        });
+
+        api.MapGet("/export/report.html", async (
+            string? month,
+            ClaimsPrincipal user,
+            BankingExportService exportService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, html) = await exportService.ExportMonthlyReportHtmlAsync(
+                householdId,
+                month,
+                cancellationToken);
+
+            return ok
+                ? Results.Content(html!, "text/html; charset=utf-8")
+                : Results.BadRequest(new { error });
+        });
 
         return endpoints;
     }

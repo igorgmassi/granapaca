@@ -23,7 +23,7 @@ public sealed class ModuleBoundaryTests
     [Fact]
     public void Code_outside_a_module_uses_only_its_entry_point_and_contracts()
     {
-        Assert.Equal(5, Modules.Length);
+        Assert.Equal(8, Modules.Length);
 
         foreach (var module in Modules)
         {

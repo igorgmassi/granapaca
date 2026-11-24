@@ -55,6 +55,17 @@
           "Npgsql": "[10.0.3, )"
         }
       },
+      "granapaca.modules.assistant": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "GranaPaCa.Modules.Banking": "[1.0.0, )",
+          "GranaPaCa.Modules.Categorization": "[1.0.0, )",
+          "GranaPaCa.Modules.Keyring": "[1.0.0, )",
+          "GranaPaCa.Modules.Planning": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "granapaca.modules.banking": {
         "type": "Project",
         "dependencies": {
@@ -86,6 +97,24 @@
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.89, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
+      "granapaca.modules.planning": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "GranaPaCa.Modules.Alerts": "[1.0.0, )",
+          "GranaPaCa.Modules.Banking": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
+      "granapaca.modules.receipts": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "GranaPaCa.Modules.Banking": "[1.0.0, )",
+          "GranaPaCa.Modules.Keyring": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
       },
