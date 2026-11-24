@@ -34,6 +34,16 @@ public static class AssistantModule
             .RequireAuthorization()
             .WithTags("Assistant");
 
+        group.MapGet("/presets", (ClaimsPrincipal user) =>
+        {
+            if (!TryGetHouseholdId(user, out _))
+            {
+                return Results.Unauthorized();
+            }
+
+            return Results.Ok(new ProviderPresetsResponse(AssistantProviderPresets.All));
+        });
+
         group.MapGet("/provider", async (
             ClaimsPrincipal user,
             AssistantService service,

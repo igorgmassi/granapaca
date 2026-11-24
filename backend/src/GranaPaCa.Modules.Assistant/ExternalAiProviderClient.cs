@@ -29,7 +29,34 @@ internal sealed class ExternalAiProviderClient(
         {
             return request.Provider switch
             {
-                "openai" => await CallOpenAiAsync(request, cancellationToken),
+                "openai" => await CallOpenAiCompatibleAsync(
+                    request,
+                    AssistantProviderPresets.DefaultOpenAiBaseUrl,
+                    AssistantProviderPresets.DefaultOpenAiModel,
+                    requireApiKey: true,
+                    addOpenRouterHeaders: false,
+                    cancellationToken),
+                "groq" => await CallOpenAiCompatibleAsync(
+                    request,
+                    AssistantProviderPresets.DefaultGroqBaseUrl,
+                    AssistantProviderPresets.DefaultGroqModel,
+                    requireApiKey: true,
+                    addOpenRouterHeaders: false,
+                    cancellationToken),
+                "openrouter" => await CallOpenAiCompatibleAsync(
+                    request,
+                    AssistantProviderPresets.DefaultOpenRouterBaseUrl,
+                    AssistantProviderPresets.DefaultOpenRouterModel,
+                    requireApiKey: true,
+                    addOpenRouterHeaders: true,
+                    cancellationToken),
+                "openai_compatible" => await CallOpenAiCompatibleAsync(
+                    request,
+                    defaultBaseUrl: null,
+                    AssistantProviderPresets.DefaultOpenAiCompatibleModel,
+                    requireApiKey: false,
+                    addOpenRouterHeaders: false,
+                    cancellationToken),
                 "anthropic" => await CallAnthropicAsync(request, cancellationToken),
                 "google" => await CallGoogleAsync(request, cancellationToken),
                 "ollama" => await CallOllamaAsync(request, cancellationToken),
@@ -45,22 +72,41 @@ internal sealed class ExternalAiProviderClient(
         }
     }
 
-    private async Task<string?> CallOpenAiAsync(
+    private async Task<string?> CallOpenAiCompatibleAsync(
         ExternalCompletionRequest req,
+        string? defaultBaseUrl,
+        string defaultModel,
+        bool requireApiKey,
+        bool addOpenRouterHeaders,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(req.ApiKey))
+        if (requireApiKey && string.IsNullOrWhiteSpace(req.ApiKey))
         {
             return null;
         }
 
-        var baseUrl = string.IsNullOrWhiteSpace(req.BaseUrl)
-            ? "https://api.openai.com/v1"
-            : req.BaseUrl.TrimEnd('/');
-        var model = string.IsNullOrWhiteSpace(req.Model) ? "gpt-4o-mini" : req.Model.Trim();
+        var rawBaseUrl = string.IsNullOrWhiteSpace(req.BaseUrl)
+            ? defaultBaseUrl
+            : req.BaseUrl.Trim();
+        if (string.IsNullOrWhiteSpace(rawBaseUrl))
+        {
+            return null;
+        }
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions");
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", req.ApiKey);
+        var endpoint = BuildEndpointUrl(rawBaseUrl, "/chat/completions");
+        var model = string.IsNullOrWhiteSpace(req.Model) ? defaultModel : req.Model.Trim();
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        if (!string.IsNullOrWhiteSpace(req.ApiKey))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", req.ApiKey.Trim());
+        }
+
+        if (addOpenRouterHeaders)
+        {
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", "GranaPaCa");
+        }
+
         var payload = new
         {
             model,
@@ -89,7 +135,8 @@ internal sealed class ExternalAiProviderClient(
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0 &&
             choices[0].TryGetProperty("message", out var msg) &&
-            msg.TryGetProperty("content", out var content))
+            msg.TryGetProperty("content", out var content) &&
+            content.ValueKind == JsonValueKind.String)
         {
             return content.GetString()?.Trim();
         }
@@ -107,11 +154,13 @@ internal sealed class ExternalAiProviderClient(
         }
 
         var baseUrl = string.IsNullOrWhiteSpace(req.BaseUrl)
-            ? "https://api.anthropic.com/v1"
+            ? AssistantProviderPresets.DefaultAnthropicBaseUrl.TrimEnd('/')
             : req.BaseUrl.TrimEnd('/');
-        var model = string.IsNullOrWhiteSpace(req.Model) ? "claude-3-5-haiku-latest" : req.Model.Trim();
+        var model = string.IsNullOrWhiteSpace(req.Model)
+            ? AssistantProviderPresets.DefaultAnthropicModel
+            : req.Model.Trim();
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/messages");
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildEndpointUrl(baseUrl, "/messages"));
         httpRequest.Headers.Add("x-api-key", req.ApiKey);
         httpRequest.Headers.Add("anthropic-version", "2023-06-01");
         var payload = new
@@ -141,7 +190,8 @@ internal sealed class ExternalAiProviderClient(
         if (doc.RootElement.TryGetProperty("content", out var contentArr) &&
             contentArr.ValueKind == JsonValueKind.Array &&
             contentArr.GetArrayLength() > 0 &&
-            contentArr[0].TryGetProperty("text", out var text))
+            contentArr[0].TryGetProperty("text", out var text) &&
+            text.ValueKind == JsonValueKind.String)
         {
             return text.GetString()?.Trim();
         }
@@ -159,9 +209,11 @@ internal sealed class ExternalAiProviderClient(
         }
 
         var baseUrl = string.IsNullOrWhiteSpace(req.BaseUrl)
-            ? "https://generativelanguage.googleapis.com/v1beta"
+            ? AssistantProviderPresets.DefaultGoogleBaseUrl
             : req.BaseUrl.TrimEnd('/');
-        var model = string.IsNullOrWhiteSpace(req.Model) ? "gemini-2.0-flash" : req.Model.Trim();
+        var model = string.IsNullOrWhiteSpace(req.Model)
+            ? AssistantProviderPresets.DefaultGoogleModel
+            : req.Model.Trim();
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -204,7 +256,8 @@ internal sealed class ExternalAiProviderClient(
             content.TryGetProperty("parts", out var parts) &&
             parts.ValueKind == JsonValueKind.Array &&
             parts.GetArrayLength() > 0 &&
-            parts[0].TryGetProperty("text", out var text))
+            parts[0].TryGetProperty("text", out var text) &&
+            text.ValueKind == JsonValueKind.String)
         {
             return text.GetString()?.Trim();
         }
@@ -217,11 +270,13 @@ internal sealed class ExternalAiProviderClient(
         CancellationToken cancellationToken)
     {
         var baseUrl = string.IsNullOrWhiteSpace(req.BaseUrl)
-            ? "http://localhost:11434"
-            : req.BaseUrl.TrimEnd('/');
-        var model = string.IsNullOrWhiteSpace(req.Model) ? "llama3.2" : req.Model.Trim();
+            ? AssistantProviderPresets.DefaultOllamaBaseUrl
+            : req.BaseUrl.Trim();
+        var model = string.IsNullOrWhiteSpace(req.Model)
+            ? AssistantProviderPresets.DefaultOllamaModel
+            : req.Model.Trim();
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/chat");
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildEndpointUrl(baseUrl, "/api/chat"));
         var payload = new
         {
             model,
@@ -247,11 +302,20 @@ internal sealed class ExternalAiProviderClient(
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
         if (doc.RootElement.TryGetProperty("message", out var message) &&
-            message.TryGetProperty("content", out var content))
+            message.TryGetProperty("content", out var content) &&
+            content.ValueKind == JsonValueKind.String)
         {
             return content.GetString()?.Trim();
         }
 
         return null;
+    }
+
+    private static string BuildEndpointUrl(string rawBaseUrl, string suffixPath)
+    {
+        var trimmed = rawBaseUrl.Trim().TrimEnd('/');
+        return trimmed.EndsWith(suffixPath, StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"{trimmed}{suffixPath}";
     }
 }

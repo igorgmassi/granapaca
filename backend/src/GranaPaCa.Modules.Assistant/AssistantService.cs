@@ -49,15 +49,59 @@ internal sealed partial class AssistantService(
 
     private static readonly (string Category, string[] Terms)[] QuestionCategoryKeywords =
     [
-        ("food", ["alimentacao", "mercado", "supermercado", "comida", "restaurante", "padaria", "delivery", "ifood"]),
-        ("housing", ["moradia", "aluguel", "casa", "condominio", "luz", "energia", "agua"]),
-        ("transport", ["transporte", "combustivel", "gasolina", "posto", "uber", "corrida", "estacionamento"]),
-        ("health", ["saude", "farmacia", "drogaria", "medico", "plano de saude", "consulta"]),
-        ("education", ["educacao", "curso", "livro", "livraria", "faculdade", "escola"]),
-        ("leisure", ["lazer", "cinema", "viagem", "entretenimento", "streaming", "bar"]),
-        ("shopping", ["compras", "loja", "roupa", "eletronico", "armarinho", "presente"]),
-        ("services", ["servicos", "servico", "internet", "telefone", "celular", "academia"])
+        ("food", ["alimentacao", "comida", "refeicao", "refeicoes"]),
+        ("housing", ["moradia", "habitacao", "casa", "condominio", "iptu"]),
+        ("transport", ["transporte", "mobilidade", "combustivel", "gasolina"]),
+        ("health", ["saude", "medico", "plano de saude", "consulta", "consultas", "odonto", "hospital"]),
+        ("education", ["educacao", "ensino", "curso", "cursos", "faculdade", "escola", "estudos"]),
+        ("leisure", ["lazer", "entretenimento", "viagem", "diversao"]),
+        ("shopping", ["compras", "varejo", "vestuario", "roupa", "roupas", "eletronico", "eletronicos"]),
+        ("services", ["servicos", "servico", "telefonia", "telefone", "celular"])
     ];
+
+    private static readonly (string NormalizedTerm, string DisplayTerm)[] KnownMerchantTerms =
+    [
+        ("conta de luz", "conta de luz"),
+        ("supermercado", "supermercado"),
+        ("restaurante", "restaurante"),
+        ("lanchonete", "lanchonete"),
+        ("hortifruti", "hortifruti"),
+        ("papelaria", "papelaria"),
+        ("armarinho", "armarinho"),
+        ("streaming", "streaming"),
+        ("farmacia", "farmácia"),
+        ("drogaria", "drogaria"),
+        ("livraria", "livraria"),
+        ("academia", "academia"),
+        ("internet", "internet"),
+        ("delivery", "delivery"),
+        ("mercado", "mercado"),
+        ("padaria", "padaria"),
+        ("aluguel", "aluguel"),
+        ("energia", "energia"),
+        ("corrida", "corrida"),
+        ("acougue", "açougue"),
+        ("cinema", "cinema"),
+        ("posto", "posto"),
+        ("feira", "feira"),
+        ("ifood", "iFood"),
+        ("loja", "loja"),
+        ("uber", "Uber"),
+        ("luz", "luz")
+    ];
+
+    private static readonly HashSet<string> DynamicMerchantStopWords = new(StringComparer.Ordinal)
+    {
+        "quanto", "gastei", "gasto", "gastos", "despesa", "despesas", "compra", "compras",
+        "valor", "valores", "total", "resumo", "mes", "meses", "passado", "anterior", "atual",
+        "para", "pelo", "pela", "pelos", "pelas", "sobre", "entre", "com", "sem", "como",
+        "qual", "quais", "foram", "foi", "onde", "mais", "menos", "maior", "maiores",
+        "meu", "meus", "minha", "minhas", "este", "esse", "esta", "essa", "reais", "dinheiro",
+        "conta", "contas", "cartao", "fatura", "saldo", "sobra", "sobrou", "recebi", "receita",
+        "categoria", "categorias", "regra", "projecao", "assinatura", "assinaturas", "comparar",
+        "comparacao", "janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho",
+        "agosto", "setembro", "outubro", "novembro", "dezembro"
+    };
 
     private static readonly (string Category, string Essentiality, decimal Confidence, string Reason, string[] Keywords)[] SuggestionHeuristics =
     [
@@ -132,13 +176,13 @@ internal sealed partial class AssistantService(
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Provider))
         {
-            return (false, "Informe o provedor de IA (none, openai, anthropic, google ou ollama).", null);
+            return (false, "Informe o provedor de IA (none, google, groq, openrouter, ollama, openai_compatible, openai ou anthropic).", null);
         }
 
         var provider = request.Provider.Trim().ToLowerInvariant();
         if (!AssistantFormatting.AllowedProviders.Contains(provider))
         {
-            return (false, "Provedor inválido. Use: none, openai, anthropic, google ou ollama.", null);
+            return (false, "Provedor inválido. Use: none, google, groq, openrouter, ollama, openai_compatible, openai ou anthropic.", null);
         }
 
         var model = request.Model?.Trim() ?? string.Empty;
@@ -287,12 +331,16 @@ internal sealed partial class AssistantService(
             return (false, "A mensagem excede o limite de 2.000 caracteres.", null);
         }
 
-        if (!TryResolveRequestedMonth(request.Month, userMessage, out var requestedMonth, out var monthError))
+        var (monthOk, monthError, monthStart) = await ResolveChatMonthAsync(
+            householdId,
+            request.Month,
+            userMessage,
+            cancellationToken);
+        if (!monthOk)
         {
             return (false, monthError, null);
         }
 
-        var monthStart = requestedMonth ?? await ResolveBestAvailableMonthAsync(householdId, cancellationToken);
         var periodUsed = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
         var metrics = await bankingReader.GetMonthMetricsAsync(householdId, monthStart, cancellationToken);
@@ -302,14 +350,21 @@ internal sealed partial class AssistantService(
             monthStart,
             monthStart.AddMonths(1),
             cancellationToken);
+        var prevMonthTransactions = await bankingReader.GetTransactionsInRangeAsync(
+            householdId,
+            monthStart.AddMonths(-1),
+            monthStart,
+            cancellationToken);
         var planningSnapshot = await planningReader.GetSnapshotAsync(householdId, monthStart, cancellationToken);
 
         var (localAnswer, numbersCited) = BuildDeterministicAnswer(
             userMessage,
+            monthStart,
             periodUsed,
             metrics,
             prevMetrics,
             monthTransactions,
+            prevMonthTransactions,
             planningSnapshot);
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -784,15 +839,12 @@ internal sealed partial class AssistantService(
         return currentMonth;
     }
 
-    private bool TryResolveRequestedMonth(
+    private async Task<(bool Ok, string? Error, DateOnly MonthStart)> ResolveChatMonthAsync(
+        Guid householdId,
         string? explicitMonth,
         string userMessage,
-        out DateOnly? monthStart,
-        out string? error)
+        CancellationToken cancellationToken)
     {
-        monthStart = null;
-        error = null;
-
         if (!string.IsNullOrWhiteSpace(explicitMonth))
         {
             if (DateOnly.TryParseExact(
@@ -802,12 +854,10 @@ internal sealed partial class AssistantService(
                 DateTimeStyles.None,
                 out var parsedExplicit))
             {
-                monthStart = parsedExplicit;
-                return true;
+                return (true, null, parsedExplicit);
             }
 
-            error = "Mês inválido; use o formato YYYY-MM.";
-            return false;
+            return (false, "Mês inválido; use o formato YYYY-MM.", default);
         }
 
         var isoMatch = IsoMonthRegex().Match(userMessage);
@@ -819,78 +869,126 @@ internal sealed partial class AssistantService(
                 DateTimeStyles.None,
                 out var parsedFromText))
         {
-            monthStart = parsedFromText;
-            return true;
+            return (true, null, parsedFromText);
+        }
+
+        var brMatch = BrMonthYearRegex().Match(userMessage);
+        if (brMatch.Success &&
+            int.TryParse(brMatch.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var brMonth) &&
+            int.TryParse(brMatch.Groups[2].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var brYear))
+        {
+            return (true, null, new DateOnly(brYear, brMonth, 1));
         }
 
         var folded = FoldLower(userMessage);
+        int? matchedMonthNumber = null;
+        var earliestMatchIndex = int.MaxValue;
+
         foreach (var (monthName, monthNumber) in PortugueseMonths)
         {
-            if (!Regex.IsMatch(folded, $@"\b{monthName}\b", RegexOptions.CultureInvariant))
+            var match = Regex.Match(folded, $@"\b{monthName}\b", RegexOptions.CultureInvariant);
+            if (match.Success && match.Index < earliestMatchIndex)
             {
-                continue;
+                earliestMatchIndex = match.Index;
+                matchedMonthNumber = monthNumber;
             }
-
-            var yearMatch = YearRegex().Match(folded);
-            var today = AssistantFormatting.TodayInTimeZone(_instanceTimeZone);
-            var year = yearMatch.Success && int.TryParse(yearMatch.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedYear)
-                ? parsedYear
-                : today.Year;
-
-            monthStart = new DateOnly(year, monthNumber, 1);
-            return true;
         }
 
-        return true;
+        if (matchedMonthNumber.HasValue)
+        {
+            var yearMatch = YearRegex().Match(folded);
+            if (yearMatch.Success &&
+                int.TryParse(yearMatch.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedYear))
+            {
+                return (true, null, new DateOnly(parsedYear, matchedMonthNumber.Value, 1));
+            }
+
+            var today = AssistantFormatting.TodayInTimeZone(_instanceTimeZone);
+            var candidate = new DateOnly(today.Year, matchedMonthNumber.Value, 1);
+            var candidateMetrics = await bankingReader.GetMonthMetricsAsync(householdId, candidate, cancellationToken);
+            if (candidateMetrics.SpentCents > 0 || candidateMetrics.ReceivedCents > 0)
+            {
+                return (true, null, candidate);
+            }
+
+            var historical = await bankingReader.GetTransactionsInRangeAsync(
+                householdId,
+                new DateOnly(today.Year - 3, 1, 1),
+                new DateOnly(today.Year + 1, 1, 1),
+                cancellationToken);
+            var latestForMonth = historical
+                .Where(t => t.OccurredOn.Month == matchedMonthNumber.Value)
+                .OrderByDescending(t => t.OccurredOn)
+                .FirstOrDefault();
+
+            return latestForMonth is not null
+                ? (true, null, new DateOnly(latestForMonth.OccurredOn.Year, matchedMonthNumber.Value, 1))
+                : (true, null, candidate);
+        }
+
+        var bestMonth = await ResolveBestAvailableMonthAsync(householdId, cancellationToken);
+        if (!IsComparisonQuery(folded) &&
+            (folded.Contains("mes passado", StringComparison.Ordinal) ||
+             folded.Contains("mes anterior", StringComparison.Ordinal)))
+        {
+            return (true, null, bestMonth.AddMonths(-1));
+        }
+
+        return (true, null, bestMonth);
     }
 
     private static (string Answer, IReadOnlyList<CitedNumberDto> NumbersCited) BuildDeterministicAnswer(
         string userMessage,
+        DateOnly monthStart,
         string periodUsed,
         BankingMonthMetrics metrics,
         BankingMonthMetrics prevMetrics,
         IReadOnlyList<BankingTransactionFact> monthTransactions,
+        IReadOnlyList<BankingTransactionFact> prevMonthTransactions,
         PlanningSnapshot planning)
     {
         var folded = FoldLower(userMessage);
+        var prevPeriod = monthStart.AddMonths(-1).ToString("yyyy-MM", CultureInfo.InvariantCulture);
         var cited = new List<CitedNumberDto>();
 
         void Cite(string label, long cents) =>
             cited.Add(new CitedNumberDto(label, cents, AssistantFormatting.FormatBrl(cents)));
 
-        // 1. Specific category query (e.g., "quanto gastei com alimentação/mercado?")
-        var matchedCategory = FindRequestedCategory(folded);
-        if (matchedCategory is not null &&
-            !folded.Contains("qual categoria", StringComparison.Ordinal) &&
-            !folded.Contains("pesou mais", StringComparison.Ordinal))
+        // 1. Top 5 largest expenses of the month with exact dates & values
+        if (IsTopExpensesQuery(folded))
         {
-            var categoryLabel = AssistantFormatting.GetCategoryLabel(matchedCategory);
-            var catSpent = metrics.SpentByCategoryCents.GetValueOrDefault(matchedCategory, 0L);
-            var prevCatSpent = prevMetrics.SpentByCategoryCents.GetValueOrDefault(matchedCategory, 0L);
-            var share = metrics.SpentCents > 0
-                ? Math.Round(catSpent * 100m / metrics.SpentCents, 1, MidpointRounding.AwayFromZero)
-                : 0m;
+            var topExpenses = monthTransactions
+                .Where(t => t.Kind == "expense" && t.AmountCents < 0)
+                .OrderBy(t => t.AmountCents)
+                .ThenByDescending(t => t.OccurredOn)
+                .ThenBy(t => t.Description, StringComparer.Ordinal)
+                .Take(5)
+                .ToList();
 
-            Cite($"Gasto em {categoryLabel} ({periodUsed})", catSpent);
-            Cite($"Gasto total ({periodUsed})", metrics.SpentCents);
+            if (topExpenses.Count == 0)
+            {
+                Cite($"Gasto total ({periodUsed})", metrics.SpentCents);
+                return ($"Em {periodUsed}, não há despesas registradas até o momento (total: {AssistantFormatting.FormatBrl(metrics.SpentCents)}).", cited);
+            }
 
             var sb = new StringBuilder();
-            sb.Append($"Em {periodUsed}, você gastou {AssistantFormatting.FormatBrl(catSpent)} em {categoryLabel}");
-            if (metrics.SpentCents > 0)
+            var heading = topExpenses.Count == 1
+                ? $"O maior gasto em {periodUsed} foi:"
+                : $"Os {topExpenses.Count} maiores gastos em {periodUsed} foram:";
+            sb.AppendLine(heading);
+
+            for (var i = 0; i < topExpenses.Count; i++)
             {
-                sb.Append($" ({share:0.0}% do total de {AssistantFormatting.FormatBrl(metrics.SpentCents)})");
+                var tx = topExpenses[i];
+                var absCents = Math.Abs(tx.AmountCents);
+                var categoryLabel = AssistantFormatting.GetCategoryLabel(tx.Category ?? "uncategorized");
+                var dateText = tx.OccurredOn.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+                Cite($"{tx.Description} ({dateText})", absCents);
+                sb.AppendLine($"{i + 1}. {dateText} — {tx.Description}: {AssistantFormatting.FormatBrl(absCents)} ({categoryLabel})");
             }
 
-            sb.Append('.');
-
-            if (prevCatSpent > 0)
-            {
-                var diff = catSpent - prevCatSpent;
-                Cite($"Gasto em {categoryLabel} (mês anterior)", prevCatSpent);
-                var direction = diff >= 0 ? "a mais" : "a menos";
-                sb.Append($" Em relação ao mês anterior ({AssistantFormatting.FormatBrl(prevCatSpent)}), foram {AssistantFormatting.FormatBrl(Math.Abs(diff))} {direction}.");
-            }
-
+            Cite($"Gasto total ({periodUsed})", metrics.SpentCents);
+            sb.Append($"Total gasto no período: {AssistantFormatting.FormatBrl(metrics.SpentCents)}.");
             return (sb.ToString(), cited);
         }
 
@@ -898,7 +996,8 @@ internal sealed partial class AssistantService(
         if (folded.Contains("50/30/20", StringComparison.Ordinal) ||
             folded.Contains("50 30 20", StringComparison.Ordinal) ||
             folded.Contains("essenciais", StringComparison.Ordinal) ||
-            folded.Contains("essencial", StringComparison.Ordinal))
+            folded.Contains("essencial", StringComparison.Ordinal) ||
+            folded.Contains("necessidades", StringComparison.Ordinal))
         {
             var baseCents = metrics.ReceivedCents > 0
                 ? metrics.ReceivedCents
@@ -921,8 +1020,10 @@ internal sealed partial class AssistantService(
 
         // 3. Projection / end-of-month query
         if (folded.Contains("projecao", StringComparison.Ordinal) ||
+            folded.Contains("projetar", StringComparison.Ordinal) ||
             folded.Contains("fim do mes", StringComparison.Ordinal) ||
             folded.Contains("fechar o mes", StringComparison.Ordinal) ||
+            folded.Contains("fechamento", StringComparison.Ordinal) ||
             folded.Contains("atipic", StringComparison.Ordinal))
         {
             Cite("Projeção de gastos do mês (sem atípicos)", planning.ProjectedMonthEndSpentCents);
@@ -947,17 +1048,26 @@ internal sealed partial class AssistantService(
             Cite("Gastos recorrentes no mês", metrics.RecurringSpentCents);
             Cite("Total gasto no mês", metrics.SpentCents);
 
-            var reply =
-                $"Em {periodUsed}, foram detectadas {planning.DetectedSubscriptionsCount} assinaturas/cobranças recorrentes, " +
-                $"com {AssistantFormatting.FormatBrl(metrics.RecurringSpentCents)} em gastos recorrentes registrados no período.";
+            var sb = new StringBuilder();
+            var subLabel = planning.DetectedSubscriptionsCount == 1
+                ? "1 assinatura/cobrança recorrente"
+                : $"{planning.DetectedSubscriptionsCount} assinaturas/cobranças recorrentes";
+            sb.Append(
+                $"Em {periodUsed}, foram detectadas {subLabel}, " +
+                $"com {AssistantFormatting.FormatBrl(metrics.RecurringSpentCents)} em gastos recorrentes registrados no período.");
 
-            return (reply, cited);
+            if (metrics.SpentByCategoryCents.TryGetValue("services", out var servicesCents) && servicesCents > 0)
+            {
+                Cite($"Serviços e assinaturas ({periodUsed})", servicesCents);
+                sb.Append($" Na categoria Serviços e assinaturas, o total foi {AssistantFormatting.FormatBrl(servicesCents)}.");
+            }
+
+            return (sb.ToString(), cited);
         }
 
-        // 5. Top category / heaviest spending query
+        // 5. Top category / heaviest spending category query
         if (folded.Contains("qual categoria", StringComparison.Ordinal) ||
             folded.Contains("pesou mais", StringComparison.Ordinal) ||
-            folded.Contains("maior gasto", StringComparison.Ordinal) ||
             folded.Contains("onde gastei mais", StringComparison.Ordinal) ||
             folded.Contains("ranking", StringComparison.Ordinal))
         {
@@ -1001,11 +1111,175 @@ internal sealed partial class AssistantService(
             return (sb.ToString(), cited);
         }
 
-        // 6. Leftover / balance / income / card bill query
+        var matchedCategory = FindRequestedCategory(folded);
+
+        // 6. Merchant-specific query (matching normalized descriptions like supermercado, padaria, farmácia, posto, restaurante)
+        var merchantMatch = FindRequestedMerchant(
+            userMessage,
+            folded,
+            matchedCategory,
+            monthTransactions);
+        if (merchantMatch is not null)
+        {
+            var matchedCurrent = FilterTransactionsByMerchant(monthTransactions, merchantMatch.NormalizedTerm);
+            var matchedPrev = FilterTransactionsByMerchant(prevMonthTransactions, merchantMatch.NormalizedTerm);
+
+            var currentExpenses = matchedCurrent.Where(t => t.Kind == "expense" && t.AmountCents < 0)
+                .OrderBy(t => t.OccurredOn)
+                .ThenBy(t => t.AmountCents)
+                .ToList();
+            var currentRefunds = matchedCurrent.Where(t => t.Kind == "refund" && t.AmountCents > 0).ToList();
+            var currentTotalCents = Math.Max(0L, currentExpenses.Sum(t => -t.AmountCents) - currentRefunds.Sum(t => t.AmountCents));
+
+            var prevTotalCents = Math.Max(
+                0L,
+                matchedPrev.Where(t => t.Kind == "expense" && t.AmountCents < 0).Sum(t => -t.AmountCents)
+                - matchedPrev.Where(t => t.Kind == "refund" && t.AmountCents > 0).Sum(t => t.AmountCents));
+
+            Cite($"Gastos em {merchantMatch.DisplayTerm} ({periodUsed})", currentTotalCents);
+            Cite($"Gasto total ({periodUsed})", metrics.SpentCents);
+
+            if (currentExpenses.Count == 0 && currentTotalCents == 0)
+            {
+                var emptySb = new StringBuilder();
+                emptySb.Append($"Em {periodUsed}, não houve gastos registrados correspondentes a \"{merchantMatch.DisplayTerm}\" (0 lançamentos, R$ 0,00).");
+                if (prevTotalCents > 0)
+                {
+                    Cite($"Gastos em {merchantMatch.DisplayTerm} ({prevPeriod})", prevTotalCents);
+                    emptySb.Append($" Em {prevPeriod}, o total havia sido {AssistantFormatting.FormatBrl(prevTotalCents)}.");
+                }
+
+                return (emptySb.ToString(), cited);
+            }
+
+            var countLabel = currentExpenses.Count == 1
+                ? "1 lançamento"
+                : $"{currentExpenses.Count} lançamentos";
+            var distinctMerchants = currentExpenses
+                .Select(t => t.Description.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToList();
+            var share = metrics.SpentCents > 0
+                ? Math.Round(currentTotalCents * 100m / metrics.SpentCents, 1, MidpointRounding.AwayFromZero)
+                : 0m;
+
+            var sb = new StringBuilder();
+            sb.Append($"Em {periodUsed}, você registrou {countLabel} em \"{merchantMatch.DisplayTerm}\"");
+            if (distinctMerchants.Count > 0)
+            {
+                sb.Append($" ({string.Join(", ", distinctMerchants)})");
+            }
+
+            sb.Append($", totalizando {AssistantFormatting.FormatBrl(currentTotalCents)}");
+            if (metrics.SpentCents > 0)
+            {
+                sb.Append($" ({share:0.0}% do total de {AssistantFormatting.FormatBrl(metrics.SpentCents)})");
+            }
+
+            sb.Append('.');
+
+            if (currentExpenses.Count <= 5)
+            {
+                var details = currentExpenses.Select(tx =>
+                    $"{tx.OccurredOn:dd/MM/yyyy} ({AssistantFormatting.FormatBrl(Math.Abs(tx.AmountCents))})");
+                sb.Append($" Detalhes: {string.Join(", ", details)}.");
+            }
+
+            if (prevTotalCents > 0)
+            {
+                var diff = currentTotalCents - prevTotalCents;
+                Cite($"Gastos em {merchantMatch.DisplayTerm} ({prevPeriod})", prevTotalCents);
+                var direction = diff >= 0 ? "a mais" : "a menos";
+                sb.Append($" Em relação a {prevPeriod} ({AssistantFormatting.FormatBrl(prevTotalCents)}), foram {AssistantFormatting.FormatBrl(Math.Abs(diff))} {direction}.");
+            }
+
+            return (sb.ToString(), cited);
+        }
+
+        // 7. Specific category query (e.g., alimentação, moradia, transporte, saúde, lazer, compras, educação)
+        if (matchedCategory is not null)
+        {
+            var categoryLabel = AssistantFormatting.GetCategoryLabel(matchedCategory);
+            var catSpent = metrics.SpentByCategoryCents.GetValueOrDefault(matchedCategory, 0L);
+            var prevCatSpent = prevMetrics.SpentByCategoryCents.GetValueOrDefault(matchedCategory, 0L);
+            var share = metrics.SpentCents > 0
+                ? Math.Round(catSpent * 100m / metrics.SpentCents, 1, MidpointRounding.AwayFromZero)
+                : 0m;
+
+            Cite($"Gasto em {categoryLabel} ({periodUsed})", catSpent);
+            Cite($"Gasto total ({periodUsed})", metrics.SpentCents);
+
+            var sb = new StringBuilder();
+            sb.Append($"Em {periodUsed}, você gastou {AssistantFormatting.FormatBrl(catSpent)} em {categoryLabel}");
+            if (metrics.SpentCents > 0)
+            {
+                sb.Append($" ({share:0.0}% do total de {AssistantFormatting.FormatBrl(metrics.SpentCents)})");
+            }
+
+            sb.Append('.');
+
+            if (prevCatSpent > 0)
+            {
+                var diff = catSpent - prevCatSpent;
+                Cite($"Gasto em {categoryLabel} ({prevPeriod})", prevCatSpent);
+                var direction = diff >= 0 ? "a mais" : "a menos";
+                sb.Append($" Em relação a {prevPeriod} ({AssistantFormatting.FormatBrl(prevCatSpent)}), foram {AssistantFormatting.FormatBrl(Math.Abs(diff))} {direction}.");
+            }
+
+            return (sb.ToString(), cited);
+        }
+
+        // 8. Month-over-month comparison query ("comparar com mês passado")
+        if (IsComparisonQuery(folded))
+        {
+            var spentDiff = metrics.SpentCents - prevMetrics.SpentCents;
+            Cite($"Gastos ({periodUsed})", metrics.SpentCents);
+            Cite($"Gastos ({prevPeriod})", prevMetrics.SpentCents);
+            Cite("Diferença de gastos", spentDiff);
+            Cite($"Sobra ({periodUsed})", metrics.LeftoverCents);
+            Cite($"Sobra ({prevPeriod})", prevMetrics.LeftoverCents);
+
+            var diffDescription = spentDiff == 0
+                ? "exatamente no mesmo patamar"
+                : $"{AssistantFormatting.FormatBrl(Math.Abs(spentDiff))} {(spentDiff > 0 ? "a mais" : "a menos")}";
+            if (prevMetrics.SpentCents > 0 && spentDiff != 0)
+            {
+                var pct = Math.Round(Math.Abs(spentDiff) * 100m / prevMetrics.SpentCents, 1, MidpointRounding.AwayFromZero);
+                diffDescription = $"{diffDescription} ({pct:0.0}%)";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append(
+                $"Comparando {periodUsed} com {prevPeriod}: seus gastos foram de {AssistantFormatting.FormatBrl(metrics.SpentCents)} " +
+                $"contra {AssistantFormatting.FormatBrl(prevMetrics.SpentCents)} no mês anterior ({diffDescription}). " +
+                $"A sobra foi de {AssistantFormatting.FormatBrl(metrics.LeftoverCents)} frente a {AssistantFormatting.FormatBrl(prevMetrics.LeftoverCents)} em {prevPeriod}.");
+
+            var allCategories = metrics.SpentByCategoryCents.Keys
+                .Union(prevMetrics.SpentByCategoryCents.Keys, StringComparer.Ordinal)
+                .Select(cat => (
+                    Category: cat,
+                    Delta: metrics.SpentByCategoryCents.GetValueOrDefault(cat, 0L) - prevMetrics.SpentByCategoryCents.GetValueOrDefault(cat, 0L)))
+                .Where(x => x.Delta != 0)
+                .OrderByDescending(x => Math.Abs(x.Delta))
+                .FirstOrDefault();
+
+            if (!string.IsNullOrEmpty(allCategories.Category))
+            {
+                var catLabel = AssistantFormatting.GetCategoryLabel(allCategories.Category);
+                var catDir = allCategories.Delta > 0 ? "subiu" : "caiu";
+                sb.Append($" A maior variação por categoria foi em {catLabel}, que {catDir} {AssistantFormatting.FormatBrl(Math.Abs(allCategories.Delta))}.");
+            }
+
+            return (sb.ToString(), cited);
+        }
+
+        // 9. Leftover / balance / income / card bill query
         if (folded.Contains("sobrou", StringComparison.Ordinal) ||
             folded.Contains("sobra", StringComparison.Ordinal) ||
             folded.Contains("saldo", StringComparison.Ordinal) ||
             folded.Contains("recebi", StringComparison.Ordinal) ||
+            folded.Contains("receita", StringComparison.Ordinal) ||
             folded.Contains("fatura", StringComparison.Ordinal))
         {
             Cite($"Receitas ({periodUsed})", metrics.ReceivedCents);
@@ -1028,7 +1302,7 @@ internal sealed partial class AssistantService(
             return (reply, cited);
         }
 
-        // 7. General overview ("quanto gastei?", default)
+        // 10. General overview ("quanto gastei?", default)
         Cite($"Gastos ({periodUsed})", metrics.SpentCents);
         Cite($"Receitas ({periodUsed})", metrics.ReceivedCents);
         Cite($"Sobra ({periodUsed})", metrics.LeftoverCents);
@@ -1118,11 +1392,43 @@ internal sealed partial class AssistantService(
         return pseudonymizer.SanitizeAndPseudonymize(sb.ToString());
     }
 
+    private static bool IsTopExpensesQuery(string foldedQuestion)
+    {
+        if (foldedQuestion.Contains("qual categoria", StringComparison.Ordinal) ||
+            foldedQuestion.Contains("pesou mais", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return foldedQuestion.Contains("maiores gastos", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("maiores despesas", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("maiores compras", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("top gastos", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("top despesas", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("top 5", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("gastos mais altos", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("despesas mais altas", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("gastos mais caros", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("despesas mais caras", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("maior gasto", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("maior despesa", StringComparison.Ordinal) ||
+               foldedQuestion.Contains("maior compra", StringComparison.Ordinal);
+    }
+
+    private static bool IsComparisonQuery(string foldedQuestion) =>
+        foldedQuestion.Contains("compar", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("relacao ao mes", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("frente ao mes", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("versus mes", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("vs mes", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("gastei mais ou menos", StringComparison.Ordinal) ||
+        foldedQuestion.Contains("evolucao mensal", StringComparison.Ordinal);
+
     private static string? FindRequestedCategory(string foldedQuestion)
     {
         foreach (var (category, terms) in QuestionCategoryKeywords)
         {
-            if (terms.Any(term => foldedQuestion.Contains(term, StringComparison.Ordinal)))
+            if (terms.Any(term => ContainsWord(foldedQuestion, term)))
             {
                 return category;
             }
@@ -1130,6 +1436,93 @@ internal sealed partial class AssistantService(
 
         return null;
     }
+
+    private static MerchantQueryMatch? FindRequestedMerchant(
+        string userMessage,
+        string foldedQuestion,
+        string? matchedCategory,
+        IReadOnlyList<BankingTransactionFact> monthTransactions)
+    {
+        foreach (var (normalizedTerm, displayTerm) in KnownMerchantTerms)
+        {
+            if (ContainsWord(foldedQuestion, normalizedTerm))
+            {
+                return new MerchantQueryMatch(normalizedTerm, displayTerm);
+            }
+        }
+
+        if (matchedCategory is not null ||
+            IsComparisonQuery(foldedQuestion) ||
+            foldedQuestion.Contains("sobrou", StringComparison.Ordinal) ||
+            foldedQuestion.Contains("sobra", StringComparison.Ordinal) ||
+            foldedQuestion.Contains("saldo", StringComparison.Ordinal) ||
+            foldedQuestion.Contains("fatura", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var normalizedQuestion = MerchantNormalizer.NormalizeDescription(userMessage);
+        if (string.IsNullOrWhiteSpace(normalizedQuestion))
+        {
+            return null;
+        }
+
+        var expenseDescriptions = monthTransactions
+            .Where(t => t.Kind is "expense" or "refund")
+            .Select(t => (Original: t.Description.Trim(), Normalized: MerchantNormalizer.NormalizeDescription(t.Description)))
+            .Where(x => x.Normalized.Length >= 4)
+            .DistinctBy(x => x.Normalized, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var entry in expenseDescriptions.OrderByDescending(x => x.Normalized.Length))
+        {
+            if (ContainsWord(normalizedQuestion, entry.Normalized))
+            {
+                return new MerchantQueryMatch(entry.Normalized, entry.Original);
+            }
+        }
+
+        var questionTokens = normalizedQuestion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => token.Length >= 4 &&
+                            !DynamicMerchantStopWords.Contains(token) &&
+                            !token.All(char.IsDigit))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var token in questionTokens)
+        {
+            var matchedEntry = expenseDescriptions.FirstOrDefault(entry =>
+                entry.Normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Any(txToken => string.Equals(txToken, token, StringComparison.Ordinal)));
+
+            if (!string.IsNullOrEmpty(matchedEntry.Normalized))
+            {
+                return new MerchantQueryMatch(token, token);
+            }
+        }
+
+        return null;
+    }
+
+    private static List<BankingTransactionFact> FilterTransactionsByMerchant(
+        IReadOnlyList<BankingTransactionFact> transactions,
+        string normalizedTerm)
+    {
+        return transactions
+            .Where(tx => tx.Kind is "expense" or "refund")
+            .Where(tx => MerchantNormalizer.NormalizeDescription(tx.Description)
+                .Contains(normalizedTerm, StringComparison.Ordinal))
+            .ToList();
+    }
+
+    private static bool ContainsWord(string foldedText, string normalizedPhrase) =>
+        Regex.IsMatch(
+            foldedText,
+            $@"(?<![a-z0-9]){Regex.Escape(normalizedPhrase)}s?(?![a-z0-9])",
+            RegexOptions.CultureInvariant);
+
+    private sealed record MerchantQueryMatch(string NormalizedTerm, string DisplayTerm);
 
     private static (string Category, string Essentiality, decimal Confidence, string Explanation) InferHeuristicSuggestion(
         string normalizedMerchant)
@@ -1254,8 +1647,8 @@ internal sealed partial class AssistantService(
             return false;
         }
 
-        var isOllama = string.Equals(provider, "ollama", StringComparison.Ordinal);
-        if (!isOllama && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        var allowsLocalHttp = provider is "ollama" or "openai_compatible";
+        if (!allowsLocalHttp && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             error = "Provedores em nuvem exigem URL base com https://.";
             return false;
@@ -1268,7 +1661,7 @@ internal sealed partial class AssistantService(
             return false;
         }
 
-        // Always block cloud metadata hostnames even for Ollama.
+        // Always block cloud metadata hostnames even for local providers.
         if (host is "metadata.google.internal" or "metadata" or "instance-data")
         {
             error = "Endereço interno de metadados não é permitido como URL base do provedor.";
@@ -1288,13 +1681,13 @@ internal sealed partial class AssistantService(
                 return false;
             }
 
-            if (!isOllama && IsLoopbackOrPrivate(ipAddress))
+            if (!allowsLocalHttp && IsLoopbackOrPrivate(ipAddress))
             {
                 error = "Provedores em nuvem não podem apontar para endereços locais ou redes privadas.";
                 return false;
             }
         }
-        else if (!isOllama && IsLocalHostname(host))
+        else if (!allowsLocalHttp && IsLocalHostname(host))
         {
             error = "Provedores em nuvem não podem apontar para hosts locais ou privados.";
             return false;
@@ -1364,6 +1757,9 @@ internal sealed partial class AssistantService(
 
     [GeneratedRegex(@"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex IsoMonthRegex();
+
+    [GeneratedRegex(@"(?<![\d/])(0?[1-9]|1[0-2])/((?:19|20)\d{2})\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrMonthYearRegex();
 
     [GeneratedRegex(@"\b(?:19|20)\d{2}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex YearRegex();

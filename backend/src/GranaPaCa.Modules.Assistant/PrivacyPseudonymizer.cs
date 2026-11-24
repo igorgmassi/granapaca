@@ -122,10 +122,10 @@ internal sealed partial class PrivacyPseudonymizer
     [GeneratedRegex(@"(?:\*{2,4}|[xX]{2,4})[\s\-]?(?:\*{2,4}|[xX]{2,4})?[\s\-]?\d{4}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex MaskedCardRegex();
 
-    [GeneratedRegex(@"\b(conta|ag[eê]ncia|ag\.?|cart[aã]o|final|c/c)\s*[:#\-]?\s*\d[\d.\-/\s]{3,18}[\dXx]\b", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"\b(conta(?:\s+(?:corrente|poupan[çc]a|banc[aá]ria))?|ag[eê]ncia|ag\.?|cart[aã]o(?:\s+final)?|final|c/c)\s*[:#\-]?\s*\d[\d.\-/\s]{2,18}[\dXx]\b", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex LabeledAccountOrCardRegex();
 
-    [GeneratedRegex(@"(?<!\d)(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)(?:9\d{4}|\d{4})[\-\s]\d{4}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"(?<!\d)(?:\+?55\s*)?(?:\(\d{2}\)\s*(?:9\d{4}|\d{4})[\-\s]?\d{4}|\d{2}\s*(?:9\d{4}|\d{4})[\-\s]\d{4})(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex PhoneRegex();
 
     [GeneratedRegex(@"(?<!\d)\d{14}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
