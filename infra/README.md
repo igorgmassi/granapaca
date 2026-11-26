@@ -46,3 +46,7 @@ docker compose up --build --detach --wait
 ```
 
 As migrações novas rodam na subida, e os volumes e segredos continuam os mesmos.
+
+## Backup cifrado
+
+Para configurar cópias diárias cifradas fora da máquina com `restic` e testar a restauração em máquina nova, siga [BACKUP.md](BACKUP.md).
