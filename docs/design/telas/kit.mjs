@@ -28,7 +28,33 @@ const I = {
   qr: "M4 4h6v6H4ZM14 4h6v6h-6ZM4 14h6v6H4ZM14 14h2v2h-2ZM18 14h2v2h-2ZM14 18h2v2h-2ZM18 18h2v2h-2Z", fora: "M14 5h5v5M19 5l-8 8M11 6H6v12h12v-5",
   cadeado: "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v9H5Z",
   engrenagem: "M12 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6ZM12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1",
+  // Ícones das Partes 7 e 8 (mesmo traço de 24 px; só acrescentam, não mudam os anteriores).
+  voltar: "M15 5l-7 7 7 7", direita: "M9 5l7 7-7 7", fechar: "M6 6l12 12M18 6L6 18", filtro: "M4 6h16M7 12h10M10 18h4",
+  editar: "M4 20h4L19 9l-4-4L4 16ZM13 7l4 4", desfazer: "M9 8h6a5 5 0 0 1 0 10H8M9 4L5 8l4 4", calendario: "M4 6h16v14H4ZM4 10h16M8 3v4M16 3v4",
+  saude: "M12 20S4 15 4 9.5A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 8 2.5C20 15 12 20 12 20Z", educacao: "M2 9l10-5 10 5-10 5ZM6 11.5V16c3 2.5 9 2.5 12 0v-4.5",
+  lazer: "M6 9h12l-1.5 11h-9ZM8 9a2.5 2.5 0 0 1 4-2 2.5 2.5 0 0 1 4 2M10 12v5M14 12v5",
+  assinaturas: "M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4",
+  pontos: "M4 12a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0ZM10.6 12a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0ZM17.2 12a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0Z",
+  camera: "M4 8h3l2-3h6l2 3h3v11H4ZM12 11a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Z", nota: "M6 3h12v18l-3-2-3 2-3-2-3 2ZM9 8h6M9 12h6",
+  dinheiro: "M3 7h18v10H3ZM12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 0 0 0-5ZM6.5 12h.01M17.5 12h.01", enviar: "M4 12 20 4l-5 16-3-7Z",
+  clipe: "M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7", divisao: "M12 4v6M12 10l-6 6v4M12 10l6 6v4",
+  alvo: "M12 4a8 8 0 1 0 0 16a8 8 0 0 0 0-16ZM12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8ZM12 12h.01", exportar: "M12 15V4M8 8l4-4 4 4M5 14v6h14v-6",
+  lixeira: "M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13M10 11v6M14 11v6", usuario: "M12 4a4 4 0 1 0 0 8a4 4 0 0 0 0-8ZM4 20c1-4 4-6 8-6s7 2 8 6",
+  brilho: "M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2Z", info: "M12 4a8 8 0 1 0 0 16a8 8 0 0 0 0-16ZM12 11v5M12 8h.01",
+  semRede: "M3 3l18 18M8.5 8.5A9 9 0 0 0 3 11M16 11a9 9 0 0 0-3.5-2M8.5 15a5 5 0 0 1 7 0M12 19h.01",
+  sincronizar: "M20 8A8 8 0 0 0 5 7M4 4v4h4M4 16a8 8 0 0 0 15 1M20 20v-4h-4", cartao: "M3 6h18v12H3ZM3 10h18M6 15h4",
+  etiqueta: "M4 4h8l8 8-8 8-8-8ZM8 8h.01", barras: "M5 20V10M12 20V4M19 20v-7", escudo: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6Z",
+  banco: "M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18", lua: "M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z",
 };
+
+// Ícone de cada grupo de categoria (ids de tokens.json), no traço do kit.
+export const ICONE_CATEGORIA = {
+  moradia: "casa", transporte: "carro", alimentacao: "garfo", saude: "saude", compras: "sacola", educacao: "educacao",
+  lazer: "lazer", assinaturas: "assinaturas", outros: "pontos",
+};
+
+// Valor no formato brasileiro, ex.: brl(1284.9) -> "1.284,90".
+export const brl = (n) => n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 export const icone = (n, x, y, cor, t = 24, l = 1.8) =>
   `<path d="${I[n]}" transform="translate(${x} ${y}) scale(${t / 24})" fill="none" stroke="${cor}" stroke-width="${l}" stroke-linecap="round" stroke-linejoin="round"/>`;
 export const pintas = (x, y, n, cor, vazia = c.outline) => [0, 1, 2].map((k) =>
