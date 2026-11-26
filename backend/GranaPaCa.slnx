@@ -2,10 +2,13 @@
   <Folder Name="/src/">
     <Project Path="src/GranaPaCa.Api/GranaPaCa.Api.csproj" />
     <Project Path="src/GranaPaCa.Modules.Alerts/GranaPaCa.Modules.Alerts.csproj" />
+    <Project Path="src/GranaPaCa.Modules.Assistant/GranaPaCa.Modules.Assistant.csproj" />
     <Project Path="src/GranaPaCa.Modules.Banking/GranaPaCa.Modules.Banking.csproj" />
     <Project Path="src/GranaPaCa.Modules.Categorization/GranaPaCa.Modules.Categorization.csproj" />
     <Project Path="src/GranaPaCa.Modules.Identity/GranaPaCa.Modules.Identity.csproj" />
     <Project Path="src/GranaPaCa.Modules.Keyring/GranaPaCa.Modules.Keyring.csproj" />
+    <Project Path="src/GranaPaCa.Modules.Planning/GranaPaCa.Modules.Planning.csproj" />
+    <Project Path="src/GranaPaCa.Modules.Receipts/GranaPaCa.Modules.Receipts.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GranaPaCa.Tests/GranaPaCa.Tests.csproj" />

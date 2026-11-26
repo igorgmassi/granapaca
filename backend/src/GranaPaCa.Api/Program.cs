@@ -1,10 +1,13 @@
 using DbUp;
 using DbUp.Postgresql;
 using GranaPaCa.Modules.Alerts;
+using GranaPaCa.Modules.Assistant;
 using GranaPaCa.Modules.Banking;
 using GranaPaCa.Modules.Categorization;
 using GranaPaCa.Modules.Identity;
 using GranaPaCa.Modules.Keyring;
+using GranaPaCa.Modules.Planning;
+using GranaPaCa.Modules.Receipts;
 using Microsoft.AspNetCore.Authentication;
 using Npgsql;
 
@@ -51,6 +54,9 @@ public sealed class Program
         builder.Services.AddAlertsModule();
         builder.Services.AddCategorizationModule(builder.Configuration);
         builder.Services.AddBankingModule(builder.Configuration);
+        builder.Services.AddPlanningModule();
+        builder.Services.AddReceiptsModule(builder.Configuration);
+        builder.Services.AddAssistantModule(builder.Configuration);
 
         var app = builder.Build();
 
@@ -64,6 +70,9 @@ public sealed class Program
                 typeof(AlertsModule).Assembly,
                 typeof(CategorizationModule).Assembly,
                 typeof(BankingModule).Assembly,
+                typeof(PlanningModule).Assembly,
+                typeof(ReceiptsModule).Assembly,
+                typeof(AssistantModule).Assembly,
             ])
             .WithTransactionPerScript()
             .LogTo(app.Logger)
@@ -83,6 +92,9 @@ public sealed class Program
         app.MapAlertsEndpoints();
         app.MapCategorizationEndpoints();
         app.MapBankingEndpoints();
+        app.MapPlanningEndpoints();
+        app.MapReceiptsEndpoints();
+        app.MapAssistantEndpoints();
         app.MapAccountPurgeEndpoints();
 
         app.Run();

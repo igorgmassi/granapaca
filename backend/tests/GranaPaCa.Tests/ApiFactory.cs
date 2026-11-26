@@ -11,6 +11,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
     private readonly string _ephemeralMasterKey = $"mk-test:{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))}";
+    private readonly string _receiptsTempDir = Path.Combine(Path.GetTempPath(), $"granapaca-receipts-{Guid.NewGuid():N}");
+
+    public string ReceiptsStoragePath => _receiptsTempDir;
 
     public async ValueTask InitializeAsync() => await _postgres.StartAsync();
 
@@ -18,6 +21,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await base.DisposeAsync();
         await _postgres.DisposeAsync();
+        if (Directory.Exists(_receiptsTempDir))
+        {
+            Directory.Delete(_receiptsTempDir, recursive: true);
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -27,6 +34,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Database:AllowWeakPasswordForTests", "true");
         builder.UseSetting("Keyring:MasterKey", _ephemeralMasterKey);
         builder.UseSetting("Banking:EnableBackgroundSync", "false");
+        builder.UseSetting("Receipts:StoragePath", _receiptsTempDir);
         if (profilesDir is not null)
         {
             builder.UseSetting("Profiles:Directory", profilesDir);

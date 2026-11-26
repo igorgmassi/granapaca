@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Npgsql" />
+    <EmbeddedResource Include="Migrations\*.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GranaPaCa.Modules.Banking\GranaPaCa.Modules.Banking.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Categorization\GranaPaCa.Modules.Categorization.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Keyring\GranaPaCa.Modules.Keyring.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Planning\GranaPaCa.Modules.Planning.csproj" />
+  </ItemGroup>
+</Project>

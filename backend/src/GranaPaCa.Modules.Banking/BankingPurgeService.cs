@@ -23,6 +23,34 @@ internal sealed class BankingPurgeService : IBankingPurgeService
 
         var param = new { HouseholdId = householdId };
 
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM banking.transaction_split s
+            USING banking.transaction t
+            WHERE s.transaction_id = t.id
+              AND t.household_id = @HouseholdId
+            """,
+            param,
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM banking.transaction_tag tt
+            USING banking.transaction t
+            WHERE tt.transaction_id = t.id
+              AND t.household_id = @HouseholdId
+            """,
+            param,
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM banking.tag WHERE household_id = @HouseholdId",
+            param,
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
         // Clear self-referencing adjustment undo links before deleting adjustments.
         await connection.ExecuteAsync(new CommandDefinition(
             """

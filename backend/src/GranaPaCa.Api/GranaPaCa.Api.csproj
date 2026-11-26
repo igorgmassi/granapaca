@@ -8,10 +8,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GranaPaCa.Modules.Alerts\GranaPaCa.Modules.Alerts.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Assistant\GranaPaCa.Modules.Assistant.csproj" />
     <ProjectReference Include="..\GranaPaCa.Modules.Banking\GranaPaCa.Modules.Banking.csproj" />
     <ProjectReference Include="..\GranaPaCa.Modules.Categorization\GranaPaCa.Modules.Categorization.csproj" />
     <ProjectReference Include="..\GranaPaCa.Modules.Identity\GranaPaCa.Modules.Identity.csproj" />
     <ProjectReference Include="..\GranaPaCa.Modules.Keyring\GranaPaCa.Modules.Keyring.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Planning\GranaPaCa.Modules.Planning.csproj" />
+    <ProjectReference Include="..\GranaPaCa.Modules.Receipts\GranaPaCa.Modules.Receipts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="GranaPaCa.Tests" />

@@ -23,6 +23,56 @@ internal static class MoneyConverter
 
         return decimal.ToInt64(truncated);
     }
+
+    /// <summary>
+    /// Formats integer cents as Brazilian currency (e.g. "R$ 1.234,56" or "-R$ 1.234,56") using exact integer math.
+    /// </summary>
+    public static string FormatBrl(long cents)
+    {
+        var negative = cents < 0;
+        var abs = cents == long.MinValue ? (ulong)long.MaxValue + 1UL : (ulong)Math.Abs(cents);
+        var whole = abs / 100UL;
+        var frac = abs % 100UL;
+        var wholeFormatted = FormatThousandsPtBr(whole);
+        return negative ? $"-R$ {wholeFormatted},{frac:00}" : $"R$ {wholeFormatted},{frac:00}";
+    }
+
+    /// <summary>
+    /// Formats integer cents for Brazilian CSV exports (e.g. "-1234,56" or "45,00") using exact integer math.
+    /// </summary>
+    public static string FormatCsvBrl(long cents)
+    {
+        var negative = cents < 0;
+        var abs = cents == long.MinValue ? (ulong)long.MaxValue + 1UL : (ulong)Math.Abs(cents);
+        var whole = abs / 100UL;
+        var frac = abs % 100UL;
+        return negative ? $"-{whole},{frac:00}" : $"{whole},{frac:00}";
+    }
+
+    private static string FormatThousandsPtBr(ulong value)
+    {
+        var digits = value.ToString(CultureInfo.InvariantCulture);
+        if (digits.Length <= 3)
+        {
+            return digits;
+        }
+
+        var sb = new StringBuilder(digits.Length + digits.Length / 3);
+        var firstGroup = digits.Length % 3;
+        if (firstGroup == 0)
+        {
+            firstGroup = 3;
+        }
+
+        sb.Append(digits, 0, firstGroup);
+        for (var i = firstGroup; i < digits.Length; i += 3)
+        {
+            sb.Append('.');
+            sb.Append(digits, i, 3);
+        }
+
+        return sb.ToString();
+    }
 }
 
 internal static class DateParser
@@ -181,8 +231,86 @@ internal static class BankingTaxonomy
         "redemption"
     };
 
+    public static readonly HashSet<string> PaymentMethods = new(StringComparer.Ordinal)
+    {
+        "pix",
+        "debit",
+        "credit",
+        "cash",
+        "boleto",
+        "transfer",
+        "other"
+    };
+
+    public static readonly Dictionary<string, string> PaymentMethodLabels = new(StringComparer.Ordinal)
+    {
+        ["pix"] = "Pix",
+        ["debit"] = "Débito",
+        ["credit"] = "Crédito",
+        ["cash"] = "Dinheiro",
+        ["boleto"] = "Boleto",
+        ["transfer"] = "Transferência",
+        ["other"] = "Outro"
+    };
+
+    public static readonly Dictionary<string, string> EssentialityLabels = new(StringComparer.Ordinal)
+    {
+        ["essential"] = "Essencial",
+        ["important"] = "Importante",
+        ["flexible"] = "Flexível"
+    };
+
+    public static readonly Dictionary<string, string> KindLabels = new(StringComparer.Ordinal)
+    {
+        ["expense"] = "Despesa",
+        ["income"] = "Receita",
+        ["own_transfer"] = "Transferência própria",
+        ["card_payment"] = "Pagamento de fatura",
+        ["refund"] = "Estorno",
+        ["withdrawal"] = "Saque",
+        ["investment"] = "Investimento",
+        ["redemption"] = "Resgate"
+    };
+
     public static string GetCategoryLabel(string category) =>
         CategoryLabels.TryGetValue(category, out var label) ? label : category;
+
+    public static string GetPaymentMethodLabel(string? paymentMethod) =>
+        paymentMethod is not null && PaymentMethodLabels.TryGetValue(paymentMethod, out var label)
+            ? label
+            : paymentMethod ?? string.Empty;
+
+    public static string GetEssentialityLabel(string? essentiality) =>
+        essentiality is not null && EssentialityLabels.TryGetValue(essentiality, out var label)
+            ? label
+            : essentiality ?? string.Empty;
+
+    public static string GetKindLabel(string kind) =>
+        KindLabels.TryGetValue(kind, out var label) ? label : kind;
+
+    public static bool IsValidHexColor(string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+        {
+            return false;
+        }
+
+        var trimmed = color.Trim();
+        if (trimmed.Length != 7 || trimmed[0] != '#')
+        {
+            return false;
+        }
+
+        for (var i = 1; i < 7; i++)
+        {
+            if (!Uri.IsHexDigit(trimmed[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     public static string? ExtractLastFourDigits(string? rawNumber)
     {
