@@ -52,7 +52,7 @@ internal sealed class ExternalAiProviderClient(
                     cancellationToken),
                 "openai_compatible" => await CallOpenAiCompatibleAsync(
                     request,
-                    defaultBaseUrl: null,
+                    AssistantProviderPresets.DefaultOpenAiCompatibleBaseUrl,
                     AssistantProviderPresets.DefaultOpenAiCompatibleModel,
                     requireApiKey: false,
                     addOpenRouterHeaders: false,

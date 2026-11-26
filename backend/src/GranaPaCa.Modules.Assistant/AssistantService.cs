@@ -886,7 +886,7 @@ internal sealed partial class AssistantService(
 
         foreach (var (monthName, monthNumber) in PortugueseMonths)
         {
-            var match = Regex.Match(folded, $@"\b{monthName}\b", RegexOptions.CultureInvariant);
+            var match = Regex.Match(folded, $@"\b{monthName}\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
             if (match.Success && match.Index < earliestMatchIndex)
             {
                 earliestMatchIndex = match.Index;
@@ -1520,7 +1520,8 @@ internal sealed partial class AssistantService(
         Regex.IsMatch(
             foldedText,
             $@"(?<![a-z0-9]){Regex.Escape(normalizedPhrase)}s?(?![a-z0-9])",
-            RegexOptions.CultureInvariant);
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
 
     private sealed record MerchantQueryMatch(string NormalizedTerm, string DisplayTerm);
 
@@ -1637,20 +1638,13 @@ internal sealed partial class AssistantService(
         if (!Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            error = "A URL base do provedor deve começar com https:// (ou http:// apenas para Ollama local).";
+            error = "A URL base do provedor deve começar com https:// (ou http:// apenas para Ollama/endpoint OpenAI-compatível local ou privado).";
             return false;
         }
 
         if (!string.IsNullOrEmpty(uri.UserInfo))
         {
             error = "A URL base do provedor não pode conter credenciais embutidas.";
-            return false;
-        }
-
-        var allowsLocalHttp = provider is "ollama" or "openai_compatible";
-        if (!allowsLocalHttp && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        {
-            error = "Provedores em nuvem exigem URL base com https://.";
             return false;
         }
 
@@ -1668,6 +1662,7 @@ internal sealed partial class AssistantService(
             return false;
         }
 
+        bool isLocalOrPrivateTarget;
         if (IPAddress.TryParse(host, out var ipAddress))
         {
             if (ipAddress.IsIPv4MappedToIPv6)
@@ -1681,15 +1676,24 @@ internal sealed partial class AssistantService(
                 return false;
             }
 
-            if (!allowsLocalHttp && IsLoopbackOrPrivate(ipAddress))
-            {
-                error = "Provedores em nuvem não podem apontar para endereços locais ou redes privadas.";
-                return false;
-            }
+            isLocalOrPrivateTarget = IsLoopbackOrPrivate(ipAddress);
         }
-        else if (!allowsLocalHttp && IsLocalHostname(host))
+        else
         {
-            error = "Provedores em nuvem não podem apontar para hosts locais ou privados.";
+            isLocalOrPrivateTarget = IsLocalHostname(host);
+        }
+
+        var allowsLocalTarget = provider is "ollama" or "openai_compatible";
+        if (!allowsLocalTarget && isLocalOrPrivateTarget)
+        {
+            error = "Provedores em nuvem não podem apontar para endereços locais ou redes privadas.";
+            return false;
+        }
+
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !(allowsLocalTarget && isLocalOrPrivateTarget))
+        {
+            error = "Endereços remotos exigem https:// (http:// é permitido apenas para Ollama ou endpoint OpenAI-compatível local/privado).";
             return false;
         }
 

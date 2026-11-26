@@ -304,6 +304,68 @@ public sealed class FreeAiAssistantTests : IAsyncLifetime
         Assert.True(fallbackJson.GetProperty("pseudonymized").GetBoolean());
     }
 
+    [Fact]
+    public async Task Free_tier_providers_enforce_https_on_remote_hosts_block_metadata_and_document_presets_openapi()
+    {
+        var client = await CreateAuthenticatedClientAsync("ssrf-presets@demo.local");
+
+        // Remote plain HTTP must be rejected even for openai_compatible and ollama, as well as groq and openrouter.
+        (string Provider, string BadUrl)[] blockedCases =
+        [
+            ("openai_compatible", "http://remote-llm.example.com/v1/"),
+            ("openai_compatible", "http://169.254.169.254/latest/meta-data"),
+            ("openai_compatible", "http://metadata.google.internal/v1/"),
+            ("ollama", "http://remote-ollama.example.com:11434/"),
+            ("ollama", "http://169.254.169.254/api"),
+            ("groq", "http://api.groq.com/openai/v1/"),
+            ("groq", "https://127.0.0.1/v1/"),
+            ("groq", "https://169.254.169.254/v1/"),
+            ("openrouter", "http://openrouter.ai/api/v1/"),
+            ("openrouter", "https://10.0.0.5/v1/"),
+            ("openrouter", "https://169.254.169.254/v1/"),
+        ];
+
+        foreach (var (provider, badUrl) in blockedCases)
+        {
+            var resp = await client.PutAsJsonAsync("/api/v1/assistant/provider", new
+            {
+                provider,
+                model = "test-model",
+                baseUrl = badUrl,
+                apiKey = "chave-ficticia-teste",
+            }, Ct);
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+            Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+        }
+
+        // Remote HTTPS and local/private HTTP remain allowed for openai_compatible.
+        var httpsCompat = await client.PutAsJsonAsync("/api/v1/assistant/provider", new
+        {
+            provider = "openai_compatible",
+            model = "custom-model",
+            baseUrl = "https://llm.example.com/v1/",
+            apiKey = "chave-ficticia-https",
+        }, Ct);
+        Assert.Equal(HttpStatusCode.OK, httpsCompat.StatusCode);
+
+        var defaultCompat = await client.PutAsJsonAsync("/api/v1/assistant/provider", new
+        {
+            provider = "openai_compatible",
+            model = "local-model",
+        }, Ct);
+        Assert.Equal(HttpStatusCode.OK, defaultCompat.StatusCode);
+
+        // OpenAPI 3.1 documents /api/v1/assistant/presets with 200 and 401 responses.
+        var openapi = await _api.CreateClient().GetFromJsonAsync<JsonElement>("/openapi/v1.json", Ct);
+        var presetsResponses = openapi
+            .GetProperty("paths")
+            .GetProperty("/api/v1/assistant/presets")
+            .GetProperty("get")
+            .GetProperty("responses");
+        Assert.True(presetsResponses.TryGetProperty("200", out _));
+        Assert.True(presetsResponses.TryGetProperty("401", out _));
+    }
+
     private async Task AssertApiKeyNotPlaintextInDbAsync(string rawKey)
     {
         await using var cmd = _api.Services.GetRequiredService<NpgsqlDataSource>()
@@ -454,6 +516,20 @@ public sealed class FreeAiAssistantUnitTests
         Assert.Equal("http://localhost:1234/v1/chat/completions", capturedRequests[2].Uri.ToString());
         Assert.Null(capturedRequests[2].AuthHeader);
         Assert.Contains("qwen2.5-7b-instruct", capturedRequests[2].Body);
+
+        // 4. OpenAI-compatible with null BaseUrl falls back to preset DefaultOpenAiCompatibleBaseUrl.
+        var defaultCompatReply = await client.TryCompleteAsync(
+            new ExternalCompletionRequest(
+                Provider: "openai_compatible",
+                Model: string.Empty,
+                BaseUrl: null,
+                ApiKey: null,
+                SystemPrompt: "Sistema",
+                UserPrompt: "Resumo padrão"),
+            Ct);
+        Assert.Equal("Resposta simulada [BANCO_1]", defaultCompatReply);
+        Assert.Equal("http://host.docker.internal:1234/v1/chat/completions", capturedRequests[3].Uri.ToString());
+        Assert.Contains("local-model", capturedRequests[3].Body);
     }
 
     private sealed class StubCompletionHandler(

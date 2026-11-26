@@ -42,7 +42,10 @@ public static class AssistantModule
             }
 
             return Results.Ok(new ProviderPresetsResponse(AssistantProviderPresets.All));
-        });
+        })
+        .WithName("GetAssistantPresets")
+        .Produces<ProviderPresetsResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/provider", async (
             ClaimsPrincipal user,
