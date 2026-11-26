@@ -45,4 +45,4 @@ chmod 700 "$SECRETS_DIR"
 create_secret_if_missing "postgres_password.txt"
 create_secret_if_missing "master_key.txt"
 
-echo "Pronto. Guarde uma cópia segura de infra/secrets/master_key.txt fora da máquina (veja infra/BACKUP.md)."
+echo "Pronto. Guarde uma cópia segura de infra/secrets/master_key.txt fora da máquina."

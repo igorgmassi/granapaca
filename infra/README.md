@@ -1,6 +1,6 @@
 # infra
 
-Tudo para rodar a sua instância com um único `docker compose up`: API em .NET 10 + PostgreSQL 18, com segredos em Docker secrets, volume para anexos cifrados e scripts de backup cifrado fora da máquina.
+Tudo para rodar a sua instância com um único `docker compose up`: API em .NET 10 + PostgreSQL 18, com segredos em Docker secrets e volume para anexos cifrados.
 
 ## Subir
 
@@ -37,10 +37,6 @@ Se `PLUGGY_CLIENT_ID` e `PLUGGY_CLIENT_SECRET` ficarem vazios no `.env`, a inst�
 - **Arquivos/anexos cifrados:** volume `granapaca_appdata` (`/var/lib/granapaca/files`).
 - **Segredos locais:** `infra/secrets/postgres_password.txt` e `infra/secrets/master_key.txt`. Guarde uma cópia de `master_key.txt` fora da máquina; sem ela, segredos TOTP e payloads brutos cifrados não podem ser decifrados ([ADR-016](../docs/adr/0016-criptografia-de-campo-com-envelope.md)).
 - `docker compose down` mantém os volumes; `docker compose down --volumes` apaga tudo.
-
-## Backup e restauração
-
-Veja o guia completo em [BACKUP.md](BACKUP.md) para configurar o backup diário cifrado com `restic` fora da máquina e testar a restauração em máquina nova (RF-65, ADR-029).
 
 ## Atualizar
 

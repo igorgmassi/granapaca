@@ -235,6 +235,46 @@ public sealed class BankingCategorizationAlertsTests : IAsyncLifetime
         Assert.Equal(0, alertsAfterResolve.GetProperty("items").GetArrayLength());
     }
 
+    [Fact]
+    public async Task Patch_rule_clearing_all_result_fields_returns_bad_request()
+    {
+        var (client, _) = await CreateAuthenticatedClientAsync();
+
+        var createRuleResp = await client.PostAsJsonAsync("/api/v1/rules", new
+        {
+            name = "Padaria Teste",
+            matchMerchant = "Padaria Teste",
+            category = "food",
+            essentiality = "essential",
+            brand = "Padaria Teste",
+            explanation = "Regra inicial",
+        }, Ct);
+        Assert.Equal(HttpStatusCode.Created, createRuleResp.StatusCode);
+        var created = await createRuleResp.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var ruleId = created.GetProperty("id").GetGuid();
+
+        var patchResp = await client.PatchAsJsonAsync($"/api/v1/rules/{ruleId}", new
+        {
+            category = "",
+            essentiality = "",
+            brand = "",
+        }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, patchResp.StatusCode);
+
+        var errorBody = await patchResp.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Contains(
+            "ao menos um resultado",
+            errorBody.GetProperty("error").GetString()!,
+            StringComparison.OrdinalIgnoreCase);
+
+        var getRulesResp = await client.GetFromJsonAsync<JsonElement>("/api/v1/rules", Ct);
+        var savedRule = getRulesResp.GetProperty("items").EnumerateArray()
+            .Single(r => r.GetProperty("id").GetGuid() == ruleId);
+        Assert.Equal("food", savedRule.GetProperty("category").GetString());
+        Assert.Equal("essential", savedRule.GetProperty("essentiality").GetString());
+        Assert.Equal("Padaria Teste", savedRule.GetProperty("brand").GetString());
+    }
+
     private async Task<(HttpClient Client, Guid HouseholdId)> CreateAuthenticatedClientAsync()
     {
         var client = _api.CreateClient();

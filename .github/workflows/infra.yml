@@ -43,6 +43,19 @@ jobs:
           server_info="$(curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/server-info)"
           echo "$server_info"
           echo "$server_info" | jq -e '.providerMode == "synthetic"'
+      - name: Verify /api/v1/auth/setup with America/Sao_Paulo timezone
+        run: |
+          setup_payload="$(jq -n \
+            --arg email 'owner@demo.local' \
+            --arg displayName 'Owner Demo' \
+            --arg password 'DemoSetup!2026#Tz' \
+            --arg timezone 'America/Sao_Paulo' \
+            '{email: $email, displayName: $displayName, password: $password, timezone: $timezone}')"
+          setup_response="$(printf '%s' "$setup_payload" | curl --fail --silent --show-error -X POST \
+            -H 'Content-Type: application/json' \
+            --data-binary @- \
+            http://127.0.0.1:8080/api/v1/auth/setup)"
+          echo "$setup_response" | jq -e '.email == "owner@demo.local" and (.ownerId | length > 0)'
       - name: Ensure database password is not exposed in container env
         run: |
           api_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' granapaca-api-1)"
@@ -54,8 +67,10 @@ jobs:
       # A restart keeps the volume: the migrations find nothing pending and the API comes back healthy.
       - name: Restart stack preserving volume
         run: docker compose down && docker compose up --detach --wait --wait-timeout 120
-      - name: Verify /health after restart
-        run: curl --fail --silent --show-error http://127.0.0.1:8080/health
+      - name: Verify /health and owner persistence after restart
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8080/health
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/server-info | jq -e '.ownerConfigured == true'
       - if: failure()
         run: docker compose logs
       - if: always()

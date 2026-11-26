@@ -534,6 +534,15 @@ public static class CategorizationModule
             var brand = request.Brand is null
                 ? existing.Brand
                 : (string.IsNullOrWhiteSpace(request.Brand) ? null : request.Brand.Trim());
+
+            if (category is null && essentiality is null && brand is null)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "Informe ao menos um resultado para a regra (categoria, essencialidade ou marca)."
+                });
+            }
+
             var priority = request.Priority ?? existing.Priority;
 
             await connection.ExecuteAsync(new CommandDefinition(
