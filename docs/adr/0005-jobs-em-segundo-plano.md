@@ -13,7 +13,7 @@ Usar o **`BackgroundService` nativo do .NET (`IHostedService` + `PeriodicTimer`)
 
 - **Execução isolada por ciclo:** `DailySyncWorker` aguarda um atraso inicial configurável (`Banking:InitialSyncDelaySeconds`), dispara no intervalo configurado (`Banking:SyncIntervalHours`, padrão de 24h) e abre um escopo de DI próprio (`IServiceScopeFactory`) para cada casa ao invocar `IBankingSyncTrigger`.
 - **Resiliência sem estado extra:** falhas transitórias são retentadas com backoff exponencial (`MaxAttempts = 3`), sem registrar dados pessoais nos logs. Quando as tentativas se esgotam, o erro gera alerta na caixa de entrada do app (ADR-011).
-- **Estado já persistido no PostgreSQL:** cursores, histórico de execuções (`banking.sync_run`) e última sincronização ficam nas tabelas de domínio; se o contêiner reiniciar, o próximo ciclo retoma de forma idempotente.
+- **Estado já persistido no PostgreSQL:** o estado de sincronização (`last_synced_at`, `consecutive_failures`, `first_failure_at`, `last_error_code`) fica em `banking.connection`, junto aos demais dados de domínio; se o contêiner reiniciar, o próximo ciclo retoma de forma idempotente.
 - **Testabilidade:** a chave `Banking:EnableBackgroundSync` permite desligar o loop automático nos testes de integração e acionar ciclos sob demanda.
 
 ## Alternativas consideradas
