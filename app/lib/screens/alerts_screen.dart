@@ -120,6 +120,9 @@ class AlertsScreen extends StatelessWidget {
                             case AlertTarget.spending:
                               state.selectTab(2);
                               Navigator.of(context).pop();
+                            case AlertTarget.settings:
+                              state.selectTab(4);
+                              Navigator.of(context).pop();
                           }
                         },
                       ),

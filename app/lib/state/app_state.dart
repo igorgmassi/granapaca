@@ -14,7 +14,7 @@ import '../storage/encrypted_cache.dart';
 import 'demo_profiles.dart';
 import 'preferences_store.dart';
 
-enum AlertTarget { connections, bankAurora, spending }
+enum AlertTarget { connections, bankAurora, spending, settings }
 
 enum AppMode { demo, localDevice, server }
 
@@ -57,6 +57,7 @@ class AppAlert {
     final normalizedTarget = item.targetKey.toLowerCase().trim();
     final target = switch (normalizedTarget) {
       'spending' || '/spending' || 'gastos' => AlertTarget.spending,
+      'settings' || '/settings' || 'backup' => AlertTarget.settings,
       'bankaurora' => AlertTarget.bankAurora,
       _ when normalizedTarget.startsWith('/banks/') => AlertTarget.bankAurora,
       _ => AlertTarget.connections,
