@@ -232,6 +232,90 @@ class DemoBanner extends StatelessWidget {
   }
 }
 
+/// Banner shown whenever the app is connected to a self-hosted server but
+/// currently reading from the encrypted local cache without connectivity
+/// (RF-21).
+class OfflineBanner extends StatelessWidget {
+  const OfflineBanner({
+    super.key,
+    required this.lastSyncedAt,
+    this.onRetry,
+  });
+
+  final DateTime? lastSyncedAt;
+  final VoidCallback? onRetry;
+
+  String _formatLastSync(DateTime dt) {
+    final local = dt.toLocal();
+    final dd = local.day.toString().padLeft(2, '0');
+    final mm = local.month.toString().padLeft(2, '0');
+    final hh = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    return '$dd/$mm às $hh:$min';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = GranaTokens.of(context);
+    final label = lastSyncedAt == null
+        ? 'Sem conexão com o servidor · exibindo dados salvos'
+        : 'Sem conexão com o servidor · última sincronização em '
+              '${_formatLastSync(lastSyncedAt!)}';
+
+    return Material(
+      key: const Key('offline_banner'),
+      color: tokens.milho.withValues(alpha: 0.28),
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: GranaSpacing.lg,
+            vertical: GranaSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.cloud_off_outlined,
+                size: 18,
+                color: tokens.sobreMilho,
+              ),
+              const SizedBox(width: GranaSpacing.sm),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: tokens.sobreMilho,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (onRetry != null) ...[
+                const SizedBox(width: GranaSpacing.sm),
+                TextButton(
+                  key: const Key('offline_banner_retry'),
+                  onPressed: onRetry,
+                  style: TextButton.styleFrom(
+                    foregroundColor: tokens.sobreMilho,
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Reconectar'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Clean empty state with icon, title, subtitle, and optional actions.
 class EmptyStateView extends StatelessWidget {
   const EmptyStateView({
@@ -445,6 +529,27 @@ class TransactionRow extends StatelessWidget {
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: categoryColor,
+                              ),
+                            ),
+                          )
+                        else if (isSpendingKind(tx.kind))
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: tokens.milho.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(
+                                GranaRadius.chip,
+                              ),
+                            ),
+                            child: Text(
+                              'Sem categoria',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: tokens.sobreMilho,
                               ),
                             ),
                           ),

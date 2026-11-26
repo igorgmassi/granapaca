@@ -18,7 +18,13 @@ class AlertsScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Alertas')),
       body: Column(
         children: [
-          const DemoBanner(),
+          if (state.isDemoMode)
+            const DemoBanner()
+          else if (state.isOffline)
+            OfflineBanner(
+              lastSyncedAt: state.lastSyncedAt,
+              onRetry: state.syncFromServer,
+            ),
           Expanded(
             child: Center(
               child: ConstrainedBox(

@@ -6,6 +6,7 @@ import '../finance/taxonomy.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
+import 'review_queue_screen.dart';
 import 'transaction_detail_sheet.dart';
 
 /// Unified transaction history with accent-insensitive search, combinable
@@ -145,16 +146,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     const SizedBox(width: GranaSpacing.sm),
                     _FilterPickerButton(
                       key: const Key('filter_category_button'),
-                      label: filter.category != null
-                          ? filter.category!.label
-                          : (filter.categories != null &&
-                                    filter.categories!.isNotEmpty
-                                ? _categoriesLabel(filter.categories!)
-                                : 'Categoria'),
+                      label:
+                          filter.uncategorizedOnly &&
+                              (filter.categories == null ||
+                                  filter.categories!.isEmpty)
+                          ? 'Sem categoria'
+                          : (filter.category != null
+                                ? filter.category!.label
+                                : (filter.categories != null &&
+                                          filter.categories!.isNotEmpty
+                                      ? _categoriesLabel(
+                                          filter.categories!,
+                                          includeUncategorized:
+                                              filter.uncategorizedOnly,
+                                        )
+                                      : 'Categoria')),
                       active:
                           filter.category != null ||
                           (filter.categories != null &&
-                              filter.categories!.isNotEmpty),
+                              filter.categories!.isNotEmpty) ||
+                          filter.uncategorizedOnly,
                       onPressed: () => _pickCategory(context, state, filter),
                     ),
                     const SizedBox(width: GranaSpacing.sm),
@@ -211,6 +222,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         label: Text(filter.kind!.label),
                         onDeleted: () => state.updateHistoryFilter(
                           filter.copyWith(clearKind: true),
+                        ),
+                      ),
+                    if (filter.uncategorizedOnly)
+                      InputChip(
+                        label: const Text('Sem categoria'),
+                        onDeleted: () => state.updateHistoryFilter(
+                          filter.copyWith(uncategorizedOnly: false),
                         ),
                       ),
                     if (filter.category != null)
@@ -296,31 +314,56 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ),
 
         if (uncategorizedGroups.isNotEmpty)
-          Container(
+          Material(
             color: scheme.secondaryContainer,
-            padding: const EdgeInsets.symmetric(
-              horizontal: GranaSpacing.lg,
-              vertical: GranaSpacing.sm,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.pending_actions_outlined,
-                  size: 18,
-                  color: scheme.onSecondaryContainer,
+            child: InkWell(
+              key: const Key('history_open_review_queue'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ReviewQueueScreen(),
                 ),
-                const SizedBox(width: GranaSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Fila de revisão: ${uncategorizedGroups.length} grupo(s) sem categoria.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: GranaSpacing.lg,
+                  vertical: GranaSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.pending_actions_outlined,
+                      size: 18,
                       color: scheme.onSecondaryContainer,
                     ),
-                  ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'A revisar: ${uncategorizedGroups.length} '
+                        'estabelecimento(s) sem categoria.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Revisar',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
 
@@ -384,9 +427,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return formatShortMonth(filter.from!);
   }
 
-  String _categoriesLabel(Set<SpendingCategory> categories) {
-    if (categories.length == 1) return categories.first.label;
-    return 'Demais categorias (${categories.length})';
+  String _categoriesLabel(
+    Set<SpendingCategory> categories, {
+    bool includeUncategorized = false,
+  }) {
+    final total = categories.length + (includeUncategorized ? 1 : 0);
+    if (total == 1 && !includeUncategorized) return categories.first.label;
+    return 'Demais categorias ($total)';
   }
 
   Future<void> _pickPeriod(
@@ -594,12 +641,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
             title: const Text('Todas as categorias'),
             trailing:
                 filter.category == null &&
-                    (filter.categories == null || filter.categories!.isEmpty)
+                    (filter.categories == null || filter.categories!.isEmpty) &&
+                    !filter.uncategorizedOnly
                 ? const Icon(Icons.check)
                 : null,
             onTap: () {
               state.updateHistoryFilter(
-                filter.copyWith(clearCategory: true, clearCategories: true),
+                filter.copyWith(
+                  clearCategory: true,
+                  clearCategories: true,
+                  uncategorizedOnly: false,
+                ),
               );
               Navigator.of(sheetContext).pop();
             },
@@ -607,10 +659,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
           for (final c in SpendingCategory.values)
             ListTile(
               title: Text(c.label),
-              trailing: filter.category == c ? const Icon(Icons.check) : null,
+              trailing: !filter.uncategorizedOnly && filter.category == c
+                  ? const Icon(Icons.check)
+                  : null,
               onTap: () {
                 state.updateHistoryFilter(
-                  filter.copyWith(category: c, clearCategories: true),
+                  filter.copyWith(
+                    category: c,
+                    clearCategories: true,
+                    uncategorizedOnly: false,
+                  ),
                 );
                 Navigator.of(sheetContext).pop();
               },

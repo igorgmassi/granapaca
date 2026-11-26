@@ -4,15 +4,18 @@ import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 import 'alerts_screen.dart';
+import 'connections_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
+import 'review_queue_screen.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
 import 'spending_screen.dart';
 
-/// Responsive application shell with fixed DemoBanner, NavigationBar /
-/// NavigationRail, hide-values toggle, quick actions sheet, and alerts badge.
+/// Responsive application shell with DemoBanner / OfflineBanner,
+/// NavigationBar / NavigationRail, hide-values toggle, quick actions sheet,
+/// and alerts badge.
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
 
@@ -79,7 +82,8 @@ class AppShell extends StatelessWidget {
     }
   }
 
-  Future<void> _showQuickActions(BuildContext context) {
+  Future<void> _showQuickActions(BuildContext context, AppState state) {
+    final pendingGroups = state.reviewQueueGroups.length;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -92,6 +96,24 @@ class AppShell extends StatelessWidget {
               'Ações rápidas',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
+          ),
+          ListTile(
+            key: const Key('quick_action_review_queue'),
+            leading: const Icon(Icons.pending_actions_outlined),
+            title: const Text('A revisar'),
+            subtitle: Text(
+              pendingGroups == 0
+                  ? 'Tudo classificado'
+                  : '$pendingGroups estabelecimento(s) sem categoria',
+            ),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ReviewQueueScreen(),
+                ),
+              );
+            },
           ),
           ListTile(
             leading: const Icon(Icons.tune_rounded),
@@ -118,12 +140,21 @@ class AppShell extends StatelessWidget {
             },
           ),
           ListTile(
+            key: const Key('quick_action_connections'),
             leading: const Icon(Icons.account_balance_outlined),
-            title: const Text('Conectar banco via Meu Pluggy'),
-            subtitle: const Text('Disponível na instância self-hosted'),
+            title: const Text('Conexões bancárias (Meu Pluggy)'),
+            subtitle: Text(
+              state.isDemoMode
+                  ? 'Ver status e passo a passo de conexão'
+                  : 'Gerenciar bancos, status e sincronização',
+            ),
             onTap: () {
               Navigator.of(sheetContext).pop();
-              showServerOnlyDialog(context, 'Conectar banco via Meu Pluggy');
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ConnectionsScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -136,6 +167,7 @@ class AppShell extends StatelessWidget {
     final state = AppScope.of(context);
     final selected = state.selectedTab;
     final unread = state.unreadAlertCount;
+    final scheme = Theme.of(context).colorScheme;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -186,13 +218,60 @@ class AppShell extends StatelessWidget {
           ),
           body: Column(
             children: [
-              DemoBanner(
-                onExploreGuide: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const OnboardingScreen(profileOnly: false),
+              if (state.isDemoMode)
+                DemoBanner(
+                  onExploreGuide: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          const OnboardingScreen(profileOnly: false),
+                    ),
+                  ),
+                )
+              else if (state.isOffline)
+                OfflineBanner(
+                  lastSyncedAt: state.lastSyncedAt,
+                  onRetry: state.syncFromServer,
+                ),
+              if (state.sessionClearedNotice != null)
+                Material(
+                  key: const Key('shell_lockout_notice'),
+                  color: scheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: GranaSpacing.lg,
+                      vertical: GranaSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          size: 18,
+                          color: scheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            state.sessionClearedNotice!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Fechar aviso',
+                          onPressed: state.clearSessionClearedNotice,
+                          icon: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: scheme.onErrorContainer,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               Expanded(
                 child: isCompact
                     ? bodyContent
@@ -212,7 +291,8 @@ class AppShell extends StatelessWidget {
                               child: FloatingActionButton.small(
                                 heroTag: 'rail_quick_actions',
                                 tooltip: 'Ações rápidas',
-                                onPressed: () => _showQuickActions(context),
+                                onPressed: () =>
+                                    _showQuickActions(context, state),
                                 child: const Icon(Icons.add_rounded),
                               ),
                             ),
@@ -229,7 +309,7 @@ class AppShell extends StatelessWidget {
               ? FloatingActionButton(
                   heroTag: 'compact_quick_actions',
                   tooltip: 'Ações rápidas',
-                  onPressed: () => _showQuickActions(context),
+                  onPressed: () => _showQuickActions(context, state),
                   child: const Icon(Icons.add_rounded),
                 )
               : null,

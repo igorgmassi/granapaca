@@ -73,6 +73,7 @@ class TxFilter {
     this.kind,
     this.category,
     this.categories,
+    this.uncategorizedOnly = false,
     this.essentiality,
     this.search,
     this.spendingOnly = false,
@@ -85,6 +86,11 @@ class TxFilter {
   final TxKind? kind;
   final SpendingCategory? category;
   final Set<SpendingCategory>? categories;
+
+  /// When true, matches only transactions whose effective category is null
+  /// ("Sem categoria", RF-31), or includes them alongside [categories] when
+  /// both are set.
+  final bool uncategorizedOnly;
   final Essentiality? essentiality;
 
   /// Matches the original or corrected description ignoring case and accents.
@@ -102,6 +108,7 @@ class TxFilter {
       kind != null ||
       category != null ||
       (categories != null && categories!.isNotEmpty) ||
+      uncategorizedOnly ||
       essentiality != null ||
       spendingOnly ||
       (search != null && search!.trim().isNotEmpty);
@@ -121,6 +128,7 @@ class TxFilter {
     bool clearCategory = false,
     Set<SpendingCategory>? categories,
     bool clearCategories = false,
+    bool? uncategorizedOnly,
     Essentiality? essentiality,
     bool clearEssentiality = false,
     String? search,
@@ -134,6 +142,7 @@ class TxFilter {
     kind: clearKind ? null : (kind ?? this.kind),
     category: clearCategory ? null : (category ?? this.category),
     categories: clearCategories ? null : (categories ?? this.categories),
+    uncategorizedOnly: uncategorizedOnly ?? this.uncategorizedOnly,
     essentiality: clearEssentiality
         ? null
         : (essentiality ?? this.essentiality),
@@ -182,11 +191,18 @@ History history(
     if (f.accountId != null && t.accountId != f.accountId) return false;
     if (f.spendingOnly && !isSpending(t)) return false;
     if (f.kind != null && t.kind != f.kind) return false;
-    if (f.category != null && t.category != f.category) return false;
-    if (f.categories != null &&
-        f.categories!.isNotEmpty &&
-        !f.categories!.contains(t.category)) {
-      return false;
+    final hasCategories = f.categories != null && f.categories!.isNotEmpty;
+    if (f.uncategorizedOnly && hasCategories) {
+      if (t.category != null && !f.categories!.contains(t.category)) {
+        return false;
+      }
+    } else if (f.uncategorizedOnly) {
+      if (t.category != null) return false;
+    } else {
+      if (f.category != null && t.category != f.category) return false;
+      if (hasCategories && !f.categories!.contains(t.category)) {
+        return false;
+      }
     }
     if (f.essentiality != null && t.essentiality != f.essentiality) {
       return false;
@@ -241,11 +257,18 @@ EffectiveHistory effectiveHistory(
     if (f.accountId != null && t.accountId != f.accountId) return false;
     if (f.spendingOnly && !isSpendingKind(t.kind)) return false;
     if (f.kind != null && t.kind != f.kind) return false;
-    if (f.category != null && t.category != f.category) return false;
-    if (f.categories != null &&
-        f.categories!.isNotEmpty &&
-        !f.categories!.contains(t.category)) {
-      return false;
+    final hasCategories = f.categories != null && f.categories!.isNotEmpty;
+    if (f.uncategorizedOnly && hasCategories) {
+      if (t.category != null && !f.categories!.contains(t.category)) {
+        return false;
+      }
+    } else if (f.uncategorizedOnly) {
+      if (t.category != null) return false;
+    } else {
+      if (f.category != null && t.category != f.category) return false;
+      if (hasCategories && !f.categories!.contains(t.category)) {
+        return false;
+      }
     }
     if (f.essentiality != null && t.essentiality != f.essentiality) {
       return false;
@@ -288,15 +311,22 @@ String normalizeText(String s) =>
 String merchantKeyFor(String description) =>
     normalizeText(description).trim().replaceAll(RegExp(r'\s+'), ' ');
 
-/// One category's spending; [share] is from 0 to 1 of the total.
-typedef CategoryShare = ({SpendingCategory category, int cents, double share});
+/// Display label for a spending category, rendering `null` as "Sem categoria"
+/// (RF-31).
+String spendingCategoryLabel(SpendingCategory? category) =>
+    category?.label ?? 'Sem categoria';
 
-/// RF-35: categories by spending, largest first. Non-spending transactions
-/// are ignored, so it can take a whole history.
+/// One category's spending; [category] is `null` for uncategorized spending
+/// ("Sem categoria", RF-31), and [share] is from 0 to 1 of the total.
+typedef CategoryShare = ({SpendingCategory? category, int cents, double share});
+
+/// RF-35 & RF-31: categories by spending, largest first. Uncategorized
+/// spending is kept explicitly under `null` ("Sem categoria") so it is never
+/// silently dropped from monthly totals or merged into "Outros".
 List<CategoryShare> categoryRanking(Iterable<Transaction> transactions) {
-  final totals = <SpendingCategory, int>{};
+  final totals = <SpendingCategory?, int>{};
   for (final t in transactions.where(isSpending)) {
-    final category = t.category ?? SpendingCategory.other;
+    final category = t.category;
     totals[category] = (totals[category] ?? 0) - t.amountCents;
   }
   // A category refunded more than it spent has nothing to show.
@@ -309,7 +339,7 @@ List<CategoryShare> categoryRanking(Iterable<Transaction> transactions) {
   ]..sort(
     (a, b) => b.cents != a.cents
         ? b.cents - a.cents
-        : a.category.index - b.category.index,
+        : (a.category?.index ?? 999) - (b.category?.index ?? 999),
   );
 }
 

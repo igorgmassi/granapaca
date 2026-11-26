@@ -10,8 +10,8 @@ import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 
 /// Gastos screen with interactive Donut chart (RF-34), full horizontal bar
-/// ranking (RF-35), and period/bank/account filters aligned with Extrato
-/// (RF-36, RF-05).
+/// ranking (RF-35), explicit "Sem categoria" representation (RF-31), and
+/// period/bank/account filters aligned with Extrato (RF-36, RF-05).
 class SpendingScreen extends StatelessWidget {
   const SpendingScreen({super.key});
 
@@ -39,20 +39,30 @@ class SpendingScreen extends StatelessWidget {
         )
         .toList(growable: false);
 
-    void openCategoryInHistory(SpendingCategory? category) {
-      final restCategories = category == null
-          ? ranking.skip(donutCategories).map((c) => c.category).toSet()
+    void openCategoryInHistory({
+      SpendingCategory? category,
+      bool uncategorizedOnly = false,
+    }) {
+      final isRemainder = category == null && !uncategorizedOnly;
+      final rest = isRemainder
+          ? ranking.skip(donutCategories)
+          : const <CategoryShare>[];
+      final restCategories = isRemainder
+          ? rest.map((c) => c.category).whereType<SpendingCategory>().toSet()
           : null;
+      final restHasUncategorized =
+          isRemainder && rest.any((c) => c.category == null);
       state.openHistoryWithFilter(
         TxFilter(
           from: from,
           to: to,
           bankId: state.spendingBankId,
           accountId: state.spendingAccountId,
-          category: category,
+          category: uncategorizedOnly ? null : category,
           categories: restCategories != null && restCategories.isNotEmpty
               ? restCategories
               : null,
+          uncategorizedOnly: uncategorizedOnly || restHasUncategorized,
           spendingOnly: true,
         ),
       );
@@ -145,7 +155,7 @@ class SpendingScreen extends StatelessWidget {
                 title: 'Sem gastos neste período',
                 subtitle:
                     'Não há despesas registradas para os filtros selecionados.',
-                actionLabel: 'Voltar para março/2026',
+                actionLabel: 'Voltar para ${formatShortMonth(data.today)}',
                 onAction: () => state.setSpendingFilters(
                   month: DateTime(data.today.year, data.today.month),
                   clearBank: true,
@@ -160,13 +170,20 @@ class SpendingScreen extends StatelessWidget {
           donut: donut,
           totalCents: totalSpentCents,
           hideValues: state.hideValues,
-          onSelectCategory: openCategoryInHistory,
+          onSelectSlice: ({category, uncategorizedOnly = false}) =>
+              openCategoryInHistory(
+                category: category,
+                uncategorizedOnly: uncategorizedOnly,
+              ),
         );
 
         final rankingCard = CategoryRankingWidget(
           ranking: ranking,
           hideValues: state.hideValues,
-          onSelectCategory: openCategoryInHistory,
+          onSelectCategory: (category) => openCategoryInHistory(
+            category: category,
+            uncategorizedOnly: category == null,
+          ),
         );
 
         return ListView(
@@ -247,6 +264,7 @@ class _DonutSegment {
     required this.cents,
     required this.share,
     this.category,
+    this.isRemainder = false,
   });
 
   final String label;
@@ -254,22 +272,27 @@ class _DonutSegment {
   final int cents;
   final double share;
   final SpendingCategory? category;
+  final bool isRemainder;
+
+  bool get isUncategorized => !isRemainder && category == null;
 }
 
-/// Interactive Donut chart (RF-34) with hit-testing and accessible legend.
+/// Interactive Donut chart (RF-34, RF-31) with hit-testing and accessible
+/// legend.
 class DonutChartWidget extends StatelessWidget {
   const DonutChartWidget({
     super.key,
     required this.donut,
     required this.totalCents,
     required this.hideValues,
-    required this.onSelectCategory,
+    required this.onSelectSlice,
   });
 
   final Donut donut;
   final int totalCents;
   final bool hideValues;
-  final ValueChanged<SpendingCategory?> onSelectCategory;
+  final void Function({SpendingCategory? category, bool uncategorizedOnly})
+  onSelectSlice;
 
   List<_DonutSegment> _segments(BuildContext context) {
     final tokens = GranaTokens.of(context);
@@ -277,8 +300,8 @@ class DonutChartWidget extends StatelessWidget {
     return [
       for (final s in donut.slices)
         _DonutSegment(
-          label: s.category.label,
-          color: tokens.colorForCategory(s.category),
+          label: spendingCategoryLabel(s.category),
+          color: tokens.colorForOptionalCategory(s.category),
           cents: s.cents,
           share: s.share,
           category: s.category,
@@ -289,6 +312,7 @@ class DonutChartWidget extends StatelessWidget {
           color: scheme.outline,
           cents: donut.restCents,
           share: donut.restShare,
+          isRemainder: true,
         ),
     ];
   }
@@ -315,7 +339,10 @@ class DonutChartWidget extends StatelessWidget {
     for (final seg in segments) {
       final sweep = seg.share * 2 * math.pi;
       if (angle >= start && angle <= start + sweep) {
-        onSelectCategory(seg.category);
+        onSelectSlice(
+          category: seg.category,
+          uncategorizedOnly: seg.isUncategorized,
+        );
         return;
       }
       start += sweep;
@@ -408,11 +435,16 @@ class DonutChartWidget extends StatelessWidget {
             for (final seg in segments)
               InkWell(
                 key: Key(
-                  seg.category != null
-                      ? 'donut_legend_${seg.category!.name}'
-                      : 'donut_legend_rest',
+                  seg.isRemainder
+                      ? 'donut_legend_rest'
+                      : (seg.category != null
+                            ? 'donut_legend_${seg.category!.name}'
+                            : 'donut_legend_uncategorized'),
                 ),
-                onTap: () => onSelectCategory(seg.category),
+                onTap: () => onSelectSlice(
+                  category: seg.category,
+                  uncategorizedOnly: seg.isUncategorized,
+                ),
                 borderRadius: BorderRadius.circular(GranaRadius.chip),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -504,7 +536,8 @@ class _DonutPainter extends CustomPainter {
       oldDelegate.segments != segments || oldDelegate.gapColor != gapColor;
 }
 
-/// Horizontal bar ranking showing ALL categories in descending order (RF-35).
+/// Horizontal bar ranking showing ALL categories (including "Sem categoria")
+/// in descending order (RF-35, RF-31).
 class CategoryRankingWidget extends StatelessWidget {
   const CategoryRankingWidget({
     super.key,
@@ -515,7 +548,7 @@ class CategoryRankingWidget extends StatelessWidget {
 
   final List<CategoryShare> ranking;
   final bool hideValues;
-  final ValueChanged<SpendingCategory> onSelectCategory;
+  final ValueChanged<SpendingCategory?> onSelectCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -545,7 +578,11 @@ class CategoryRankingWidget extends StatelessWidget {
             const SizedBox(height: GranaSpacing.lg),
             for (final item in ranking) ...[
               InkWell(
-                key: Key('ranking_row_${item.category.name}'),
+                key: Key(
+                  item.category != null
+                      ? 'ranking_row_${item.category!.name}'
+                      : 'ranking_row_uncategorized',
+                ),
                 onTap: () => onSelectCategory(item.category),
                 borderRadius: BorderRadius.circular(GranaRadius.chip),
                 child: Padding(
@@ -559,14 +596,16 @@ class CategoryRankingWidget extends StatelessWidget {
                       Row(
                         children: [
                           Icon(
-                            iconForCategory(item.category),
+                            iconForOptionalCategory(item.category),
                             size: 18,
-                            color: tokens.colorForCategory(item.category),
+                            color: tokens.colorForOptionalCategory(
+                              item.category,
+                            ),
                           ),
                           const SizedBox(width: GranaSpacing.sm),
                           Expanded(
                             child: Text(
-                              item.category.label,
+                              spendingCategoryLabel(item.category),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                               ),
@@ -612,7 +651,7 @@ class CategoryRankingWidget extends StatelessWidget {
                                 FractionallySizedBox(
                                   widthFactor: value.clamp(0.02, 1.0),
                                   child: Container(
-                                    color: tokens.colorForCategory(
+                                    color: tokens.colorForOptionalCategory(
                                       item.category,
                                     ),
                                   ),

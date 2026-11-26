@@ -75,13 +75,19 @@ class _BankDetailScreenState extends State<BankDetailScreen> {
       ),
       body: Column(
         children: [
-          DemoBanner(
-            onExploreGuide: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const OnboardingScreen(profileOnly: false),
+          if (state.isDemoMode)
+            DemoBanner(
+              onExploreGuide: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const OnboardingScreen(profileOnly: false),
+                ),
               ),
+            )
+          else if (state.isOffline)
+            OfflineBanner(
+              lastSyncedAt: state.lastSyncedAt,
+              onRetry: state.syncFromServer,
             ),
-          ),
           Expanded(
             child: Center(
               child: ConstrainedBox(

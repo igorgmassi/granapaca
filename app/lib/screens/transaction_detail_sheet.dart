@@ -83,6 +83,15 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
   }
 
   Future<void> _saveCorrection(AppState state, EffectiveTransaction tx) async {
+    if (!state.canEditTransactions) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(AppState.offlineEditBlockedMessage)),
+        );
+      }
+      return;
+    }
+
     final descTrimmed = _descriptionController.text.trim();
     final descChanged =
         descTrimmed.isNotEmpty && descTrimmed != tx.description;
@@ -337,6 +346,32 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (!state.canEditTransactions) ...[
+                const SizedBox(height: GranaSpacing.sm),
+                Card(
+                  key: const Key('tx_offline_edit_warning'),
+                  color: tokens.milho.withValues(alpha: 0.25),
+                  child: Padding(
+                    padding: const EdgeInsets.all(GranaSpacing.md),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_off_outlined, color: tokens.sobreMilho),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            AppState.offlineEditBlockedMessage,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.sobreMilho,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: GranaSpacing.md),
               TextField(
                 key: const Key('tx_description_field'),
@@ -525,6 +560,16 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                             OutlinedButton(
                               key: Key('undo_${entry.id}'),
                               onPressed: () {
+                                if (!state.canEditTransactions) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        AppState.offlineEditBlockedMessage,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
                                 state.undoAdjustment(entry.id);
                                 setState(() => _syncFromState(state));
                               },
