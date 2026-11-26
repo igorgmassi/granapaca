@@ -9,7 +9,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      GRANAPACA_DOMAIN: ${GRANAPACA_DOMAIN:-}
+      GRANAPACA_DOMAIN: ${GRANAPACA_DOMAIN:?Defina GRANAPACA_DOMAIN no infra/.env}
     ports:
       - "80:80"
       - "443:443"

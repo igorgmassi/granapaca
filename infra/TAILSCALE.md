@@ -1,6 +1,6 @@
 # Acesso privado com Tailscale (recomendado) e proxy reverso opcional com Caddy
 
-Por padrão, o `infra/compose.yaml` publica a API do GranaPaCá **somente em `127.0.0.1:8080`** e não abre nenhuma porta do PostgreSQL ([ADR-009](../docs/adr/0009-hospedagem-em-fases-e-rede-privada-tailscale.md)). A forma recomendada de acessar a sua instância do celular ou de outro computador é pela rede privada do **Tailscale**, sem abrir portas para a internet.
+Por padrão, o `infra/compose.yaml` publica a API do GranaPaCá **somente em `127.0.0.1:8080`** e não abre nenhuma porta do PostgreSQL (ADR-009). A forma recomendada de acessar a sua instância do celular ou de outro computador é pela rede privada do **Tailscale**, sem abrir portas para a internet.
 
 ## 1. Acesso privado via Tailscale (padrão recomendado)
 
