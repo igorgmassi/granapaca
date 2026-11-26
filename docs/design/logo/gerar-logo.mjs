@@ -1,8 +1,11 @@
 // Gera logo, símbolo e ícones do GranaPaCá em SVG (Identidade Toca Editorial — Opção B: Paca Deitada Evoluída).
 // Uso: node docs/design/logo/gerar-logo.mjs
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
-const SANS = "'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif";
+const T = JSON.parse(readFileSync(new URL("../tokens/tokens.json", import.meta.url), "utf8"));
+const CL = T.cor.esquema.claro;
+const ES = T.cor.esquema.escuro;
+const SANS = `'${T.tipografia.familias.marca}', '${T.tipografia.familias.interface}', system-ui, -apple-system, sans-serif`;
 
 // ---------- Silhueta da paca deitada (sem contorno preto, focinho alongado e pintas limpas) ----------
 // Quadro base 256x256 (centrada em 128, 134), reutilizada no logo, símbolo e ícones.
@@ -64,8 +67,8 @@ function pacaVazada(id, cor, { pintas = PINTAS_5, olho = true, dobra = true, nar
 
 // ---------- Logo (Opção B — Paca Deitada Evoluída sobre "PaCá") ----------
 const LOGO = {
-  cor: { grana: "#231C16", paca: "#A84C19", bicho: "#B85C28", detalhe: "#FAF8F5", fundo: null },
-  escuro: { grana: "#F5F1EC", paca: "#E5965C", bicho: "#E5965C", detalhe: "#14110F", fundo: "#14110F" },
+  cor: { grana: CL.onSurface, paca: CL.primary, bicho: CL.primary, detalhe: CL.surface, fundo: null },
+  escuro: { grana: ES.onSurface, paca: ES.primary, bicho: ES.primary, detalhe: ES.surface, fundo: ES.surface },
   mono: { grana: "currentColor", paca: "currentColor", bicho: "currentColor", detalhe: null, fundo: null },
 };
 
@@ -74,10 +77,10 @@ function logo(nome, { respiro = false } = {}) {
   const m = respiro ? 44 : 20;
   const W = 524, H = 172;
   const vb = [-m, -m, W + 2 * m, H + 2 * m];
-  const fundo = respiro ? "#FAF8F5" : c.fundo;
+  const fundo = respiro ? CL.surface : c.fundo;
   const guia = respiro
-    ? `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#8A7B6D" stroke-width="1.5" stroke-dasharray="8 6"/>` +
-      `<rect x="${-m + 2}" y="${-m + 2}" width="${W + 2 * m - 4}" height="${H + 2 * m - 4}" fill="none" stroke="#B53720" stroke-width="2" stroke-dasharray="10 6"/>`
+    ? `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${CL.outline}" stroke-width="1.5" stroke-dasharray="8 6"/>` +
+      `<rect x="${-m + 2}" y="${-m + 2}" width="${W + 2 * m - 4}" height="${H + 2 * m - 4}" fill="none" stroke="${CL.error}" stroke-width="2" stroke-dasharray="10 6"/>`
     : "";
 
   // Paca deitada pousada com respiro limpo logo acima de "aC" (sem tocar no "P" nem no acento do "á").
@@ -98,7 +101,7 @@ function logo(nome, { respiro = false } = {}) {
     (fundo ? `<rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="${fundo}"/>` : "") +
     guia +
     bichoSvg +
-    `<text x="18" y="148" font-family="${SANS}" font-size="82" font-weight="700" letter-spacing="-2.4">` +
+    `<text x="18" y="148" textLength="480" lengthAdjust="spacing" font-family="${SANS}" font-size="82" font-weight="700" letter-spacing="-2.4">` +
     `<tspan fill="${c.grana}">Grana </tspan><tspan fill="${c.paca}">PaCá</tspan></text>` +
     `</svg>\n`
   );
@@ -111,18 +114,18 @@ const fundo = (cor, rx = 0) => (cor ? `<rect width="256" height="256"${rx ? ` rx
 const escala = (k, dx, dy, corpo) => `<g transform="translate(${128 + dx} ${128 + dy}) scale(${k}) translate(-134 -131)">${corpo}</g>`;
 
 const simboloSvg = () =>
-  svg256("Símbolo do GranaPaCá", escala(1.12, 0, 2, pacaDeitada({ corpo: "#A84C19", detalhe: "#FAF8F5" })));
+  svg256("Símbolo do GranaPaCá", escala(1.12, 0, 2, pacaDeitada({ corpo: CL.primary, detalhe: CL.surface })));
 
 const iconeClaro = () =>
   svg256(
     "Ícone do GranaPaCá",
-    fundo("#A84C19") + escala(1.06, 0, 2, pacaDeitada({ corpo: "#FAF8F5", detalhe: "#A84C19" }))
+    fundo(CL.primary) + escala(1.06, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary }))
   );
 
 const iconeEscuro = () =>
   svg256(
     "Ícone do GranaPaCá, aparência escura",
-    fundo("#1E1A17") + escala(1.06, 0, 2, pacaDeitada({ corpo: "#E5965C", detalhe: "#1E1A17" }))
+    fundo(ES.surfaceContainerLow) + escala(1.06, 0, 2, pacaDeitada({ corpo: ES.primary, detalhe: ES.surfaceContainerLow }))
   );
 
 const iconeTingido = () => {
@@ -132,17 +135,17 @@ const iconeTingido = () => {
 
 // Android adaptativo: círculo seguro de 66 dp dentro de 108 dp (~61% do quadro).
 const iconeAndroidFrente = () =>
-  svg256("Frente do ícone adaptativo", escala(0.74, 0, 2, pacaDeitada({ corpo: "#FAF8F5", detalhe: "#A84C19" })));
+  svg256("Frente do ícone adaptativo", escala(0.74, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary })));
 
 const iconeAndroidMono = () => {
-  const v = pacaVazada("pacaMono", "#000000", { pintas: PINTAS_3 });
+  const v = pacaVazada("pacaMono", CL.shadow, { pintas: PINTAS_3 });
   return svg256("Ícone monocromático", escala(0.74, 0, 2, v.body), `<defs>${v.defs}</defs>`);
 };
 
 const faviconSvg = () =>
   svg256(
     "GranaPaCá",
-    fundo("#A84C19", 56) + escala(1.14, 0, 2, pacaDeitada({ corpo: "#FAF8F5", detalhe: "#A84C19", pintas: PINTAS_3, narina: false }))
+    fundo(CL.primary, 56) + escala(1.14, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary, pintas: PINTAS_3, narina: false }))
   );
 
 const ARQUIVOS = {
@@ -154,7 +157,7 @@ const ARQUIVOS = {
   "icone-ios-claro.svg": iconeClaro(),
   "icone-ios-escuro.svg": iconeEscuro(),
   "icone-ios-tingido.svg": iconeTingido(),
-  "icone-android-fundo.svg": svg256("Fundo do ícone adaptativo", fundo("#A84C19")),
+  "icone-android-fundo.svg": svg256("Fundo do ícone adaptativo", fundo(CL.primary)),
   "icone-android-frente.svg": iconeAndroidFrente(),
   "icone-android-mono.svg": iconeAndroidMono(),
   "favicon.svg": faviconSvg(),

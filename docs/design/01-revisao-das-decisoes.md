@@ -1,9 +1,9 @@
 # Parte 1: Revisão das decisões
 
-O briefing de identidade visual fica quase todo como está. Conceito, Paçoca, paleta da interface, tipografia, formas e princípios de acessibilidade seguem iguais. Mudam 17 pontos, por três motivos: as respostas às perguntas iniciais, regras do plano do projeto que o briefing não cobria e medições de cor que reprovaram a paleta dos gráficos.
+O briefing de identidade visual fica quase todo como está na estrutura de produto, com a camada visual atualizada pela revisão **Toca Editorial** (tokens `v2.0.0`). Mudam 18 pontos, por quatro motivos: as respostas às perguntas iniciais, regras do plano do projeto que o briefing não cobria, medições de cor que reprovaram a paleta dos gráficos e a revisão visual da seção 18.
 
-- **Data:** 2026-11-10
-- **Base:** briefing de identidade visual, respostas às cinco perguntas iniciais e o plano do projeto.
+- **Data:** 2026-11-10; atualizado para Toca Editorial em 2026-11-24
+- **Base:** briefing de identidade visual, respostas às cinco perguntas iniciais, plano do projeto e revisão visual Toca Editorial.
 - **Marcas:** [Suposição] é decisão tomada aqui sem confirmação. [Conferir: fonte] é fato externo a validar na documentação oficial antes de implementar.
 
 ## O que fica
@@ -12,11 +12,11 @@ O briefing de identidade visual fica quase todo como está. Conceito, Paçoca, p
 |---|---|---|
 | Conceito | A paca que junta tudo: o app é a toca da Paçoca, quente e brasileiro, longe do azul de banco. | — |
 | Regra de ouro e tom | Diversão nos detalhes, clareza no que importa. Um amigo que entende de dinheiro. "Flexível", nunca "Supérfluo". No máximo uma brincadeira por tela, e nenhuma em erro que envolve dinheiro. | — |
-| Paçoca | Aparência, expressões e onde ela não aparece. | Ganha uma expressão (mudança 13). |
-| Paleta da interface | Os 11 tokens, nos temas claro e escuro. | 34 pares medidos: todos os textos passam de 4,5:1 e todas as bordas de 3:1. Milho só funciona como fundo com texto Cacau por cima (7,71:1); sozinho, como ícone ou borda sobre branco, fica em 2,14:1. |
+| Paçoca | Aparência refinada (sem pochete), expressões e onde ela não aparece. | Ganha uma expressão (mudança 13) e a coreografia sem pochete (mudança 18). |
+| Paleta da interface | Tokens Toca Editorial (`v2.0.0`), nos temas claro e escuro. | 108 pares medidos (54 por tema): todos os textos passam de 4,5:1 e todas as bordas de 3:1. Milho só funciona como fundo com texto Cacau por cima (7,86:1); sozinho, como ícone ou borda sobre branco, fica em 2,14:1. |
 | Dinheiro | Gasto na cor do texto, com "−". Receita em Mata, com "+". Vermelho só para alerta. | — |
-| Essencialidade | Escala em tons de Caramelo, nunca verde e vermelho. | A escala passa no validador de cores nos dois temas. Flexível fica no limite (3,03:1 sobre a Superfície) e cai para 2,8:1 sobre o fundo Paçoca, então o marcador aparece só em cartões e folhas. |
-| Tipografia | Baloo 2 na marca, nos títulos e nas falas da Paçoca. Figtree na interface, com algarismos tabulares. Saldo em Figtree SemiBold com centavos menores. | Muda a forma de carregar as fontes (mudança 11). |
+| Essencialidade | Escala 100% em tons de Caramelo, nunca verde e vermelho. | A escala `v2.0.0` passa no validador de cores nos dois temas: Flexível marca 3,63:1 sobre a Superfície clara (`#FFFFFF`), 3,42:1 sobre o Algodão (`#FAF8F5`) e 4,51:1 na Superfície escura (`#1E1A17`). |
+| Tipografia | `Plus Jakarta Sans` na marca, nos títulos e nas falas da Paçoca. `Inter` na interface, com algarismos tabulares (`tnum`). Saldo em `Inter` Bold (`valorDestaque`) e SemiBold (`valorGrande`) com centavos menores. | Atualizada na revisão Toca Editorial (mudança 18) e empacotada no app (mudança 11). |
 | Formas | Cartões com 20 px, chips com 12 px, botões em pílula, espaçamento em múltiplos de 4, margem de 16 px no celular e pouca sombra. | — |
 | Pintas | Ícone, carregamento, R$ ••• e indicador de passos. | Ganham um uso novo (mudança 7). |
 | Ícones | Phosphor regular nas telas e duotone nas ilustrações. | [Conferir: pub.dev/packages/phosphor_flutter] na Parte 12. |
@@ -134,7 +134,7 @@ Tocar numa fatia, numa barra ou num dia abre as transações correspondentes. A 
 
 ### 11. Fontes dentro do app
 
-Baloo 2 e Figtree vão empacotadas no app, com a licença OFL ao lado dos arquivos. O app nunca baixa fonte da internet ao abrir. Com o pacote google_fonts, isso é `GoogleFonts.config.allowRuntimeFetching = false` [Conferir: pub.dev/packages/google_fonts].
+`Plus Jakarta Sans` e `Inter` (que substituíram `Baloo 2` e `Figtree` na mudança 18) vão empacotadas no app, com a licença OFL ao lado dos arquivos. O app nunca baixa fonte da internet ao abrir. Com o pacote google_fonts, isso é `GoogleFonts.config.allowRuntimeFetching = false` [Conferir: pub.dev/packages/google_fonts].
 
 **Por quê:** privacidade, porque abrir o app não avisa ninguém de fora; funcionamento offline, que o plano exige; e texto certo já na primeira abertura.
 
@@ -158,7 +158,7 @@ No Android, ícone adaptativo com a camada monocromática que o briefing já ped
 
 ### 15. Nome: "Grana PaCá" no logo, "granapaca" no repositório
 
-O logo mudou em 2026-11-12: "Grana PaCá" num letreiro serifado, com "Grana" em verde Mata, "PaCá" em Caramelo, a paca deitada sobre o nome e o acento em forma de pinta. A pochete é só o ícone do app e não entra no logo. As fontes do app passaram a ser Baloo 2 (marca) e Figtree (interface). Detalhes na [Parte 4](04-logo-e-icone.md).
+Na revisão de 2026-11-12 o logo havia adotado letreiro serifado com pochete no ícone; na mudança 18 (2026-11-24), evoluiu para a **Opção B — Paca Deitada Evoluída** com `Plus Jakarta Sans Bold` e `Inter`, usando a própria paca deitada como ícone do app (ver [Parte 4](04-logo-e-icone.md)).
 
 **Por quê:** é a grafia do repositório, do README e do plano. Numa palavra só, o nome também não quebra em duas linhas sob o ícone na tela do celular. Se preferir "Grana PaCá" com espaço, só o logo muda.
 

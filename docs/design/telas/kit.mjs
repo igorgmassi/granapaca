@@ -40,9 +40,12 @@ export function pacoca(nome, x, y, alt) {
   return `<image href="${m.uri}" x="${(x - w / 2).toFixed(1)}" y="${(y - alt).toFixed(1)}" width="${w.toFixed(1)}" height="${alt}"/>`;
 }
 
+let nPacClip = 0;
+
 // Paçoca refinada da Toca Editorial (sem contorno preto, sem pochete, focinho suavemente alongado de paca).
 // Estados: "modo", "email", "senha", "seguranca", "pronto", "pensando", "retrato".
-export function pacocaEditorial(estado, cx, baseY, escala = 1) {
+export function pacocaEditorial(estado, cx, baseY, escala = 1, { camada = "todas" } = {}) {
+  if (camada === "frente" && estado !== "seguranca") return "";
   const pele = "#C97C44", peleEsc = "#AE632F", peleClara = "#D9945C", creme = "#F6E5CC", nariz = "#E0876F", olho = "#23160E";
   const pintasFlanco =
     `<ellipse cx="-44" cy="-34" rx="5" ry="9" transform="rotate(-14 -44 -34)" fill="${creme}" opacity="0.9"/>` +
@@ -87,9 +90,10 @@ export function pacocaEditorial(estado, cx, baseY, escala = 1) {
 
   let s = "";
   if (estado === "retrato") {
-    s = `<clipPath id="pacClip${cx}${baseY}"><circle cx="0" cy="-64" r="46"/></clipPath>` +
+    const clipId = `pacClip${nPacClip++}`;
+    s = `<clipPath id="${clipId}"><circle cx="0" cy="-64" r="46"/></clipPath>` +
       `<circle cx="0" cy="-64" r="46" fill="${c.secondaryContainer}"/>` +
-      `<g clip-path="url(#pacClip${cx}${baseY})">` + corpo + cabecaBase(0, 6, 0) + olhosNormais(0, 0) + `</g></g>`;
+      `<g clip-path="url(#${clipId})">` + corpo + cabecaBase(0, 6, 0) + olhosNormais(0, 0) + `</g></g>`;
   } else if (estado === "modo") {
     s = corpo + cabecaBase(-4, 0, -6) + olhosNormais(-3, 2) + `</g>` + patasBorda;
   } else if (estado === "email") {
@@ -114,9 +118,11 @@ export function pacocaEditorial(estado, cx, baseY, escala = 1) {
       `<rect x="-8" y="-3" width="16" height="14" rx="3" fill="${c.milho}"/>` +
       `<path d="M-4 -3 V-8 A4 4 0 0 1 4 -8 V-3" fill="none" stroke="${c.milho}" stroke-width="2.6" stroke-linecap="round"/>` +
       `<circle cx="0" cy="4" r="2.2" fill="${olho}"/></g>`;
-    s = corpo + cabecaBase(0, -2, 0) + olhosNormais(0, 0) + `</g>` +
+    const tras = corpo + cabecaBase(0, -2, 0) + olhosNormais(0, 0) + `</g>`;
+    const frente =
       `<ellipse cx="-24" cy="-16" rx="11" ry="8" fill="${peleClara}"/>` +
       `<ellipse cx="24" cy="-16" rx="11" ry="8" fill="${peleClara}"/>` + escudo;
+    s = camada === "tras" ? tras : camada === "frente" ? frente : tras + frente;
   } else if (estado === "pronto") {
     const moedas =
       `<circle cx="-58" cy="-86" r="8" fill="${c.milho}" opacity="0.85"/>` +

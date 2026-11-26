@@ -8,7 +8,7 @@ const passos5 = (ativo) =>
     const x = 148 + i * 16;
     const atual = i === ativo - 1;
     const feito = i < ativo - 1;
-    return `<circle cx="${x}" cy="34" r="${atual ? 4.5 : 3.5}" fill="${atual ? c.primary : feito ? c.onSurfaceVariant : c.outlineVariant}"/>`;
+    return `<circle cx="${x}" cy="34" r="${atual ? 4.5 : 3.5}" fill="${atual ? c.primary : feito ? c.onSurfaceVariant : c.outline}"/>`;
   }).join("");
 
 const X = 28, LW = 304;
@@ -35,9 +35,10 @@ function telaOnboarding(etapa, totalGrupo, legenda, estadoPacoca, conteudo) {
     0,
     0,
     passos5(totalGrupo) +
-      pacocaEditorial(estadoPacoca, 180, cardY + 2, 1.05) +
+      pacocaEditorial(estadoPacoca, 180, cardY + 2, 1.05, { camada: "tras" }) +
       rr(14, cardY, 332, 514, 28, c.surfaceContainerLow, { borda: c.outlineVariant }) +
       patasFrente +
+      pacocaEditorial(estadoPacoca, 180, cardY + 2, 1.05, { camada: "frente" }) +
       conteudo(),
     legenda,
     c.surface
@@ -117,7 +118,7 @@ const ETAPAS = [
     chips(332, [["Carro próprio", false], ["Ônibus ou metrô", true], ["Aplicativo", true], ["Moto", false], ["Bicicleta ou a pé", false]]) +
     botao(X, 636, LW, "Continuar") + pular()],
 
-  ["9. Revisão das regras", 4, "seguranca", () =>
+  ["9. Revisão das regras", 4, "pensando", () =>
     marca(X, 278, "Olha o que eu entendi", { t: 22 }) +
     txt(X, 304, "Dá para mudar quando quiser.", { t: 13, cor: c.onSurfaceVariant }) +
     [["Aluguel", "Essencial", 3, c.essencial], ["Ônibus e metrô", "Essencial", 3, c.essencial], ["Aplicativo", "Importante", 2, c.importante], ["Streaming", "Flexível", 1, c.flexivel]]
@@ -156,8 +157,8 @@ function inicio({ oculto, vazio } = {}) {
   // Cartão hero: Sobrou este mês + badge verde sutil + barra 100% caramelo.
   s += cartao(16, 86, 328, 194) +
     txt(32, 116, "Sobrou este mês", { t: 13, p: 600, cor: c.onSurfaceVariant }) +
-    (oculto ? icone("olho", 304, 98, c.onSurfaceVariant)
-      : rr(266, 100, 60, 24, 12, c.mata, { op: 0.16 }) + txt(296, 116, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" })) +
+    (!oculto ? rr(234, 100, 60, 24, 12, c.mata, { op: 0.16 }) + txt(264, 116, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" }) : "") +
+    icone("olho", 304, 98, c.onSurfaceVariant) +
     (oculto
       ? txt(32, 166, "R$", { t: 38, p: 700 }) + [0, 1, 2].map((k) => `<circle cx="${104 + k * 20}" cy="153" r="6.5" fill="${c.onSurface}"/>`).join("")
       : valor(32, 166, "1.284", "90")) +
@@ -195,7 +196,8 @@ function inicioDesktop() {
 
   // Coluna esquerda: resumo, fala editorial da Paçoca e contas conectadas.
   s += cartao(120, 96, 520, 224) + txt(144, 132, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) +
-    rr(554, 114, 62, 24, 12, c.mata, { op: 0.16 }) + txt(585, 130, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" }) +
+    rr(520, 114, 62, 24, 12, c.mata, { op: 0.16 }) + txt(551, 130, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" }) +
+    icone("olho", 592, 112, c.onSurfaceVariant) +
     valor(144, 190, "1.284", "90", 46) +
     txt(144, 222, "Entrou R$ 6.200,00 · Saiu R$ 4.915,10", { t: 13, cor: c.onSurfaceVariant }) +
     rr(144, 244, 472, 11, 5.5, c.surfaceContainerHighest) + rr(144, 244, 212, 11, 5.5, c.essencial) + rr(358, 244, 94, 11, 0, c.importante) + rr(454, 244, 67, 11, 0, c.flexivel) +

@@ -2,10 +2,10 @@
 
 Os componentes do app, com os estados de cada um, nos temas claro e escuro. Quase todos são widgets do Material 3 com os tokens da [Parte 2](02-design-tokens.md). Só cinco são próprios do GranaPaCá.
 
-- **Data:** 2026-11-12
+- **Data:** 2026-11-12; atualizado para Toca Editorial em 2026-11-24
 - **Para regenerar:** `node docs/design/componentes/gerar-componentes.mjs`
 - **De onde vêm as cores e as medidas:** do [`tokens.json`](tokens/tokens.json). As folhas não têm cor escrita à mão.
-- **Fontes nas imagens:** o app usa Baloo 2 e Figtree. No GitHub, as folhas aparecem com a fonte do sistema, porque um SVG não carrega fontes de fora.
+- **Fontes nas imagens:** o app usa `Plus Jakarta Sans` e `Inter`. No GitHub, as folhas aparecem com a fonte do sistema, porque um SVG não carrega fontes de fora.
 - **Dados:** fictícios, como em todo o repositório.
 
 ## Regras que valem para todos
@@ -13,7 +13,7 @@ Os componentes do app, com os estados de cada um, nos temas claro e escuro. Quas
 | Regra | Valor |
 |---|---|
 | Área de toque | 48 × 48 no mínimo, mesmo quando o desenho é menor (chip de 32, chave, caixa de marcar) |
-| Foco pelo teclado | Anel Caramelo (`primary`) de 2, afastado 2 do componente |
+| Foco pelo teclado | Anel Terracota (`primary`) de 2, afastado 2 do componente |
 | Pressionado | Camada da cor do conteúdo com 10% de opacidade |
 | Passar o mouse (desktop) | A mesma camada, com 8% |
 | Desabilitado | Conteúdo com 38% de opacidade; fundo e borda com 12% do Cacau (`onSurface`) |
@@ -79,16 +79,16 @@ O marcador de pintas vem sempre com o nome do nível. Onde o nome não cabe, as 
 
 | Componente | Base | O que tem |
 |---|---|---|
-| Valor em destaque | `Card` | Rótulo, valor em `valorDestaque` com os centavos menores e uma linha de apoio. |
+| Valor em destaque | `Card` | Rótulo, ícone de olho, valor em `valorDestaque` (`38 px`, peso `700`) com os centavos menores (`22 px`) e uma linha de apoio. |
 | Valores ocultos | O mesmo cartão | "R$" seguido de três pintas. O olho no canto mostra e esconde todos os valores do app. |
-| Fala da Paçoca | Próprio: `FalaDaPacoca` | Balão `primaryContainer` com o texto em `falaPacoca` e a Paçoca ao lado. |
+| Fala da Paçoca | Próprio: `FalaDaPacoca` | Cartão editorial limpo (`surfaceContainerLow` com borda `outlineVariant`), retrato da Paçoca e texto em `falaPacoca`. |
 | Lançamento | Próprio: `LinhaDeLancamento` | Faixa do banco, círculo da categoria, nome, detalhes e valor. |
-| Conta conectada | `Card` | Faixa do banco, nome, saldo em `valorGrande` e a hora da última sincronização. |
+| Conta conectada | `Card` | Faixa do banco, nome, saldo em `valorGrande` (`24 px`, peso `600`, centavos `16 px`) e a hora da última sincronização. |
 
-- **Lançamento:** o valor fica à direita, com algarismos de largura fixa. Entrada usa verde Mata e o sinal "+"; saída usa Cacau e não leva sinal. O nome é cortado com reticências se não couber, e o valor nunca é cortado.
+- **Lançamento:** o valor fica à direita, com algarismos de largura fixa (`tnum`). Entrada usa verde Mata e o sinal "+"; saída usa Cacau (`onSurface`) e o sinal "-". O nome é cortado com reticências se não couber, e o valor nunca é cortado.
 - **"Revisar":** marca o lançamento que a IA classificou com pouca confiança. Tocar abre a correção da categoria.
 - **Faixa do banco:** 4 de largura, na cor que vem do servidor ([Parte 1](01-revisao-das-decisoes.md), mudança 12).
-- **Nas folhas, a Paçoca é um círculo.** No app entra o desenho da [Parte 3](03-mascote.md), na expressão que a situação pede.
+- **Nas folhas, a Paçoca aparece com retrato limpo (`FalaDaPacoca` e `EstadoVazio`).** No app entra o desenho refinado da [Parte 3](03-mascote.md), na expressão que a situação pede.
 - **Leitor de tela:** cada lançamento é lido como uma frase só: "Mercado da Vila, alimentação, débito no Banco Ipê, 187 reais e 43 centavos".
 
 ## Navegação
@@ -135,7 +135,7 @@ O marcador de pintas vem sempre com o nome do nível. Onde o nome não cabe, as 
 |---|---|
 | `MarcadorDePintas` | É o motivo da marca: escala de 1 a 3, passos e carregamento. |
 | `LinhaDeLancamento` | Junta faixa do banco, categoria, texto e valor num alinhamento fixo. |
-| `FalaDaPacoca` | Balão com a mascote e fonte da marca. |
+| `FalaDaPacoca` | Cartão editorial limpo com o retrato da mascote e fonte da marca (`Plus Jakarta Sans`). |
 | `FaixaDeAlerta` | O `MaterialBanner` ocupa a largura toda no topo; aqui o alerta é um cartão dentro da tela. |
 | `EstadoVazio` | Padrão único para toda tela sem dados. |
 

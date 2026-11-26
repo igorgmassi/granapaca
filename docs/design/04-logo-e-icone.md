@@ -3,7 +3,8 @@
 O logo oficial é a **Opção B — Paca Deitada Evoluída**: o nome **Grana PaCá** em tipografia geométrica limpa sem serifa (`Plus Jakarta Sans Bold`), com "Grana" em Cacau (ou Off-white no escuro), "PaCá" em Terracota (ou Âmbar no escuro) e a paca pintada **sem contorno preto** descansando tranquilamente sobre "PaCá". O ícone do app usa a própria silhueta limpa da paca deitada. Tudo está em SVG na pasta [`logo`](logo/).
 
 - **Data:** 2026-11-10; atualizado para Toca Editorial (Opção B) em 2026-11-24
-- **Para regenerar:** `node docs/design/logo/gerar-logo.mjs`
+- **Para regenerar:** `node docs/design/logo/gerar-logo.mjs` (lê cores e famílias tipográficas de [`tokens.json`](tokens/tokens.json))
+- **Tipografia do wordmark em SVG:** o letreiro usa `<text>` com `Plus Jakarta Sans Bold` e `textLength` fixo para manter o alinhamento sob a paca em qualquer visualizador. Quando os arquivos `.ttf`/`.otf` da `Plus Jakarta Sans` (OFL) entrarem no repositório (Parte 12), exportar os glifos em `<path>` para independência de fonte em impressão e lojas.
 
 ## Logo
 
@@ -62,7 +63,7 @@ A silhueta única da paca deitada funciona nativamente sem disco intermediário:
 | Par | Contraste |
 |---|---|
 | Logo claro: "Grana" (`#231C16`) sobre Algodão (`#FAF8F5`) | 15,86:1 |
-| Logo claro: "PaCá" (`#A84C19`) sobre Algodão (`#FAF8F5`) | 5,37:1 |
+| Logo claro: "PaCá" e paca (`#A84C19`) sobre Algodão (`#FAF8F5`) | 5,37:1 |
 | Logo escuro: "Grana" (`#F5F1EC`) sobre Toca Noturna (`#14110F`) | 16,72:1 |
 | Logo escuro: "PaCá" e paca (`#E5965C`) sobre Toca Noturna (`#14110F`) | 7,71:1 |
 | Ícone claro: paca creme (`#FAF8F5`) sobre Terracota (`#A84C19`) | 5,37:1 |
