@@ -10,7 +10,7 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | [ADR-002](0002-monolito-modular.md) | Monólito modular em .NET, com um projeto por módulo e testes de arquitetura; microsserviços fora | Aceito |
 | [ADR-003](0003-bank-provider-pluggy-arquivo-e-sintetico.md) | BankProvider: Pluggy (real e Sandbox), Arquivo OFX/CSV e Sintético | Aceito |
 | [ADR-004](0004-cliente-pluggy-httpclient-tipado.md) | Cliente da Pluggy como HttpClient tipado, sem o SDK oficial | Aceito |
-| ADR-005 | Jobs persistidos no Postgres: Hangfire × Quartz.NET | A escrever |
+| [ADR-005](0005-jobs-em-segundo-plano.md) | Jobs em segundo plano com BackgroundService nativo no MVP; Hangfire e Quartz.NET adiados | Aceito |
 | [ADR-006](0006-stack-do-app-flutter.md) | Stack do app Flutter: Material 3 (`material_ui`), `ChangeNotifier`/`InheritedNotifier`, gráficos `CustomPaint` e mapa de calor próprio | Aceito |
 | [ADR-007](0007-offline-first-e-sincronizacao-por-cursor.md) | Offline-first com cache local cifrado e sincronização incremental por cursor | Aceito |
 | [ADR-008](0008-modo-demo-sem-backend.md) | Modo demo sem backend, com o mesmo dataset sintético | Aceito |
@@ -25,13 +25,13 @@ Status possíveis: A escrever, Proposto, Aceito, Rejeitado e Substituído.
 | [ADR-017](0017-persistencia-dapper-e-dbup.md) | Persistência: Dapper + DbUp (SQL-first) × EF Core, schema por módulo e UUIDv7 | Aceito |
 | [ADR-018](0018-rest-e-openapi-3-1.md) | API REST (`/api/v1/*`) com OpenAPI 3.1 nativo do ASP.NET Core e SSE no chat | Aceito |
 | [ADR-019](0019-tokens-opacos-e-refresh-rotativo.md) | Tokens opacos com refresh rotativo e detecção de reuso | Aceito |
-| ADR-020 | Microsoft.Extensions.AI × Semantic Kernel | A escrever |
+| [ADR-020](0020-integracao-com-provedores-de-ia.md) | Integração com provedores de IA via HttpClient tipado (caminho aberto para Microsoft.Extensions.AI); Semantic Kernel fora | Aceito |
 | [ADR-021](0021-categorizacao-em-camadas-por-regras.md) | Categorização em camadas com motor de regras único e cache por estabelecimento | Aceito |
-| ADR-022 | NFC-e: parser por estado (ES primeiro) com fallback de visão por IA | A escrever |
-| ADR-023 | Minimização e pseudonimização antes de qualquer provedor de IA | A escrever |
+| [ADR-022](0022-nfce-parser-por-estado-e-fallback-ia.md) | NFC-e: parser determinístico (XML SEFAZ 4.00 e QR por estado, ES primeiro) com fallback opcional de visão por IA | Aceito |
+| [ADR-023](0023-minimizacao-e-pseudonimizacao-ia.md) | Minimização e pseudonimização reversível antes de qualquer chamada a provedor de IA | Aceito |
 | [ADR-024](0024-2fa-com-totp.md) | 2FA com TOTP; passkeys adiadas | Aceito |
-| ADR-025 | Comprovantes em volume local cifrado por arquivo; MinIO fora | A escrever |
+| [ADR-025](0025-comprovantes-em-volume-local-cifrado.md) | Comprovantes no volume local `appdata` cifrados por arquivo (AES-256-GCM via Keyring); MinIO fora | Aceito |
 | [ADR-026](0026-licenca-agpl-3.0.md) | Licença AGPL-3.0 | Aceito |
 | [ADR-027](0027-monorepo.md) | Monorepo | Aceito |
-| ADR-028 | Releases multi-arch assinadas, com SBOM e release-please | A escrever |
+| [ADR-028](0028-releases-multi-arch-sbom-e-assinatura.md) | Releases multi-arch (`amd64`/`arm64`) no GHCR com SBOM SPDX e assinatura keyless via Cosign/Sigstore | Aceito |
 | [ADR-029](0029-backup-cifrado-com-restic.md) | Backup diário cifrado fora da máquina com restic, separação da master key e restauração testada | Aceito |
