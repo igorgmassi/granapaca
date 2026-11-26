@@ -494,14 +494,28 @@ void main() {
         final undo2 = find.byKey(const Key('undo_adj-2'));
         await _scrollTo(tester, undo2, scrollable: sheetScrollable);
         expect(undo2, findsOneWidget);
-        expect(find.byKey(const Key('undo_adj-1')), findsNothing);
         expect(find.widgetWithText(OutlinedButton, 'Desfazer'), findsOneWidget);
+        await _scrollTo(
+          tester,
+          find.text('Alimentação → Lazer'),
+          scrollable: sheetScrollable,
+        );
+        expect(find.byKey(const Key('undo_adj-1')), findsNothing);
 
         // Undoing adj-2 exposes Desfazer on adj-1 (now the active adjustment).
+        await tester.scrollUntilVisible(
+          undo2,
+          -250,
+          scrollable: sheetScrollable,
+        );
+        await tester.ensureVisible(undo2);
+        await tester.pumpAndSettle();
         await tester.tap(undo2);
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('undo_adj-2')), findsNothing);
-        expect(find.byKey(const Key('undo_adj-1')), findsOneWidget);
+        final undo1 = find.byKey(const Key('undo_adj-1'));
+        await _scrollTo(tester, undo1, scrollable: sheetScrollable);
+        expect(undo1, findsOneWidget);
         expect(find.widgetWithText(OutlinedButton, 'Desfazer'), findsOneWidget);
       },
     );
