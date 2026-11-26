@@ -1,6 +1,6 @@
-// Tema do GranaPaCá: Material 3 com os tokens de docs/design/tokens/tokens.json.
-// Referência para a Parte 12; o destino final é app/lib/core/theme/.
-// Fontes empacotadas (Baloo 2 e Figtree, OFL), nunca baixadas em tempo de execução.
+// Tema do GranaPaCá (identidade Toca Editorial): Material 3 com os tokens de docs/design/tokens/tokens.json.
+// Referência para o app Flutter (app/lib/theme/).
+// Fontes empacotadas (Plus Jakarta Sans e Inter, OFL), nunca baixadas em tempo de execução.
 import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
@@ -23,6 +23,11 @@ abstract final class GranaMovimento {
   static const transicaoLonga = Duration(milliseconds: 400);
   static const contagem = Duration(milliseconds: 900);
   static const chuvaDeMoedas = Duration(milliseconds: 1200);
+  static const olharTexto = Duration(milliseconds: 120);
+  static const cobrirOlhos = Duration(milliseconds: 220);
+  static const espiadinha = Duration(milliseconds: 180);
+  static const erroCalmo = Duration(milliseconds: 320);
+  static const pulinhoConclusao = Duration(milliseconds: 520);
   static const padrao = Cubic(0.2, 0.0, 0.0, 1.0);
   static const entrada = Cubic(0.05, 0.7, 0.1, 1.0);
   static const saida = Cubic(0.3, 0.0, 0.8, 0.15);
@@ -32,19 +37,19 @@ abstract final class GranaMovimento {
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : d;
 }
 
-const _marca = 'Baloo 2';
-const _interface = 'Figtree';
+const _marca = 'Plus Jakarta Sans';
+const _interface = 'Inter';
 const _tnum = [FontFeature.tabularFigures()];
 
 TextStyle _estilo(String familia, double tamanho, double altura, FontWeight peso) =>
     TextStyle(fontFamily: familia, fontSize: tamanho, height: altura / tamanho, fontWeight: peso);
 
 final _textos = TextTheme(
-  displayMedium: _estilo(_marca, 40, 48, FontWeight.w600),
-  displaySmall: _estilo(_marca, 32, 40, FontWeight.w600),
-  headlineLarge: _estilo(_marca, 28, 36, FontWeight.w600),
-  headlineMedium: _estilo(_marca, 24, 32, FontWeight.w600),
-  headlineSmall: _estilo(_marca, 20, 28, FontWeight.w600),
+  displayMedium: _estilo(_marca, 36, 44, FontWeight.w700),
+  displaySmall: _estilo(_marca, 30, 38, FontWeight.w700),
+  headlineLarge: _estilo(_marca, 26, 34, FontWeight.w700),
+  headlineMedium: _estilo(_marca, 22, 30, FontWeight.w700),
+  headlineSmall: _estilo(_marca, 18, 26, FontWeight.w600),
   titleLarge: _estilo(_interface, 20, 28, FontWeight.w600),
   titleMedium: _estilo(_interface, 16, 24, FontWeight.w600),
   titleSmall: _estilo(_interface, 14, 20, FontWeight.w600),
@@ -92,31 +97,31 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   final List<Color> grafico;
   final Color outros;
 
-  /// Valores em Figtree com algarismos tabulares; os centavos usam [TextStyle.fontSize] menor.
+  /// Valores em Inter com algarismos tabulares; os centavos usam [TextStyle.fontSize] menor.
   final TextStyle valorDestaque, valorGrande, valorLinha;
   final TextStyle falaPacoca;
 
   static final claro = GranaTokens(
-    mata: const Color(0xFF2A7550),
+    mata: const Color(0xFF1D6B48),
     milho: const Color(0xFFE5A62B),
-    sobreMilho: const Color(0xFF2A1C12),
+    sobreMilho: const Color(0xFF231C16),
     rio: const Color(0xFF22649C),
     essencial: const Color(0xFF6F340E),
     importante: const Color(0xFFA65E28),
-    flexivel: const Color(0xFFC17C3E),
+    flexivel: const Color(0xFFBC7638),
     grafico: const [
       Color(0xFF8B3E05), Color(0xFF277BD0), Color(0xFFA78511), Color(0xFF267E4E),
       Color(0xFFFE903C), Color(0xFF7F4B9D), Color(0xFFD54573), Color(0xFF02A8AA),
     ],
     outros: const Color(0xFFA3958A),
-    valorDestaque: _estilo(_interface, 40, 48, FontWeight.w600).copyWith(fontFeatures: _tnum),
+    valorDestaque: _estilo(_interface, 38, 46, FontWeight.w700).copyWith(fontFeatures: _tnum),
     valorGrande: _estilo(_interface, 24, 32, FontWeight.w600).copyWith(fontFeatures: _tnum),
     valorLinha: _estilo(_interface, 16, 24, FontWeight.w600).copyWith(fontFeatures: _tnum),
-    falaPacoca: _estilo(_marca, 18, 26, FontWeight.w500),
+    falaPacoca: _estilo(_marca, 16, 24, FontWeight.w500),
   );
 
   static final escuro = claro.copyWith(
-    mata: const Color(0xFF6CC596),
+    mata: const Color(0xFF62C493),
     milho: const Color(0xFFF3C35A),
     rio: const Color(0xFF7DB9EA),
     essencial: const Color(0xFFF5CBA4),
@@ -177,42 +182,42 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
 
 const _claro = ColorScheme(
   brightness: Brightness.light,
-  primary: Color(0xFFA0521A), onPrimary: Color(0xFFFFFFFF),
-  primaryContainer: Color(0xFFFADCC4), onPrimaryContainer: Color(0xFF3D1A03),
-  secondary: Color(0xFF7A5A43), onSecondary: Color(0xFFFFFFFF),
-  secondaryContainer: Color(0xFFF3E3D3), onSecondaryContainer: Color(0xFF2E1C0F),
-  tertiary: Color(0xFF6E4AA3), onTertiary: Color(0xFFFFFFFF),
+  primary: Color(0xFFA84C19), onPrimary: Color(0xFFFFFFFF),
+  primaryContainer: Color(0xFFFADCC7), onPrimaryContainer: Color(0xFF3D1804),
+  secondary: Color(0xFF6F5A4A), onSecondary: Color(0xFFFFFFFF),
+  secondaryContainer: Color(0xFFF2EAE1), onSecondaryContainer: Color(0xFF2B1F16),
+  tertiary: Color(0xFF6B489E), onTertiary: Color(0xFFFFFFFF),
   tertiaryContainer: Color(0xFFECE1FA), onTertiaryContainer: Color(0xFF2A1450),
-  error: Color(0xFFB83A22), onError: Color(0xFFFFFFFF),
+  error: Color(0xFFB53720), onError: Color(0xFFFFFFFF),
   errorContainer: Color(0xFFFCDDD5), onErrorContainer: Color(0xFF4D1307),
-  surface: Color(0xFFFBF5EC), onSurface: Color(0xFF2A1C12), onSurfaceVariant: Color(0xFF6B5546),
-  surfaceDim: Color(0xFFE3D6C6), surfaceBright: Color(0xFFFFFCF8),
+  surface: Color(0xFFFAF8F5), onSurface: Color(0xFF231C16), onSurfaceVariant: Color(0xFF63564B),
+  surfaceDim: Color(0xFFEAE4DC), surfaceBright: Color(0xFFFFFFFF),
   surfaceContainerLowest: Color(0xFFFFFFFF), surfaceContainerLow: Color(0xFFFFFFFF),
-  surfaceContainer: Color(0xFFF7F0E6), surfaceContainerHigh: Color(0xFFF3ECE2),
-  surfaceContainerHighest: Color(0xFFF0E7DB),
-  outline: Color(0xFF94816E), outlineVariant: Color(0xFFE5D9CA),
-  inverseSurface: Color(0xFF3B2D23), onInverseSurface: Color(0xFFF7EFE6), inversePrimary: Color(0xFFE8A066),
-  shadow: Color(0xFF000000), scrim: Color(0xFF000000), surfaceTint: Color(0xFFA0521A),
+  surfaceContainer: Color(0xFFF6F3EE), surfaceContainerHigh: Color(0xFFF1EDE7),
+  surfaceContainerHighest: Color(0xFFECE8E1),
+  outline: Color(0xFF8A7B6D), outlineVariant: Color(0xFFE8E2DA),
+  inverseSurface: Color(0xFF2F2721), onInverseSurface: Color(0xFFF5F1EC), inversePrimary: Color(0xFFE5965C),
+  shadow: Color(0xFF000000), scrim: Color(0xFF000000), surfaceTint: Color(0xFFA84C19),
 );
 
 const _escuro = ColorScheme(
   brightness: Brightness.dark,
-  primary: Color(0xFFE8A066), onPrimary: Color(0xFF2A1407),
-  primaryContainer: Color(0xFF6B3410), onPrimaryContainer: Color(0xFFFADCC4),
-  secondary: Color(0xFFDCC1A9), onSecondary: Color(0xFF3A2717),
-  secondaryContainer: Color(0xFF4E3B2C), onSecondaryContainer: Color(0xFFF3E3D3),
+  primary: Color(0xFFE5965C), onPrimary: Color(0xFF211106),
+  primaryContainer: Color(0xFF69320F), onPrimaryContainer: Color(0xFFFADCC7),
+  secondary: Color(0xFFD6C3B3), onSecondary: Color(0xFF362619),
+  secondaryContainer: Color(0xFF3B3129), onSecondaryContainer: Color(0xFFF2EAE1),
   tertiary: Color(0xFFB9A0EE), onTertiary: Color(0xFF2A1450),
   tertiaryContainer: Color(0xFF4B357A), onTertiaryContainer: Color(0xFFECE1FA),
   error: Color(0xFFFF8B73), onError: Color(0xFF4A1004),
   errorContainer: Color(0xFF7A2414), onErrorContainer: Color(0xFFFFDAD2),
-  surface: Color(0xFF17110D), onSurface: Color(0xFFF7EFE6), onSurfaceVariant: Color(0xFFC4B2A2),
-  surfaceDim: Color(0xFF17110D), surfaceBright: Color(0xFF3D3229),
-  surfaceContainerLowest: Color(0xFF110C09), surfaceContainerLow: Color(0xFF221A14),
-  surfaceContainer: Color(0xFF281F18), surfaceContainerHigh: Color(0xFF2D241B),
-  surfaceContainerHighest: Color(0xFF33291F),
-  outline: Color(0xFF86725F), outlineVariant: Color(0xFF3F342A),
-  inverseSurface: Color(0xFFF7EFE6), onInverseSurface: Color(0xFF2A1C12), inversePrimary: Color(0xFFA0521A),
-  shadow: Color(0xFF000000), scrim: Color(0xFF000000), surfaceTint: Color(0xFFE8A066),
+  surface: Color(0xFF14110F), onSurface: Color(0xFFF5F1EC), onSurfaceVariant: Color(0xFFB5A89C),
+  surfaceDim: Color(0xFF14110F), surfaceBright: Color(0xFF342E29),
+  surfaceContainerLowest: Color(0xFF0E0C0A), surfaceContainerLow: Color(0xFF1E1A17),
+  surfaceContainer: Color(0xFF241F1B), surfaceContainerHigh: Color(0xFF2A241F),
+  surfaceContainerHighest: Color(0xFF312A24),
+  outline: Color(0xFF8A7A6C), outlineVariant: Color(0xFF2E2823),
+  inverseSurface: Color(0xFFF5F1EC), onInverseSurface: Color(0xFF231C16), inversePrimary: Color(0xFFA84C19),
+  shadow: Color(0xFF000000), scrim: Color(0xFF000000), surfaceTint: Color(0xFFE5965C),
 );
 
 /// Tema do app. Uso: MaterialApp(theme: granaTema(Brightness.light), darkTheme: granaTema(Brightness.dark)).

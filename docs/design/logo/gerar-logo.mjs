@@ -1,102 +1,168 @@
-// Gera logo, símbolo e ícones do GranaPaCá em SVG. Uso: node docs/design/logo/gerar-logo.mjs
-// O logo vem de contornos prontos (letreiro.json); o símbolo e os ícones são desenhados aqui.
+// Gera logo, símbolo e ícones do GranaPaCá em SVG (Identidade Toca Editorial — Opção B: Paca Deitada Evoluída).
+// Uso: node docs/design/logo/gerar-logo.mjs
 import { readFileSync, writeFileSync } from "node:fs";
 
-const f = (n) => +n.toFixed(1);
+const T = JSON.parse(readFileSync(new URL("../tokens/tokens.json", import.meta.url), "utf8"));
+const CL = T.cor.esquema.claro;
+const ES = T.cor.esquema.escuro;
+const SANS = `'${T.tipografia.familias.marca}', '${T.tipografia.familias.interface}', system-ui, -apple-system, sans-serif`;
 
-// ---------- Logo ----------
-// Letreiro serifado "Grana PaCá" com a paca deitada sobre "aC" e o acento em forma de pinta.
-// Os contornos ficam em letreiro.json (traçados da arte aprovada); aqui só entram as cores.
-// A pochete é o ícone do app e NUNCA entra no logo.
-const LT = JSON.parse(readFileSync(new URL("./letreiro.json", import.meta.url), "utf8"));
-const LOGO = {
-  cor: { grana: "#2A7550", paca: "#A0521A", bicho: "#B96A35", acento: "#2A7550" },
-  escuro: { grana: "#6CC596", paca: "#E8A066", bicho: "#D99A66", acento: "#6CC596", fundo: "#17110D" },
-  mono: { grana: "currentColor", paca: "currentColor", bicho: "currentColor", acento: "currentColor" },
-};
-function logo(nome, { respiro = false } = {}) {
-  const c = LOGO[nome], [x0, y0, x1, y1] = LT.caixa;
-  const m = respiro ? LT.alturaDoA : 50; // área de respiro = altura do "a" minúsculo
-  const vb = [x0 - m, y0 - m, x1 - x0 + 2 * m, y1 - y0 + 2 * m];
-  const fundo = respiro ? "#FBF5EC" : c.fundo;
-  const guia = respiro
-    ? `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="#94816E" stroke-width="8" stroke-dasharray="40 30"/>` +
-      `<rect x="${vb[0] + 10}" y="${vb[1] + 10}" width="${vb[2] - 20}" height="${vb[3] - 20}" fill="none" stroke="#B83A22" stroke-width="12" stroke-dasharray="60 40"/>`
-    : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.join(" ")}" role="img" aria-labelledby="t"><title id="t">Grana PaCá</title>` +
-    (fundo ? `<rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="${fundo}"/>` : "") + guia +
-    ["grana", "paca", "bicho", "acento"].map((n) => `<path d="${LT[n]}" fill="${c[n]}" fill-rule="evenodd"/>`).join("") + `</svg>
-`;
-}
+// ---------- Silhueta da paca deitada (sem contorno preto, focinho alongado e pintas limpas) ----------
+// Quadro base 256x256 (centrada em 128, 134), reutilizada no logo, símbolo e ícones.
+const PACA_CORPO =
+  "M46 164 C41 134 62 104 108 100 C125 98 139 97 148 90 " +
+  "C146 79 153 72 161 75 C165 77 167 81 168 85 " +
+  "C173 78 180 76 186 82 C189 86 188 92 185 96 " +
+  "C204 100 223 112 224 127 C225 141 213 149 197 149 " +
+  "C186 149 178 146 169 144 C174 152 174 163 165 171 " +
+  "C154 181 133 184 106 184 C71 184 50 177 46 164 Z";
 
-// ---------- Símbolo e ícone: a pochete da Paçoca ----------
-// A bolsa verde onde a Paçoca guarda a grana, com a fivela de moeda e três pintas costuradas.
-// Quadro 256. O essencial fica no círculo seguro do Android (raio ~78 a partir do centro).
-// Escolhida em 2026-11-11 depois de cinco tentativas de ícone com a Paçoca ilustrada (ver 04-logo-e-icone.md).
-const P = {
-  claro: { fundo: "#A0521A", bolsa: "#2A7550", tampa: "#1E5A3C", alca: "#1E5A3C", ouro: "#E5A62B", ouroE: "#B98318", ouroC: "#F7D27A", pinta: "#F7E6CC" },
-  escuro: { fundo: "#17110D" },
-  tingido: { fundo: null, bolsa: "#BFBFBF", tampa: "#8C8C8C", alca: "#8C8C8C", ouro: "#F2F2F2", ouroE: "#A6A6A6", ouroC: "#FFFFFF", pinta: "#FFFFFF" },
-};
-const cores = (nome) => ({ ...P.claro, ...P[nome] });
-const ALCA_ICONE = "M-12 92 C40 122 216 122 268 92"; // sai pelas bordas do ícone
-const ALCA_SIMBOLO = "M32 106 C70 117 186 117 224 106"; // trecho do mesmo arco, com ponta redonda (subir mais vira chifre)
-const TAMPA = "M62 110 C62 94 74 82 90 82 H166 C182 82 194 94 194 110 C176 136 80 136 62 110 Z";
-const PINTAS_X = [100, 128, 156];
+// Dobra suave da patinha frontal descansando sob o queixo.
+const PACA_PATA_DOBRA = "M128 167 C142 167 156 161 163 150";
+// Olho fechado sereno (arco delicado de paca descansando).
+const PACA_OLHO = "M177 118 Q186 125 195 118";
+// Narina discreta na ponta do focinho alongado.
+const PACA_NARINA = "M213 125 Q217 127 215 131";
 
-const moedaIcone = (x, y, r, c) =>
-  `<circle cx="${x}" cy="${y}" r="${r}" fill="${c.ouro}"/>` +
-  `<circle cx="${x}" cy="${y}" r="${f(r * 0.64)}" fill="none" stroke="${c.ouroE}" stroke-width="${f(r * 0.16)}"/>` +
-  `<circle cx="${f(x - r * 0.3)}" cy="${f(y - r * 0.32)}" r="${f(r * 0.16)}" fill="${c.ouroC}"/>`;
+// Pintas ovais em duas fileiras leves no flanco (5 no símbolo/ícone, 3 maiores no favicon).
+const PINTAS_5 = [
+  [80, 129, 7.2, 4.2, -18],
+  [103, 121, 7.8, 4.4, -12],
+  [127, 119, 7.2, 4.1, -6],
+  [74, 147, 7.6, 4.4, -14],
+  [99, 141, 8.2, 4.6, -10],
+];
+const PINTAS_3 = [
+  [84, 129, 9.2, 5.4, -16],
+  [112, 122, 9.5, 5.6, -10],
+  [91, 149, 9.4, 5.4, -12],
+];
 
-function pochete(c, { alca = ALCA_ICONE, pintas = true } = {}) {
+function pacaDeitada({ corpo, detalhe, pintas = PINTAS_5, olho = true, dobra = true, narina = true }) {
+  const dots = pintas
+    .map(([x, y, rx, ry, rot]) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" transform="rotate(${rot} ${x} ${y})" fill="${detalhe}"/>`)
+    .join("");
   return [
-    `<path d="${alca}" fill="none" stroke="${c.alca}" stroke-width="16" stroke-linecap="round"/>`,
-    `<rect x="62" y="82" width="132" height="90" rx="26" fill="${c.bolsa}"/>`,
-    `<path d="${TAMPA}" fill="${c.tampa}"/>`,
-    moedaIcone(128, 125, 17, c),
-    pintas ? PINTAS_X.map((x) => `<rect x="${x - 10}" y="151" width="20" height="9" rx="4.5" fill="${c.pinta}"/>`).join("") : "",
+    `<path d="${PACA_CORPO}" fill="${corpo}"/>`,
+    dots,
+    olho ? `<path d="${PACA_OLHO}" fill="none" stroke="${detalhe}" stroke-width="5.0" stroke-linecap="round"/>` : "",
+    narina ? `<path d="${PACA_NARINA}" fill="none" stroke="${detalhe}" stroke-width="4.0" stroke-linecap="round"/>` : "",
+    dobra ? `<path d="${PACA_PATA_DOBRA}" fill="none" stroke="${detalhe}" stroke-width="4.6" stroke-linecap="round"/>` : "",
   ].join("");
 }
 
-const svg256 = (titulo, corpo) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="t"><title id="t">${titulo}</title>${corpo}</svg>\n`;
-const fundo = (cor, rx = 0) => (cor ? `<rect width="256" height="256"${rx ? ` rx="${rx}"` : ""} fill="${cor}"/>` : "");
-const simbolo = () => pochete(cores("claro"), { alca: ALCA_SIMBOLO });
-// O centro da bolsa fica em y 127, um pouco acima do centro do quadro (centro óptico).
-const ampliada = (k, corpo) => `<g transform="translate(128 127) scale(${k}) translate(-128 -127)">${corpo}</g>`;
-// Disco creme atrás da pochete. A bolsa verde e o Caramelo têm a mesma luminância (1,01:1): sem o disco,
-// ela some em cinza e em 32 px. Só vale sobre o Caramelo; no fundo escuro a bolsa já passa de 3:1.
-const disco = (r) => `<circle cx="128" cy="127" r="${r}" fill="${P.claro.pinta}"/>`;
-
-// Monocromático (Android, ícone temático): só a forma; a tampa, a moeda e as pintas ficam vazadas.
-function mono() {
-  const m = `<mask id="m"><path d="${ALCA_ICONE}" fill="none" stroke="#fff" stroke-width="16"/>` +
-    `<rect x="62" y="82" width="132" height="90" rx="26" fill="#fff"/>` +
-    `<path d="M62 110 C80 136 176 136 194 110" fill="none" stroke="#000" stroke-width="5"/>` +
-    `<circle cx="128" cy="125" r="20" fill="#000"/><circle cx="128" cy="125" r="15" fill="#fff"/><circle cx="128" cy="125" r="9" fill="#000"/>` +
-    PINTAS_X.map((x) => `<rect x="${x - 10}" y="151" width="20" height="9" rx="4.5" fill="#000"/>`).join("") + `</mask>`;
-  return `<defs>${m}</defs><rect width="256" height="256" fill="#000000" mask="url(#m)"/>`;
+// Versão com máscara vazada para monocromático (Android temático e logo mono).
+function pacaVazada(id, cor, { pintas = PINTAS_5, olho = true, dobra = true, narina = true } = {}) {
+  const dots = pintas
+    .map(([x, y, rx, ry, rot]) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" transform="rotate(${rot} ${x} ${y})" fill="#000"/>`)
+    .join("");
+  const mask =
+    `<mask id="${id}"><path d="${PACA_CORPO}" fill="#fff"/>${dots}` +
+    (olho ? `<path d="${PACA_OLHO}" fill="none" stroke="#000" stroke-width="5.2" stroke-linecap="round"/>` : "") +
+    (narina ? `<path d="${PACA_NARINA}" fill="none" stroke="#000" stroke-width="4.2" stroke-linecap="round"/>` : "") +
+    (dobra ? `<path d="${PACA_PATA_DOBRA}" fill="none" stroke="#000" stroke-width="4.8" stroke-linecap="round"/>` : "") +
+    `</mask>`;
+  return { defs: mask, body: `<rect width="256" height="256" fill="${cor}" mask="url(#${id})"/>` };
 }
+
+// ---------- Logo (Opção B — Paca Deitada Evoluída sobre "PaCá") ----------
+const LOGO = {
+  cor: { grana: CL.onSurface, paca: CL.primary, bicho: CL.primary, detalhe: CL.surface, fundo: null },
+  escuro: { grana: ES.onSurface, paca: ES.primary, bicho: ES.primary, detalhe: ES.surface, fundo: ES.surface },
+  mono: { grana: "currentColor", paca: "currentColor", bicho: "currentColor", detalhe: null, fundo: null },
+};
+
+function logo(nome, { respiro = false } = {}) {
+  const c = LOGO[nome];
+  const m = respiro ? 44 : 20;
+  const W = 524, H = 172;
+  const vb = [-m, -m, W + 2 * m, H + 2 * m];
+  const fundo = respiro ? CL.surface : c.fundo;
+  const guia = respiro
+    ? `<rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${CL.outline}" stroke-width="1.5" stroke-dasharray="8 6"/>` +
+      `<rect x="${-m + 2}" y="${-m + 2}" width="${W + 2 * m - 4}" height="${H + 2 * m - 4}" fill="none" stroke="${CL.error}" stroke-width="2" stroke-dasharray="10 6"/>`
+    : "";
+
+  // Paca deitada pousada com respiro limpo logo acima de "aC" (sem tocar no "P" nem no acento do "á").
+  let defs = "";
+  let bichoSvg = "";
+  const tx = "translate(320 -26) scale(0.56)";
+  if (nome === "mono") {
+    const v = pacaVazada("pacaLogoMono", "currentColor");
+    defs = `<defs>${v.defs}</defs>`;
+    bichoSvg = `<g transform="${tx}">${v.body}</g>`;
+  } else {
+    bichoSvg = `<g transform="${tx}">${pacaDeitada({ corpo: c.bicho, detalhe: c.detalhe })}</g>`;
+  }
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.join(" ")}" role="img" aria-labelledby="t">` +
+    `<title id="t">Grana PaCá</title>${defs}` +
+    (fundo ? `<rect x="${vb[0]}" y="${vb[1]}" width="${vb[2]}" height="${vb[3]}" fill="${fundo}"/>` : "") +
+    guia +
+    bichoSvg +
+    `<text x="18" y="148" textLength="480" lengthAdjust="spacing" font-family="${SANS}" font-size="82" font-weight="700" letter-spacing="-2.4">` +
+    `<tspan fill="${c.grana}">Grana </tspan><tspan fill="${c.paca}">PaCá</tspan></text>` +
+    `</svg>\n`
+  );
+}
+
+// ---------- Símbolo e ícones do app (Paca Deitada) ----------
+const svg256 = (titulo, corpo, defs = "") =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="t"><title id="t">${titulo}</title>${defs}${corpo}</svg>\n`;
+const fundo = (cor, rx = 0) => (cor ? `<rect width="256" height="256"${rx ? ` rx="${rx}"` : ""} fill="${cor}"/>` : "");
+const escala = (k, dx, dy, corpo) => `<g transform="translate(${128 + dx} ${128 + dy}) scale(${k}) translate(-134 -131)">${corpo}</g>`;
+
+const simboloSvg = () =>
+  svg256("Símbolo do GranaPaCá", escala(1.12, 0, 2, pacaDeitada({ corpo: CL.primary, detalhe: CL.surface })));
+
+const iconeClaro = () =>
+  svg256(
+    "Ícone do GranaPaCá",
+    fundo(CL.primary) + escala(1.06, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary }))
+  );
+
+const iconeEscuro = () =>
+  svg256(
+    "Ícone do GranaPaCá, aparência escura",
+    fundo(ES.surfaceContainerLow) + escala(1.06, 0, 2, pacaDeitada({ corpo: ES.primary, detalhe: ES.surfaceContainerLow }))
+  );
+
+const iconeTingido = () => {
+  const v = pacaVazada("pacaTingido", "#D8D4CE");
+  return svg256("Ícone do GranaPaCá, aparência tingida", escala(1.06, 0, 2, v.body), `<defs>${v.defs}</defs>`);
+};
+
+// Android adaptativo: círculo seguro de 66 dp dentro de 108 dp (~61% do quadro).
+const iconeAndroidFrente = () =>
+  svg256("Frente do ícone adaptativo", escala(0.74, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary })));
+
+const iconeAndroidMono = () => {
+  const v = pacaVazada("pacaMono", CL.shadow, { pintas: PINTAS_3 });
+  return svg256("Ícone monocromático", escala(0.74, 0, 2, v.body), `<defs>${v.defs}</defs>`);
+};
+
+const faviconSvg = () =>
+  svg256(
+    "GranaPaCá",
+    fundo(CL.primary, 56) + escala(1.14, 0, 2, pacaDeitada({ corpo: CL.surface, detalhe: CL.primary, pintas: PINTAS_3, narina: false }))
+  );
 
 const ARQUIVOS = {
   "logo-cor.svg": logo("cor"),
   "logo-escuro.svg": logo("escuro"),
   "logo-mono.svg": logo("mono"),
   "logo-respiro.svg": logo("cor", { respiro: true }),
-  "simbolo.svg": svg256("Símbolo do GranaPaCá", simbolo()),
-  // iOS: quadro inteiro de 1024 px; o sistema aplica o recorte [Conferir: Apple HIG, App icons].
-  // No iOS o quadro aparece inteiro e no Android só 2/3 dele: o Android usa a mesma composição em 2/3.
-  "icone-ios-claro.svg": svg256("Ícone do GranaPaCá", fundo(P.claro.fundo) + disco(104) + ampliada(1.2, pochete(cores("claro")))),
-  "icone-ios-escuro.svg": svg256("Ícone do GranaPaCá, aparência escura", fundo(P.escuro.fundo) + ampliada(1.2, pochete(cores("escuro")))),
-  "icone-ios-tingido.svg": svg256("Ícone do GranaPaCá, aparência tingida", ampliada(1.2, pochete(cores("tingido")))),
-  // Android adaptativo: camadas de 108 dp; o essencial fica no círculo seguro de 66 dp.
-  "icone-android-fundo.svg": svg256("Fundo do ícone adaptativo", fundo(P.claro.fundo)),
-  "icone-android-frente.svg": svg256("Frente do ícone adaptativo", disco(69) + ampliada(0.8, pochete(cores("claro")))),
-  "icone-android-mono.svg": svg256("Ícone monocromático", mono()),
-  // Favicon da demo web: sem as pintas, com disco e pochete maiores, para ler em 16 a 32 px.
-  "favicon.svg": svg256("GranaPaCá", fundo(P.claro.fundo, 56) + disco(112) + ampliada(1.3, pochete(cores("claro"), { pintas: false }))),
+  "simbolo.svg": simboloSvg(),
+  "icone-ios-claro.svg": iconeClaro(),
+  "icone-ios-escuro.svg": iconeEscuro(),
+  "icone-ios-tingido.svg": iconeTingido(),
+  "icone-android-fundo.svg": svg256("Fundo do ícone adaptativo", fundo(CL.primary)),
+  "icone-android-frente.svg": iconeAndroidFrente(),
+  "icone-android-mono.svg": iconeAndroidMono(),
+  "favicon.svg": faviconSvg(),
 };
+
 const pasta = new URL("./", import.meta.url);
 for (const [nome, conteudo] of Object.entries(ARQUIVOS)) writeFileSync(new URL(nome, pasta), conteudo);
 console.log(`${Object.keys(ARQUIVOS).length} SVGs gravados em docs/design/logo`);

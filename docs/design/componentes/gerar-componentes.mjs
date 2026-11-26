@@ -1,9 +1,10 @@
 // Gera as folhas da biblioteca de componentes em SVG, nos temas claro e escuro, a partir do tokens.json.
 // Uso: node docs/design/componentes/gerar-componentes.mjs
-// As fontes do app (Baloo 2 e Figtree) só aparecem onde estiverem instaladas; no GitHub entra a fonte do sistema.
+// As fontes do app (Plus Jakarta Sans e Inter) só aparecem onde estiverem instaladas; no GitHub entra a fonte do sistema.
 import { readFileSync, writeFileSync } from "node:fs";
+import { pacocaEditorial, usar as usarKit } from "../telas/kit.mjs";
 const T = JSON.parse(readFileSync(new URL("../tokens/tokens.json", import.meta.url), "utf8"));
-const INTERFACE = "Figtree, Inter, system-ui, sans-serif", MARCA = "'Baloo 2', ui-rounded, system-ui, sans-serif";
+const INTERFACE = "Inter, system-ui, -apple-system, sans-serif", MARCA = "'Plus Jakarta Sans', Inter, system-ui, sans-serif";
 const W = 960;
 let c; // cores do tema em uso
 
@@ -116,16 +117,19 @@ function selecao() {
 // ---------- 4. Cartões e listas ----------
 function cartoes() {
   const cartao = (x, y, w, h) => rr(x, y, w, h, 20, c.surfaceContainerLow, { borda: c.outlineVariant });
-  const valor = (x, y, int, cent, t = 40) => txt(x, y, `R$ ${int}<tspan font-size="${t * 0.55}">,${cent}</tspan>`, { t, p: 600 });
+  const valor = (x, y, int, cent, t = 38, p = 700, ct = Math.round(t * 0.58)) =>
+    txt(x, y, `R$ ${int}<tspan font-size="${ct}">,${cent}</tspan>`, { t, p });
   let s = titulo(36, "Cartões e listas");
-  s += rot(24, 66, "Valor em destaque") + cartao(24, 76, 300, 132) + txt(40, 104, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) + valor(40, 152, "1.284", "90") +
+  s += rot(24, 66, "Valor em destaque") + cartao(24, 76, 300, 132) + txt(40, 104, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) +
+    icone("olho", 284, 92, c.onSurfaceVariant) + valor(40, 152, "1.284", "90", 38, 700, 22) +
     txt(40, 186, "Entrou R$ 6.200,00 · Saiu R$ 4.915,10", { t: 12, cor: c.onSurfaceVariant });
   s += rot(344, 66, "Valores ocultos") + cartao(344, 76, 300, 132) + txt(360, 104, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) +
-    txt(360, 152, "R$", { t: 40, p: 600 }) + [0, 1, 2].map((k) => `<circle cx="${436 + k * 22}" cy="139" r="7" fill="${c.onSurface}"/>`).join("") + icone("olho", 604, 92, c.onSurfaceVariant);
-  s += rot(664, 66, "Fala da Paçoca") + `<path d="M734 96h178a20 20 0 0 1 20 20v52a20 20 0 0 1-20 20H720a6 6 0 0 1-6-6v-66a20 20 0 0 1 20-20Z" fill="${c.primaryContainer}"/>` +
-    `<circle cx="686" cy="168" r="20" fill="${c.inversePrimary}"/>` +
-    txt(730, 128, "Mercado ficou 12% abaixo", { t: 15, p: 500, f: MARCA, cor: c.onPrimaryContainer }) + txt(730, 150, "do mês passado.", { t: 15, p: 500, f: MARCA, cor: c.onPrimaryContainer }) +
-    txt(730, 172, "Bom ritmo!", { t: 15, p: 500, f: MARCA, cor: c.onPrimaryContainer });
+    txt(360, 152, "R$", { t: 38, p: 700 }) + [0, 1, 2].map((k) => `<circle cx="${432 + k * 20}" cy="139" r="6.5" fill="${c.onSurface}"/>`).join("") + icone("olho", 604, 92, c.onSurfaceVariant);
+  s += rot(664, 66, "Fala da Paçoca") + cartao(664, 76, 272, 132) +
+    pacocaEditorial("retrato", 706, 179, 0.58) +
+    txt(746, 122, "Mercado ficou 12%", { t: 16, p: 500, f: MARCA, cor: c.onSurface }) +
+    txt(746, 146, "abaixo do mês", { t: 16, p: 500, f: MARCA, cor: c.onSurface }) +
+    txt(746, 170, "passado. Bom ritmo!", { t: 16, p: 500, f: MARCA, cor: c.onSurface });
   const linha = (y, nome, info, v, { cat = "alimentacao", banco = c.tertiary, entrada, marca, ic = "garfo" } = {}) => {
     const cor = entrada ? c.mata : c.g[cat];
     return rr(40, y + 8, 4, 40, 2, banco) + `<circle cx="76" cy="${y + 28}" r="20" fill="${cor}" opacity="0.16"/>` + icone(ic, 65, y + 17, cor, 22) +
@@ -133,11 +137,11 @@ function cartoes() {
       (marca ? rr(430, y + 14, 74, 22, 11, c.tertiaryContainer) + txt(467, y + 29, "Revisar", { t: 11, p: 600, cor: c.onTertiaryContainer, a: "middle" }) : "") +
       txt(608, y + 33, v, { t: 16, p: 600, a: "end", cor: entrada ? c.mata : c.onSurface });
   };
-  s += rot(24, 240, "Lançamentos") + cartao(24, 250, 600, 188) + linha(256, "Mercado da Vila", "Alimentação · Débito · Banco Ipê", "R$ 187,43") +
-    `<path d="M40 316H608" stroke="${c.outlineVariant}"/>` + linha(316, "Loja 0387", "Compras · Crédito · Banco Jatobá", "R$ 64,90", { cat: "compras", banco: c.rio, marca: true, ic: "sacola" }) +
+  s += rot(24, 240, "Lançamentos") + cartao(24, 250, 600, 188) + linha(256, "Mercado da Vila", "Alimentação · Débito · Banco Ipê", "-R$ 187,43") +
+    `<path d="M40 316H608" stroke="${c.outlineVariant}"/>` + linha(316, "Loja 0387", "Compras · Crédito · Banco Jatobá", "-R$ 64,90", { cat: "compras", banco: c.rio, marca: true, ic: "sacola" }) +
     `<path d="M40 376H608" stroke="${c.outlineVariant}"/>` + linha(376, "Salário", "Entrada · Pix · Banco Ipê", "+R$ 6.200,00", { entrada: true, ic: "seta" });
   s += rot(664, 240, "Conta conectada") + cartao(664, 250, 272, 188) + rr(680, 266, 4, 40, 2, c.tertiary) + txt(696, 284, "Banco Ipê", { t: 16, p: 600 }) +
-    txt(696, 304, "Conta corrente", { t: 12, cor: c.onSurfaceVariant }) + valor(680, 356, "3.412", "08", 24) +
+    txt(696, 304, "Conta corrente", { t: 12, cor: c.onSurfaceVariant }) + valor(680, 356, "3.412", "08", 24, 600, 16) +
     `<circle cx="686" cy="402" r="5" fill="${c.mata}"/>` + txt(698, 406, "Sincronizado hoje às 18:40", { t: 12, cor: c.onSurfaceVariant });
   return { h: 462, s };
 }
@@ -153,7 +157,7 @@ function navegacao() {
     s += (sel ? rr(x - 28, 88, 56, 30, 15, c.secondaryContainer) : "") + icone(ic, x - 12, 91, sel ? c.onSecondaryContainer : c.onSurfaceVariant) +
       txt(x, 138, l, { t: 12, p: 600, a: "middle", cor: sel ? c.onSurface : c.onSurfaceVariant });
   });
-  s += rot(444, 66, "Topo do Início") + rr(444, 76, 380, 64, 0, c.surface, { borda: c.outlineVariant }) + txt(460, 118, "Boa noite, Bia", { t: 24, p: 600, f: MARCA }) +
+  s += rot(444, 66, "Topo do Início") + rr(444, 76, 380, 64, 0, c.surface, { borda: c.outlineVariant }) + txt(460, 118, "Boa noite, Bia", { t: 26, p: 700, f: MARCA }) +
     icone("sino", 776, 96, c.onSurface) + `<circle cx="796" cy="98" r="9" fill="${c.error}"/>` + txt(796, 102, "2", { t: 11, p: 600, cor: c.onError, a: "middle" });
   s += rot(24, 192, "Trilho") + rr(24, 202, 88, 330, 0, c.surfaceContainer, { borda: c.outlineVariant }) +
     rr(40, 218, 56, 56, 16, c.primary) + icone("mais", 56, 234, c.onPrimary, 24, 2.2);
@@ -182,7 +186,7 @@ function avisos() {
   s += rot(24, 196, "Diálogo") + rr(24, 206, 400, 196, 28, c.surfaceContainerHigh, { borda: c.outlineVariant }) + txt(48, 246, "Desconectar o Banco Ipê?", { t: 20, p: 600 }) +
     txt(48, 276, "Os lançamentos já baixados continuam no app.", { cor: c.onSurfaceVariant }) + txt(48, 296, "Novos lançamentos deixam de chegar.", { cor: c.onSurfaceVariant }) +
     txt(272, 366, "Cancelar", { p: 600, cor: c.primary, a: "end" }) + rr(288, 340, 112, 40, 20, c.error) + txt(344, 365, "Desconectar", { p: 600, cor: c.onError, a: "middle" });
-  s += rot(464, 196, "Estado vazio") + rr(464, 206, 472, 196, 20, c.surfaceContainerLow, { borda: c.outlineVariant }) + `<circle cx="524" cy="304" r="36" fill="${c.inversePrimary}" opacity="0.5"/>` +
+  s += rot(464, 196, "Estado vazio") + rr(464, 206, 472, 196, 20, c.surfaceContainerLow, { borda: c.outlineVariant }) + pacocaEditorial("retrato", 524, 350, 0.78) +
     txt(580, 286, "Nada por aqui ainda", { t: 20, p: 600, f: MARCA }) + txt(580, 310, "Conecte um banco para ver seus", { cor: c.onSurfaceVariant }) +
     txt(580, 330, "lançamentos neste extrato.", { cor: c.onSurfaceVariant }) + rr(580, 346, 136, 40, 20, c.primary) + txt(648, 371, "Conectar banco", { p: 600, cor: c.onPrimary, a: "middle" });
   s += rot(24, 438, "Carregando (esqueleto)") + rr(24, 448, 400, 132, 20, c.surfaceContainerLow, { borda: c.outlineVariant });
@@ -196,6 +200,7 @@ function avisos() {
 
 const FOLHAS = { botoes, campos, selecao, cartoes, navegacao, avisos };
 for (const tema of ["claro", "escuro"]) {
+  usarKit(tema);
   c = { ...T.cor.esquema[tema], ...T.cor.marca[tema], g: Object.fromEntries(T.cor.categorias.map((k) => [k.id, T.cor.grafico[tema][k.cor]])) };
   for (const [nome, fn] of Object.entries(FOLHAS)) {
     const { h, s } = fn();

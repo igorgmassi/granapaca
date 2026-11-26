@@ -1,148 +1,243 @@
-// Telas A: o primeiro acesso ("Trilha até a toca") e o Início, nos temas claro e escuro, e o Início no desktop.
+// Telas A (Identidade Toca Editorial): criação de conta animada com a Paçoca e tela Início (claro, escuro e desktop).
 // Uso: node docs/design/telas/gerar-telas-a.mjs
-import { c, usar, txt, linhas, marca, rr, icone, pintas, pacoca, botao, campo, chipGrande, cartao, valor, lancamento, nav, celular, grava, CEL } from "./kit.mjs";
+import { c, usar, txt, linhas, marca, MARCA, rr, icone, pintas, pacoca, pacocaEditorial, botao, campo, chipGrande, cartao, valor, lancamento, nav, celular, grava, CEL } from "./kit.mjs";
 
-// ---------- Cenário da trilha: do fim de tarde (etapa 1) até a noite (etapa 10) ----------
-const CEU = ["#F6C27A", "#F4B26C", "#EFA063", "#E58C62", "#CF7A6B", "#A86C7C", "#7C5F86", "#55507E", "#343A63", "#1E2440"];
-function cenario(etapa) {
-  const k = etapa - 1, noite = k / 9, dia = etapa <= 6;
-  const astro = dia ? `<circle cx="282" cy="${70 + k * 14}" r="26" fill="#F7D27A"/>`
-    : `<circle cx="282" cy="${150 - (k - 5) * 18}" r="20" fill="#F7E6CC"/>` +
-      [[40, 40], [92, 70], [150, 30], [210, 58], [330, 36], [20, 96]].slice(0, k - 3).map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.8" fill="#F7E6CC"/>`).join("");
-  const arvore = (x, y, r, cor) => `<rect x="${x - 3}" y="${y}" width="6" height="${r * 1.1}" fill="#6F340E"/><circle cx="${x}" cy="${y}" r="${r}" fill="${cor}"/>`;
-  const toca = etapa === 10 ? `<path d="M236 236 V196 A44 44 0 0 1 324 196 V236 Z" fill="#6F340E"/><path d="M250 236 V200 A30 30 0 0 1 310 200 V236 Z" fill="#F7D27A"/>` : "";
-  // Pegadas: uma dupla por etapa já andada.
-  const pegadas = Array.from({ length: k }, (_, i) => { const x = 150 - i * 15, y = 244 + (i % 2) * 5;
-    return `<ellipse cx="${x}" cy="${y}" rx="4" ry="2.6" fill="#8E4A20" opacity="${Math.max(0.25, 0.9 - i * 0.08)}"/>`; }).join("");
-  return `<rect width="360" height="290" fill="${CEU[k]}"/>${astro}` +
-    `<path d="M0 150 C60 112 120 132 180 122 C240 112 300 92 360 132 V290 H0Z" fill="#6E9A72"/>` +
-    arvore(52, 150, 20, "#3F7556") + arvore(118, 138, 15, "#3F7556") + arvore(338, 140, 18, "#3F7556") +
-    `<path d="M0 186 C80 156 150 180 220 166 C280 154 330 170 360 160 V290 H0Z" fill="#3F7556"/>` +
-    arvore(24, 188, 24, "#2A7550") + arvore(206, 172, 18, "#2A7550") + (etapa === 10 ? "" : arvore(316, 176, 22, "#2A7550")) +
-    `<path d="M0 232 C90 216 270 216 360 232 V290 H0Z" fill="#D99A66"/>` + pegadas +
-    `<rect width="360" height="290" fill="#17110D" opacity="${(noite * 0.42).toFixed(2)}"/>` + toca; // a luz da toca fica acesa por cima da noite
+// Indicador minimalista de 5 passos no topo (pintas limpas, sem barra escura pesada).
+const passos5 = (ativo) =>
+  Array.from({ length: 5 }, (_, i) => {
+    const x = 148 + i * 16;
+    const atual = i === ativo - 1;
+    const feito = i < ativo - 1;
+    return `<circle cx="${x}" cy="34" r="${atual ? 4.5 : 3.5}" fill="${atual ? c.primary : feito ? c.onSurfaceVariant : c.outline}"/>`;
+  }).join("");
+
+const X = 28, LW = 304;
+const chips = (y, lista) => {
+  let x = X, yy = y, s = "";
+  for (const [l, sel] of lista) {
+    const w = Math.round(l.length * 8.2 + 34);
+    if (x + w > X + LW) { x = X; yy += 52; }
+    s += chipGrande(x, yy, l, sel)[0];
+    x += w + 8;
+  }
+  return s;
+};
+const pular = () => txt(180, 728, "Pular por agora", { p: 600, cor: c.primary, a: "middle" });
+
+// Cartão limpo da criação de conta com a Paçoca apoiada diretamente na borda superior.
+function telaOnboarding(etapa, totalGrupo, legenda, estadoPacoca, conteudo) {
+  const cardY = 230;
+  const patasFrente =
+    estadoPacoca === "modo" || estadoPacoca === "email" || estadoPacoca === "pensando"
+      ? `<ellipse cx="150" cy="${cardY + 2}" rx="13" ry="7.5" fill="#D9945C"/><ellipse cx="210" cy="${cardY + 2}" rx="13" ry="7.5" fill="#D9945C"/>`
+      : "";
+  return celular(
+    0,
+    0,
+    passos5(totalGrupo) +
+      pacocaEditorial(estadoPacoca, 180, cardY + 2, 1.05, { camada: "tras" }) +
+      rr(14, cardY, 332, 514, 28, c.surfaceContainerLow, { borda: c.outlineVariant }) +
+      patasFrente +
+      pacocaEditorial(estadoPacoca, 180, cardY + 2, 1.05, { camada: "frente" }) +
+      conteudo(),
+    legenda,
+    c.surface
+  );
 }
-// Indicador de passos: dez pegadas no alto, as andadas preenchidas.
-const passos = (etapa) => rr(100, 16, 160, 20, 10, "#17110D", { op: 0.35 }) + Array.from({ length: 10 }, (_, i) =>
-  `<circle cx="${112 + i * 15}" cy="26" r="${i < etapa ? 4 : 3}" fill="${i < etapa ? "#F7E6CC" : "none"}" stroke="#F7E6CC" stroke-width="1.2"/>`).join("");
 
-// Cada etapa: [legenda, pose da Paçoca, altura da Paçoca, conteúdo do cartão].
-const X = 24, LW = 312;
-const chips = (y, lista) => { let x = X, yy = y, s = ""; for (const [l, sel] of lista) { const w = Math.round(l.length * 8.4 + 36);
-  if (x + w > X + LW) { x = X; yy += 54; } s += chipGrande(x, yy, l, sel)[0]; x += w + 8; } return s; };
-const pular = () => txt(180, 734, "Pular por agora", { p: 600, cor: c.primary, a: "middle" });
 const ETAPAS = [
-  ["1. Boas-vindas", "acenando", 150, () => marca(X, 338, "Vem pra toca", { t: 36 }) +
-    linhas(X, 376, ["Toda a sua grana, num lugar só.", "Eu sou a Paçoca e vou com você até lá."], { t: 16, cor: c.onSurfaceVariant }, 24) +
-    botao(X, 626, LW, "Começar") + botao(X, 684, LW, "Ver a demonstração", "texto")],
-  ["2. Servidor", "lupa", 130, () => marca(X, 332, "Onde fica a sua toca?", { t: 26 }) +
-    linhas(X, 360, ["É o endereço do servidor que você instalou."], { cor: c.onSurfaceVariant }) +
-    campo(X, 404, LW, "Endereço do servidor", "toca.exemplo.ts.net", { foco: true }) +
-    rr(X, 478, LW, 48, 24, "none", { borda: c.outline }) + icone("qr", 110, 490, c.primary) + txt(196, 507, "Ler o QR Code", { p: 600, cor: c.primary, a: "middle" }) +
-    botao(X, 684, LW, "Continuar")],
-  ["3. Entrar", "cadeado", 130, () => marca(X, 332, "Quem está chegando?", { t: 26 }) +
-    campo(X, 380, LW, "E-mail", "bia@exemplo.com") + campo(X, 470, LW, "Senha", "••••••••••") + icone("olho", 296, 486, c.onSurfaceVariant) +
-    txt(X, 556, "Esqueci a senha", { p: 600, cor: c.primary }) + botao(X, 684, LW, "Entrar")],
-  ["4. Autenticador", "cadeado", 130, () => marca(X, 332, "Só mais uma checagem", { t: 26 }) +
-    linhas(X, 360, ["Digite o código de 6 números do seu", "aplicativo autenticador."], { cor: c.onSurfaceVariant }) +
-    [0, 1, 2, 3, 4, 5].map((i) => rr(X + i * 53, 412, 46, 56, 12, c.surfaceContainerLowest, { borda: i === 3 ? c.primary : c.outline, lb: i === 3 ? 2 : 1 }) +
-      (i < 3 ? txt(X + i * 53 + 23, 448, "481"[i], { t: 22, p: 600, a: "middle" }) : "")).join("") +
-    botao(X, 684, LW, "Confirmar")],
-  ["5. Ocupação", "pensando", 130, () => marca(X, 332, "O que você faz hoje?", { t: 26 }) +
-    txt(X, 358, "Pode marcar mais de uma.", { cor: c.onSurfaceVariant }) +
-    chips(380, [["Carteira assinada", true], ["Autônomo", false], ["Estudante", true], ["Aposentado", false], ["Empresa própria", false], ["Outro", false]]) +
-    botao(X, 638, LW, "Continuar") + pular()],
-  ["6. Casa", "frente", 130, () => marca(X, 332, "Como é a sua casa?", { t: 26 }) +
-    txt(X, 358, "Isso me ajuda a saber o que é essencial.", { cor: c.onSurfaceVariant }) +
-    chips(380, [["Aluguel", true], ["Financiada", false], ["Própria quitada", false], ["Moro com a família", false]]) +
-    botao(X, 638, LW, "Continuar") + pular()],
-  ["7. Transporte", "perfil", 92, () => marca(X, 332, "Como você se desloca?", { t: 26 }) +
-    txt(X, 358, "Pode marcar mais de uma.", { cor: c.onSurfaceVariant }) +
-    chips(380, [["Carro próprio", false], ["Ônibus ou metrô", true], ["Aplicativo", true], ["Moto", false], ["Bicicleta ou a pé", false]]) +
-    botao(X, 638, LW, "Continuar") + pular()],
-  ["8. Revisão das regras", "lupa", 130, () => marca(X, 332, "Olha o que eu entendi", { t: 26 }) +
-    txt(X, 358, "Dá para mudar quando quiser.", { cor: c.onSurfaceVariant }) +
-    [["Aluguel", "Essencial", 3, c.essencial], ["Ônibus e metrô", "Essencial", 3, c.essencial], ["Aplicativo de corrida", "Importante", 2, c.importante], ["Streaming", "Flexível", 1, c.flexivel]]
-      .map(([n, nivel, q, cor], i) => { const y = 378 + i * 58;
-        return cartao(X, y, LW, 50, { }) + txt(X + 16, y + 31, n, { t: 15, p: 600 }) + pintas(X + 196, y + 26, q, cor) + txt(X + LW - 14, y + 31, nivel, { t: 13, a: "end", cor: c.onSurfaceVariant }); }).join("") +
-    botao(X, 638, LW, "Está certo") + txt(180, 734, "Ajustar as regras", { p: 600, cor: c.primary, a: "middle" })],
-  ["9. Conectar bancos", "tres-quartos", 130, () => marca(X, 332, "Hora de trazer a grana", { t: 26 }) +
-    [["Abra o Meu Pluggy", "O site abre fora do app."], ["Conecte seus bancos por lá", "Com o Open Finance, sem senha aqui."], ["Volte e toque em Já conectei", "Cada banco aparece quando sincronizar."]]
-      .map(([a, b], i) => { const y = 362 + i * 66;
-        return `<circle cx="${X + 16}" cy="${y + 18}" r="16" fill="${c.primaryContainer}"/>` + txt(X + 16, y + 23, i + 1, { p: 600, a: "middle", cor: c.onPrimaryContainer }) +
-          txt(X + 44, y + 14, a, { t: 15, p: 600 }) + txt(X + 44, y + 34, b, { t: 13, cor: c.onSurfaceVariant }); }).join("") +
-    rr(X, 580, LW, 48, 24, c.primary) + txt(170, 609, "Abrir o Meu Pluggy", { p: 600, cor: c.onPrimary, a: "middle" }) + icone("fora", 250, 593, c.onPrimary, 22) +
-    botao(X, 638, LW, "Já conectei", "contorno") + pular()],
-  ["10. Chegada à toca", "comemorando", 150, () => marca(X, 338, "Chegamos!", { t: 36 }) +
-    linhas(X, 376, ["A sua toca está pronta.", "Os bancos aparecem aqui assim que", "sincronizarem."], { t: 16, cor: c.onSurfaceVariant }, 24) +
-    botao(X, 684, LW, "Entrar na toca")],
-];
-function telaTrilha(i) {
-  const [legenda, pose, alt, conteudo] = ETAPAS[i], etapa = i + 1;
-  const px = etapa === 10 ? 150 : 180;
-  return celular(0, 0, cenario(etapa) + passos(etapa) + pacoca(pose, px, 252, alt) +
-    rr(0, 272, 360, 520, 28, c.surface) + conteudo(), legenda);
-}
+  // Etapas 1 a 5: Criação de conta com as 5 animações aprovadas da Paçoca
+  ["1. Modo", 1, "modo", () =>
+    marca(180, 278, "Como prefere acessar?", { t: 22, a: "middle" }) +
+    rr(X, 304, 146, 72, 16, c.surfaceContainer, { borda: c.outlineVariant }) +
+    txt(X + 73, 336, "Meu servidor", { t: 14, p: 600, a: "middle" }) +
+    txt(X + 73, 356, "Self-hosted", { t: 12, cor: c.onSurfaceVariant, a: "middle" }) +
+    rr(X + 158, 304, 146, 72, 16, c.surfaceContainer, { borda: c.outlineVariant }) +
+    txt(X + 231, 336, "Explorar demo", { t: 14, p: 600, a: "middle" }) +
+    txt(X + 231, 356, "Dados fictícios", { t: 12, cor: c.onSurfaceVariant, a: "middle" }) +
+    rr(X, 388, LW, 72, 16, c.secondaryContainer, { borda: c.primary, lb: 2 }) +
+    `<circle cx="${X + 24}" cy="424" r="9" fill="none" stroke="${c.primary}" stroke-width="2"/><circle cx="${X + 24}" cy="424" r="4.5" fill="${c.primary}"/>` +
+    txt(X + 44, 419, "No meu celular", { t: 15, p: 600, cor: c.onSecondaryContainer }) +
+    txt(X + 44, 439, "Sem servidor · cofre criptografado", { t: 12, cor: c.onSurfaceVariant }) +
+    txt(180, 494, "A Paçoca vira o olhar para a opção escolhida.", { t: 12, cor: c.onSurfaceVariant, a: "middle" }) +
+    botao(X, 668, LW, "Continuar")],
 
-// ---------- Início ----------
+  ["2. E-mail", 2, "email", () =>
+    marca(180, 278, "Quem está chegando?", { t: 22, a: "middle" }) +
+    txt(180, 304, "Seus dados ficam sob seu controle.", { t: 13, cor: c.onSurfaceVariant, a: "middle" }) +
+    campo(X, 344, LW, "Seu nome ou e-mail", "bia@exemplo.com", { foco: true }) +
+    txt(180, 428, "O olhar da Paçoca acompanha a digitação.", { t: 12, cor: c.onSurfaceVariant, a: "middle" }) +
+    botao(X, 668, LW, "Próximo")],
+
+  ["3. Senha", 3, "senha", () =>
+    marca(180, 278, "Crie sua senha", { t: 22, a: "middle" }) +
+    txt(180, 304, "A Paçoca tampa os olhos por privacidade.", { t: 13, cor: c.onSurfaceVariant, a: "middle" }) +
+    campo(X, 344, LW, "Senha ou PIN", "••••••••••", { foco: true }) +
+    icone("olho", X + LW - 38, 360, c.onSurfaceVariant, 22) +
+    txt(X, 424, "Ao tocar no olho, ela dá uma espiadinha.", { t: 12, cor: c.onSurfaceVariant }) +
+    icone("cadeado", 74, 622, c.onSurfaceVariant, 15) +
+    txt(194, 634, "Seus dados ficam só com você", { t: 12, cor: c.onSurfaceVariant, a: "middle" }) +
+    botao(X, 668, LW, "Confirmar")],
+
+  ["4. Segurança", 4, "seguranca", () =>
+    marca(180, 278, "Ative a segurança", { t: 22, a: "middle" }) +
+    linhas(180, 306, ["Digite o código do autenticador ou", "ative a biometria do aparelho."], { t: 13, cor: c.onSurfaceVariant, a: "middle" }, 18) +
+    [0, 1, 2, 3, 4, 5].map((i) =>
+      rr(X + i * 52, 356, 44, 54, 12, c.surfaceContainerLowest, { borda: i === 3 ? c.primary : c.outline, lb: i === 3 ? 2 : 1 }) +
+      (i < 3 ? txt(X + i * 52 + 22, 391, "481"[i], { t: 20, p: 600, a: "middle" }) : "")
+    ).join("") +
+    rr(X, 434, LW, 48, 16, c.surfaceContainer, { borda: c.outlineVariant }) +
+    icone("cadeado", X + 16, 448, c.mata, 20) +
+    txt(X + 46, 463, "Ativar biometria do aparelho", { t: 14, p: 600 }) +
+    botao(X, 668, LW, "Ativar")],
+
+  ["5. Toca pronta!", 5, "pronto", () =>
+    marca(180, 296, "Tudo pronto, Bia", { t: 26, a: "middle" }) +
+    linhas(180, 332, ["A sua toca já está montada.", "Agora dá para acompanhar cada real", "com calma e sem planilha."], { t: 15, cor: c.onSurfaceVariant, a: "middle" }, 22) +
+    rr(X, 432, LW, 72, 16, c.surfaceContainer, { borda: c.outlineVariant }) +
+    txt(X + 16, 462, "Perfil inicial pronto", { t: 14, p: 600 }) +
+    txt(X + 16, 484, "Você pode personalizar regras quando quiser.", { t: 12, cor: c.onSurfaceVariant }) +
+    botao(X, 668, LW, "Entrar na toca")],
+
+  // Etapas 6 a 10: Guia rápido de perfil (opcional)
+  ["6. Ocupação", 1, "pensando", () =>
+    marca(X, 278, "O que você faz hoje?", { t: 22 }) +
+    txt(X, 304, "Pode marcar mais de uma.", { t: 13, cor: c.onSurfaceVariant }) +
+    chips(332, [["Carteira assinada", true], ["Autônomo", false], ["Estudante", true], ["Aposentado", false], ["Empresa própria", false], ["Outro", false]]) +
+    botao(X, 636, LW, "Continuar") + pular()],
+
+  ["7. Casa", 2, "modo", () =>
+    marca(X, 278, "Como é a sua casa?", { t: 22 }) +
+    txt(X, 304, "Isso ajuda a separar o que é essencial.", { t: 13, cor: c.onSurfaceVariant }) +
+    chips(332, [["Aluguel", true], ["Financiada", false], ["Própria quitada", false], ["Moro com a família", false]]) +
+    botao(X, 636, LW, "Continuar") + pular()],
+
+  ["8. Transporte", 3, "email", () =>
+    marca(X, 278, "Como você se desloca?", { t: 22 }) +
+    txt(X, 304, "Pode marcar mais de uma.", { t: 13, cor: c.onSurfaceVariant }) +
+    chips(332, [["Carro próprio", false], ["Ônibus ou metrô", true], ["Aplicativo", true], ["Moto", false], ["Bicicleta ou a pé", false]]) +
+    botao(X, 636, LW, "Continuar") + pular()],
+
+  ["9. Revisão das regras", 4, "pensando", () =>
+    marca(X, 278, "Olha o que eu entendi", { t: 22 }) +
+    txt(X, 304, "Dá para mudar quando quiser.", { t: 13, cor: c.onSurfaceVariant }) +
+    [["Aluguel", "Essencial", 3, c.essencial], ["Ônibus e metrô", "Essencial", 3, c.essencial], ["Aplicativo", "Importante", 2, c.importante], ["Streaming", "Flexível", 1, c.flexivel]]
+      .map(([n, nivel, q, cor], i) => {
+        const y = 330 + i * 56;
+        return cartao(X, y, LW, 48) + txt(X + 14, y + 30, n, { t: 14, p: 600 }) + pintas(X + 188, y + 25, q, cor) + txt(X + LW - 14, y + 30, nivel, { t: 12, a: "end", cor: c.onSurfaceVariant });
+      }).join("") +
+    botao(X, 636, LW, "Está certo") + txt(180, 728, "Ajustar as regras", { p: 600, cor: c.primary, a: "middle" })],
+
+  ["10. Conectar bancos", 5, "pronto", () =>
+    marca(X, 278, "Hora de trazer a grana", { t: 22 }) +
+    [["Abra o Meu Pluggy", "O site abre fora do app."], ["Conecte seus bancos por lá", "Open Finance, sem senha aqui."], ["Volte e toque em Já conectei", "Ou importe OFX / CSV no celular."]]
+      .map(([a, b], i) => {
+        const y = 312 + i * 64;
+        return `<circle cx="${X + 16}" cy="${y + 18}" r="15" fill="${c.secondaryContainer}"/>` +
+          txt(X + 16, y + 23, i + 1, { p: 600, a: "middle", cor: c.onSecondaryContainer }) +
+          txt(X + 42, y + 14, a, { t: 14, p: 600 }) + txt(X + 42, y + 34, b, { t: 12, cor: c.onSurfaceVariant });
+      }).join("") +
+    rr(X, 576, LW, 48, 24, c.primary) + txt(170, 605, "Abrir o Meu Pluggy", { p: 600, cor: c.onPrimary, a: "middle" }) + icone("fora", 252, 589, c.onPrimary, 20) +
+    botao(X, 636, LW, "Já conectei", "contorno") + pular()],
+];
+
+// ---------- Início (Toca Editorial) ----------
 function inicio({ oculto, vazio } = {}) {
-  let s = marca(16, 62, "Boa noite, Bia", { t: 28 }) + icone("sino", 316, 38, c.onSurface) + (vazio ? "" : `<circle cx="336" cy="40" r="9" fill="${c.error}"/>` + txt(336, 44, "2", { t: 11, p: 600, cor: c.onError, a: "middle" }));
+  let s = marca(20, 62, "Boa noite, Bia", { t: 26 }) + icone("sino", 314, 38, c.onSurface) +
+    (vazio ? "" : `<circle cx="334" cy="40" r="9" fill="${c.error}"/>` + txt(334, 44, "2", { t: 11, p: 600, cor: c.onError, a: "middle" }));
   if (vazio) {
-    s += cartao(16, 88, 328, 300) + pacoca("dormindo", 180, 220, 96) + marca(180, 264, "Seus bancos estão a caminho", { t: 20, a: "middle" }) +
-      linhas(180, 292, ["A primeira sincronização leva alguns", "minutos. Eu aviso quando chegar."], { a: "middle", cor: c.onSurfaceVariant }) +
-      botao(92, 328, 176, "Conectar outro banco", "contorno");
+    s += cartao(16, 88, 328, 300) + pacoca("dormindo", 180, 218, 94) +
+      marca(180, 260, "Seus bancos estão a caminho", { t: 18, a: "middle" }) +
+      linhas(180, 288, ["A primeira sincronização leva alguns", "minutos. Eu aviso quando chegar."], { a: "middle", cor: c.onSurfaceVariant }) +
+      botao(84, 326, 192, "Conectar outro banco", "contorno");
     s += cartao(16, 404, 328, 116) + txt(32, 434, "Enquanto isso", { t: 16, p: 600 }) +
-      linhas(32, 460, ["Registre um gasto em dinheiro ou leia uma nota", "fiscal pelo botão + aqui embaixo."], { cor: c.onSurfaceVariant });
+      linhas(32, 460, ["Registre um gasto em dinheiro ou leia uma", "nota fiscal pelo botão + aqui embaixo."], { cor: c.onSurfaceVariant });
     return s + nav(676, "Início");
   }
-  s += cartao(16, 88, 328, 196) + txt(32, 118, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) + icone("olho", 304, 100, c.onSurfaceVariant) +
-    (oculto ? txt(32, 166, "R$", { t: 40, p: 600 }) + [0, 1, 2].map((k) => `<circle cx="${108 + k * 22}" cy="153" r="7" fill="${c.onSurface}"/>`).join("")
+  // Cartão hero: Sobrou este mês + badge verde sutil + barra 100% caramelo.
+  s += cartao(16, 86, 328, 194) +
+    txt(32, 116, "Sobrou este mês", { t: 13, p: 600, cor: c.onSurfaceVariant }) +
+    (!oculto ? rr(234, 100, 60, 24, 12, c.mata, { op: 0.16 }) + txt(264, 116, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" }) : "") +
+    icone("olho", 304, 98, c.onSurfaceVariant) +
+    (oculto
+      ? txt(32, 166, "R$", { t: 38, p: 700 }) + [0, 1, 2].map((k) => `<circle cx="${104 + k * 20}" cy="153" r="6.5" fill="${c.onSurface}"/>`).join("")
       : valor(32, 166, "1.284", "90")) +
     txt(32, 194, oculto ? "Entrou R$ ••• · Saiu R$ •••" : "Entrou R$ 6.200,00 · Saiu R$ 4.915,10", { t: 12, cor: c.onSurfaceVariant }) +
-    rr(32, 210, 296, 10, 5, c.surfaceContainerHighest) + rr(32, 210, 133, 10, 5, c.essencial) + rr(167, 210, 59, 10, 0, c.importante) + rr(228, 210, 42, 10, 0, c.flexivel) +
-    [["Essencial", 3, c.essencial, 32], ["Importante", 2, c.importante, 138], ["Flexível", 1, c.flexivel, 250]].map(([n, q, cor, x]) => pintas(x + 4, 248, q, cor) + txt(x + 42, 252, n, { t: 12 })).join("");
-  s += pacoca("acenando", 46, 384, 84) + `<path d="M100 304h224a20 20 0 0 1 20 20v40a20 20 0 0 1-20 20H86a6 6 0 0 1-6-6v-54a20 20 0 0 1 20-20Z" fill="${c.primaryContainer}"/>` +
-    linhas(98, 334, ["Mercado ficou 12% abaixo do", "mês passado. Bom ritmo!"], { t: 15, p: 500, f: "'Baloo 2', ui-rounded, system-ui, sans-serif", cor: c.onPrimaryContainer }, 22);
-  s += txt(16, 424, "Últimos lançamentos", { t: 16, p: 600 }) + txt(344, 424, "Ver tudo", { p: 600, cor: c.primary, a: "end" }) + cartao(16, 438, 328, 188) +
-    lancamento(28, 444, 300, "Mercado da Vila", "Alimentação · Débito", oculto ? "R$ •••" : "R$ 187,43") + `<path d="M28 504H332" stroke="${c.outlineVariant}"/>` +
-    lancamento(28, 504, 300, "Posto Estrela", "Transporte · Crédito", oculto ? "R$ •••" : "R$ 210,00", { cat: "transporte", banco: c.rio, ic: "carro" }) + `<path d="M28 564H332" stroke="${c.outlineVariant}"/>` +
-    lancamento(28, 564, 300, "Salário", "Entrada · Pix", oculto ? "+R$ •••" : "+R$ 6.200,00", { entrada: true, ic: "seta" });
+    rr(32, 212, 296, 9, 4.5, c.surfaceContainerHighest) +
+    rr(32, 212, 134, 9, 4.5, c.essencial) + rr(168, 212, 60, 9, 0, c.importante) + rr(230, 212, 42, 9, 0, c.flexivel) +
+    [["Essencial", 3, c.essencial, 28], ["Importante", 2, c.importante, 132], ["Flexível", 1, c.flexivel, 246]]
+      .map(([n, q, cor, x]) => pintas(x + 4, 248, q, cor) + txt(x + 40, 252, n, { t: 11 })).join("");
+
+  // Cartão editorial da fala da Paçoca (superfície limpa + retrato sem pochete).
+  s += cartao(16, 294, 328, 90) +
+    pacocaEditorial("retrato", 62, 384, 0.7) +
+    linhas(108, 332, ["Mercado ficou 12% abaixo do", "mês passado. Bom ritmo!"], { t: 14, p: 500, f: MARCA, cor: c.onSurface }, 22);
+
+  // Últimos lançamentos
+  s += txt(18, 416, "Últimos lançamentos", { t: 15, p: 600 }) + txt(342, 416, "Ver tudo", { t: 13, p: 600, cor: c.primary, a: "end" }) +
+    cartao(16, 430, 328, 196) +
+    lancamento(28, 438, 302, "Mercado da Vila", "Alimentação · Débito", oculto ? "R$ •••" : "-R$ 187,43") + `<path d="M28 500H332" stroke="${c.outlineVariant}"/>` +
+    lancamento(28, 500, 302, "Posto Estrela", "Transporte · Crédito", oculto ? "R$ •••" : "-R$ 210,00", { cat: "transporte", banco: c.rio, ic: "carro" }) + `<path d="M28 562H332" stroke="${c.outlineVariant}"/>` +
+    lancamento(28, 562, 302, "Salário", "Entrada · Pix", oculto ? "+R$ •••" : "+R$ 6.200,00", { entrada: true, ic: "seta" });
   return s + nav(676, "Início");
 }
+
 function inicioDesktop() {
   const W = 1280, H = 800;
-  let s = rr(0, 0, W, H, 0, c.surface) + rr(0, 0, 88, H, 0, c.surfaceContainer) + `<path d="M88 0V${H}" stroke="${c.outlineVariant}"/>` + rr(16, 24, 56, 56, 16, c.primary) + icone("mais", 32, 40, c.onPrimary, 24, 2.2);
-  [["casa", "Início", true], ["lista", "Extrato"], ["pizza", "Gastos"], ["balao", "Paçoca"]].forEach(([ic, l, sel], i) => { const y = 112 + i * 64;
-    s += (sel ? rr(16, y, 56, 30, 15, c.secondaryContainer) : "") + icone(ic, 32, y + 3, sel ? c.onSecondaryContainer : c.onSurfaceVariant) + txt(44, y + 48, l, { t: 12, p: 600, a: "middle", cor: sel ? c.onSurface : c.onSurfaceVariant }); });
+  let s = rr(0, 0, W, H, 0, c.surface) + rr(0, 0, 88, H, 0, c.surfaceContainer) + `<path d="M88 0V${H}" stroke="${c.outlineVariant}"/>` +
+    rr(16, 24, 56, 56, 16, c.primary) + icone("mais", 32, 40, c.onPrimary, 24, 2.2);
+  [["casa", "Início", true], ["lista", "Extrato"], ["pizza", "Gastos"], ["balao", "Paçoca"]].forEach(([ic, l, sel], i) => {
+    const y = 112 + i * 64;
+    s += (sel ? rr(16, y, 56, 30, 15, c.secondaryContainer) : "") + icone(ic, 32, y + 3, sel ? c.onSecondaryContainer : c.onSurfaceVariant) +
+      txt(44, y + 48, l, { t: 12, p: 600, a: "middle", cor: sel ? c.onSurface : c.onSurfaceVariant });
+  });
   s += icone("engrenagem", 32, H - 56, c.onSurfaceVariant);
-  s += marca(120, 68, "Boa noite, Bia", { t: 32 }) + icone("sino", 1216, 40, c.onSurface) + `<circle cx="1236" cy="42" r="9" fill="${c.error}"/>` + txt(1236, 46, "2", { t: 11, p: 600, cor: c.onError, a: "middle" });
-  // Coluna esquerda: resumo e fala. Coluna direita: lançamentos e rosca.
-  s += cartao(120, 96, 520, 220) + txt(144, 132, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) + icone("olho", 592, 112, c.onSurfaceVariant) + valor(144, 190, "1.284", "90", 48) +
+  s += marca(120, 66, "Boa noite, Bia", { t: 30 }) + icone("sino", 1216, 40, c.onSurface) + `<circle cx="1236" cy="42" r="9" fill="${c.error}"/>` + txt(1236, 46, "2", { t: 11, p: 600, cor: c.onError, a: "middle" });
+
+  // Coluna esquerda: resumo, fala editorial da Paçoca e contas conectadas.
+  s += cartao(120, 96, 520, 224) + txt(144, 132, "Sobrou este mês", { p: 600, cor: c.onSurfaceVariant }) +
+    rr(520, 114, 62, 24, 12, c.mata, { op: 0.16 }) + txt(551, 130, "+12%", { t: 12, p: 600, cor: c.mata, a: "middle" }) +
+    icone("olho", 592, 112, c.onSurfaceVariant) +
+    valor(144, 190, "1.284", "90", 46) +
     txt(144, 222, "Entrou R$ 6.200,00 · Saiu R$ 4.915,10", { t: 13, cor: c.onSurfaceVariant }) +
-    rr(144, 244, 472, 12, 6, c.surfaceContainerHighest) + rr(144, 244, 212, 12, 6, c.essencial) + rr(358, 244, 94, 12, 0, c.importante) + rr(454, 244, 67, 12, 0, c.flexivel) +
+    rr(144, 244, 472, 11, 5.5, c.surfaceContainerHighest) + rr(144, 244, 212, 11, 5.5, c.essencial) + rr(358, 244, 94, 11, 0, c.importante) + rr(454, 244, 67, 11, 0, c.flexivel) +
     [["Essencial", 3, c.essencial, 144, "R$ 2.790,00"], ["Importante", 2, c.importante, 306, "R$ 1.240,10"], ["Flexível", 1, c.flexivel, 470, "R$ 885,00"]]
       .map(([n, q, cor, x, v]) => pintas(x + 4, 284, q, cor) + txt(x + 42, 288, n, { t: 13 }) + txt(x + 42, 304, v, { t: 12, cor: c.onSurfaceVariant })).join("");
-  s += pacoca("acenando", 166, 440, 104) + `<path d="M236 348h384a20 20 0 0 1 20 20v52a20 20 0 0 1-20 20H222a6 6 0 0 1-6-6v-66a20 20 0 0 1 20-20Z" fill="${c.primaryContainer}"/>` +
-    linhas(240, 384, ["Mercado ficou 12% abaixo do mês passado.", "Bom ritmo!"], { t: 17, p: 500, f: "'Baloo 2', ui-rounded, system-ui, sans-serif", cor: c.onPrimaryContainer }, 26);
-  s += cartao(120, 472, 520, 296) + txt(144, 508, "Contas conectadas", { t: 16, p: 600 });
-  [["Banco Ipê", "Conta corrente", "3.412", "08", c.tertiary], ["Banco Jatobá", "Cartão de crédito · fatura aberta", "1.130", "55", c.rio]].forEach(([b, t, i, d, cor], k) => { const y = 528 + k * 96;
+
+  s += cartao(120, 340, 520, 108) +
+    pacocaEditorial("retrato", 174, 446, 0.82) +
+    linhas(232, 386, ["Mercado ficou 12% abaixo do mês passado.", "Bom ritmo!"], { t: 16, p: 500, f: MARCA, cor: c.onSurface }, 24);
+
+  s += cartao(120, 468, 520, 300) + txt(144, 504, "Contas conectadas", { t: 16, p: 600 });
+  [["Banco Ipê", "Conta corrente", "3.412", "08", c.tertiary], ["Banco Jatobá", "Cartão de crédito · fatura aberta", "1.130", "55", c.rio]].forEach(([b, t, i, d, cor], k) => {
+    const y = 524 + k * 96;
     s += rr(144, y, 4, 64, 2, cor) + txt(164, y + 22, b, { t: 16, p: 600 }) + txt(164, y + 42, t, { t: 12, cor: c.onSurfaceVariant }) + valor(616, y + 34, i, d, 24, { a: "end" }) +
-      `<circle cx="168" cy="${y + 58}" r="4" fill="${c.mata}"/>` + txt(180, y + 62, "Sincronizado hoje às 18:40", { t: 12, cor: c.onSurfaceVariant }); });
-  s += txt(144, 744, "Conectar outro banco", { p: 600, cor: c.primary });
-  s += cartao(672, 96, 576, 348) + txt(696, 132, "Últimos lançamentos", { t: 16, p: 600 }) + txt(1224, 132, "Ver tudo", { p: 600, cor: c.primary, a: "end" });
-  [["Mercado da Vila", "Alimentação · Débito · Banco Ipê", "R$ 187,43", {}], ["Posto Estrela", "Transporte · Crédito · Banco Jatobá", "R$ 210,00", { cat: "transporte", banco: c.rio, ic: "carro" }],
-    ["Salário", "Entrada · Pix · Banco Ipê", "+R$ 6.200,00", { entrada: true, ic: "seta" }], ["Loja 0387", "Compras · Crédito · Banco Jatobá", "R$ 64,90", { cat: "compras", banco: c.rio, ic: "sacola" }]]
+      `<circle cx="168" cy="${y + 58}" r="4" fill="${c.mata}"/>` + txt(180, y + 62, "Sincronizado hoje às 18:40", { t: 12, cor: c.onSurfaceVariant });
+  });
+  s += txt(144, 742, "Conectar outro banco", { p: 600, cor: c.primary });
+
+  // Coluna direita: lançamentos e rosca.
+  s += cartao(672, 96, 576, 352) + txt(696, 132, "Últimos lançamentos", { t: 16, p: 600 }) + txt(1224, 132, "Ver tudo", { p: 600, cor: c.primary, a: "end" });
+  [["Mercado da Vila", "Alimentação · Débito · Banco Ipê", "-R$ 187,43", {}],
+    ["Posto Estrela", "Transporte · Crédito · Banco Jatobá", "-R$ 210,00", { cat: "transporte", banco: c.rio, ic: "carro" }],
+    ["Salário", "Entrada · Pix · Banco Ipê", "+R$ 6.200,00", { entrada: true, ic: "seta" }],
+    ["Loja 0387", "Compras · Crédito · Banco Jatobá", "-R$ 64,90", { cat: "compras", banco: c.rio, ic: "sacola" }]]
     .forEach(([n, i, v, o], k) => { const y = 148 + k * 68; s += lancamento(696, y, 528, n, i, v, o) + (k < 3 ? `<path d="M696 ${y + 62}H1224" stroke="${c.outlineVariant}"/>` : ""); });
-  // Rosca: até 5 categorias e Outros.
+
   const gastos = [["moradia", "Moradia", 1800], ["alimentacao", "Alimentação", 960], ["transporte", "Transporte", 520], ["compras", "Compras", 420], ["saude", "Saúde", 310], ["outros", "Outros", 905.1]];
   const tot = gastos.reduce((a, g) => a + g[2], 0), R = 70, C = 2 * Math.PI * R;
   let ini = 0;
-  s += cartao(672, 472, 576, 296) + txt(696, 508, "Para onde foi", { t: 16, p: 600 }) + txt(1224, 508, "Ver análise", { p: 600, cor: c.primary, a: "end" });
-  for (const [id, , v] of gastos) { const L = (v / tot) * C;
-    s += `<circle cx="800" cy="640" r="${R}" fill="none" stroke="${c.g[id]}" stroke-width="28" stroke-dasharray="${(L - 2).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-ini).toFixed(1)}" transform="rotate(-90 800 640)"/>`; ini += L; }
-  s += txt(800, 638, "R$ 4.915,10", { t: 15, p: 600, a: "middle" }) + txt(800, 656, "em novembro", { t: 11, a: "middle", cor: c.onSurfaceVariant });
-  gastos.forEach(([id, n, v], k) => { const y = 548 + k * 34;
-    s += `<circle cx="928" cy="${y}" r="6" fill="${c.g[id]}"/>` + txt(946, y + 5, n, { t: 14 }) + txt(1224, y + 5, `R$ ${v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`, { t: 14, p: 600, a: "end" }); });
+  s += cartao(672, 468, 576, 300) + txt(696, 504, "Para onde foi", { t: 16, p: 600 }) + txt(1224, 504, "Ver análise", { p: 600, cor: c.primary, a: "end" });
+  for (const [id, , v] of gastos) {
+    const L = (v / tot) * C;
+    s += `<circle cx="800" cy="638" r="${R}" fill="none" stroke="${c.g[id]}" stroke-width="28" stroke-dasharray="${(L - 2).toFixed(1)} ${C.toFixed(1)}" stroke-dashoffset="${(-ini).toFixed(1)}" transform="rotate(-90 800 638)"/>`;
+    ini += L;
+  }
+  s += txt(800, 636, "R$ 4.915,10", { t: 15, p: 600, a: "middle" }) + txt(800, 654, "em novembro", { t: 11, a: "middle", cor: c.onSurfaceVariant });
+  gastos.forEach(([id, n, v], k) => {
+    const y = 546 + k * 34;
+    s += `<circle cx="928" cy="${y}" r="6" fill="${c.g[id]}"/>` + txt(946, y + 5, n, { t: 14 }) + txt(1224, y + 5, `R$ ${v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`, { t: 14, p: 600, a: "end" });
+  });
   return { W, H, s };
 }
 
@@ -150,8 +245,11 @@ const G = 32, LEG = 44;
 for (const tema of ["claro", "escuro"]) {
   usar(tema);
   for (const [nome, de] of [["trilha-1", 0], ["trilha-2", 5]]) {
-    const corpo = [0, 1, 2, 3, 4].map((i) => `<g transform="translate(${G + i * (CEL.w + G)} ${G})">${telaTrilha(de + i)}</g>`).join("");
-    grava(import.meta.url, `${nome}-${tema}`, 5 * (CEL.w + G) + G, CEL.h + G + LEG + 12, corpo, `Trilha até a toca, etapas ${de + 1} a ${de + 5}, tema ${tema}`);
+    const corpo = [0, 1, 2, 3, 4].map((i) => {
+      const [legenda, passo, pose, conteudo] = ETAPAS[de + i];
+      return `<g transform="translate(${G + i * (CEL.w + G)} ${G})">${telaOnboarding(de + i + 1, passo, legenda, pose, conteudo)}</g>`;
+    }).join("");
+    grava(import.meta.url, `${nome}-${tema}`, 5 * (CEL.w + G) + G, CEL.h + G + LEG + 12, corpo, `Criação de conta e guia inicial, etapas ${de + 1} a ${de + 5}, tema ${tema}`);
   }
   const telas = [[inicio(), "Início"], [inicio({ oculto: true }), "Início com os valores ocultos"], [inicio({ vazio: true }), "Início no primeiro dia"]];
   grava(import.meta.url, `inicio-${tema}`, 3 * (CEL.w + G) + G, CEL.h + G + LEG + 12,

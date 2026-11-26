@@ -9,7 +9,7 @@ O ponto de partida é o [briefing original](00-briefing.md). Onde o briefing e a
 | [1](01-revisao-das-decisoes.md) | Revisão das decisões do briefing | Pronta | Ajustes por PR |
 | [2](02-design-tokens.md) | Design tokens em JSON e Dart | Pronta | Ajustes por PR |
 | [3](03-mascote.md) | Mascote: folha de modelo, expressões e máquina de estados | Pronta, em refinamento | Igor |
-| [4](04-logo-e-icone.md) | Logo e ícone do app | Pronta | Colaboração. O ícone usa a cabeça da Paçoca: combinar com o Igor |
+| [4](04-logo-e-icone.md) | Logo e ícone do app | Pronta | Ajustes por PR |
 | [5](05-componentes.md) | Biblioteca de componentes, com estados | Pronta | Ajustes por PR |
 | [6](06-telas-a.md) | Telas A: primeiro acesso e Início | Pronta | Ajustes por PR |
 | 7 | Telas B: extrato, detalhe, correção e Gastos | A fazer | Colaboração |
