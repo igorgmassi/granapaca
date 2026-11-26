@@ -1,0 +1,31 @@
+id: casa-familia
+group: home
+label: Mora com família
+description: Quem divide a rotina e as despesas domésticas com cônjuge, parentes ou familiares.
+rules:
+  - id: family-moradia-compartilhada
+    name: Despesas fixas da moradia
+    explanation: Contas básicas da casa sustentam todo mundo que mora junto.
+    essentiality: essential
+    brand: Casa
+    match:
+      categories: [housing]
+      keywords: [aluguel, financiamento, condominio, energia, luz, agua, gas, iptu]
+
+  - id: family-mercado-mensal
+    name: Compras da casa e mercado
+    explanation: Abastecer a despensa para mais pessoas exige compras maiores e recorrentes ao longo do mês.
+    essentiality: essential
+    brand: Casa
+    match:
+      categories: [food]
+      keywords: [supermercado, atacarejo, atacadao, assai, hortifruti, feira, acougue, padaria]
+
+  - id: family-saude-plano
+    name: Plano de saúde e farmácia da família
+    explanation: Cuidados médicos, exames e remédios de uso contínuo têm prioridade no orçamento da família.
+    essentiality: essential
+    brand: Saúde
+    match:
+      categories: [health]
+      keywords: [plano de saude, unimed, bradesco saude, amil, sulamerica, drogaria, farmacia, laboratorio]

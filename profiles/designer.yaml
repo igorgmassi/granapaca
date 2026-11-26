@@ -1,0 +1,40 @@
+id: designer
+group: occupation
+label: Designer
+description: Quem cria interfaces, marcas, ilustrações ou materiais visuais usando softwares de criação e referências.
+rules:
+  - id: designer-ferramentas-criativas
+    name: Assinaturas de ferramentas criativas
+    explanation: Softwares de criação e bancos de recursos são ferramentas diretas de trabalho, não entretenimento.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [figma, adobe, creative cloud, canva, framer, sketch, affinity, envato, shutterstock]
+
+  - id: designer-internet-armazenamento
+    name: Internet e armazenamento em nuvem
+    explanation: Enviar arquivos pesados e colaborar online exige boa conexão e espaço seguro para entregas.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [fibra, internet, google drive, icloud, dropbox, wetransfer]
+
+  - id: designer-cursos-referencias
+    name: Cursos, livros e referências visuais
+    explanation: Estudar repertório, tipografia e novas ferramentas ajuda a evoluir o portfólio.
+    essentiality: important
+    brand: Estudo
+    match:
+      categories: [education]
+      keywords: [domestika, ebac, curso design, livraria, tipografia, revista design]
+
+  - id: designer-materiais-impressao
+    name: Papelaria, gráfica e provas de impressão
+    explanation: Provas impressas e materiais de rascunho costumam fazer parte da entrega de projetos.
+    essentiality: important
+    brand: Trabalho
+    match:
+      categories: [shopping]
+      keywords: [grafica, impressao, papelaria, kalunga, sketchbook, mesa digitalizadora]

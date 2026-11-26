@@ -1,0 +1,31 @@
+id: casa-sozinho
+group: home
+label: Mora sozinho
+description: Quem arca sozinho com as contas fixas da casa e busca equilíbrio entre mercado e praticidade nas refeições.
+rules:
+  - id: solo-contas-moradia
+    name: Aluguel, condomínio e contas da casa
+    explanation: Morando sozinho, todas as contas fixas da casa caem em um único orçamento e vêm primeiro.
+    essentiality: essential
+    brand: Casa
+    match:
+      categories: [housing]
+      keywords: [aluguel, condominio, iptu, energia, luz, agua, gas, saneamento]
+
+  - id: solo-mercado-essencial
+    name: Supermercado e feira
+    explanation: Compras de mercado e feira garantem a alimentação da semana com mais previsibilidade.
+    essentiality: essential
+    brand: Casa
+    match:
+      categories: [food]
+      keywords: [supermercado, mercado, hortifruti, sacolao, acougue, padaria, atacadao, assai]
+
+  - id: solo-refeicoes-praticas
+    name: Marmitas e refeições prontas
+    explanation: Cozinhar para uma pessoa nem sempre compensa no tempo; pedir ou comprar marmita pode fazer parte da rotina, sem culpa.
+    essentiality: important
+    brand: Casa
+    match:
+      categories: [food]
+      keywords: [marmita, restaurante, self service, pf, ifood, delivery]

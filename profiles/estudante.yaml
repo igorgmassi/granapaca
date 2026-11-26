@@ -1,0 +1,40 @@
+id: estudante
+group: occupation
+label: Estudante
+description: Quem está na escola, faculdade, curso técnico ou preparatório e concentra gastos em formação e deslocamento.
+rules:
+  - id: student-mensalidade-cursos
+    name: Mensalidade, cursos e provas
+    explanation: Mensalidades, matrículas e taxas de inscrição são a base do período de estudos.
+    essentiality: essential
+    brand: Estudo
+    match:
+      categories: [education]
+      keywords: [faculdade, universidade, mensalidade, matricula, cursinho, vestibular, concurso, taxa inscricao]
+
+  - id: student-livros-materiais
+    name: Livros, apostilas e papelaria
+    explanation: Livros, cópias e material de apoio acompanham as disciplinas ao longo do semestre.
+    essentiality: essential
+    brand: Estudo
+    match:
+      categories: [education, shopping]
+      keywords: [livraria, xerox, copia, apostila, papelaria, saraiva, cultura, amazon livros]
+
+  - id: student-transporte-aulas
+    name: Transporte até as aulas
+    explanation: Ir e voltar das aulas faz parte da rotina fixa de quem estuda.
+    essentiality: essential
+    brand: Estudo
+    match:
+      categories: [transport]
+      keywords: [bilhete unico, meia tarifa, passe estudantil, metro, onibus, cptm, brt]
+
+  - id: student-internet-estudo
+    name: Internet para estudar
+    explanation: Aulas online, pesquisas e entregas dependem de uma conexão confiável.
+    essentiality: essential
+    brand: Estudo
+    match:
+      categories: [services]
+      keywords: [fibra, internet, banda larga, plano movel]

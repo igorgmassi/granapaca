@@ -1,0 +1,40 @@
+id: casa-filhos
+group: home
+label: Tem filhos
+description: Quem cuida de crianças ou adolescentes, com gastos recorrentes de escola, saúde infantil e rotina escolar.
+rules:
+  - id: kids-escola-creche
+    name: Escola, creche e material escolar
+    explanation: Educação, creche, uniforme e material escolar são compromissos fixos de quem tem filhos.
+    essentiality: essential
+    brand: Filhos
+    match:
+      categories: [education]
+      keywords: [escola, colegio, creche, bercario, uniforme, material escolar, transporte escolar]
+
+  - id: kids-saude-pediatria
+    name: Pediatria, vacinas e farmácia infantil
+    explanation: Consultas pediátricas, vacinas e itens de cuidado infantil não podem esperar.
+    essentiality: essential
+    brand: Filhos
+    match:
+      categories: [health]
+      keywords: [pediatra, vacina, farmacia, drogaria, fralda, formula infantil, clinica infantil]
+
+  - id: kids-alimentacao-lanches
+    name: Alimentação e lanche escolar
+    explanation: A alimentação diária e os lanches acompanham o ritmo da escola e do crescimento.
+    essentiality: essential
+    brand: Filhos
+    match:
+      categories: [food]
+      keywords: [cantina, hortifruti, supermercado, padaria, lanche escolar]
+
+  - id: kids-atividades-extras
+    name: Esportes e atividades extracurriculares
+    explanation: Atividades fora da escola apoiam o desenvolvimento, a convivência e o bem-estar das crianças.
+    essentiality: important
+    brand: Filhos
+    match:
+      categories: [education, leisure]
+      keywords: [natacao, futebol, bale, ingles, musica, escolinha, brinquedoteca]

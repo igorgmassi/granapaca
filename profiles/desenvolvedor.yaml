@@ -1,0 +1,40 @@
+id: desenvolvedor
+group: occupation
+label: Desenvolvedor
+description: Quem trabalha com programação, sistemas ou tecnologia e depende de conexão estável, ferramentas digitais e estudo contínuo.
+rules:
+  - id: dev-internet-estavel
+    name: Internet e conectividade
+    explanation: Sem internet estável o trabalho para; para quem desenvolve, a conexão é infraestrutura básica do dia a dia.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [fibra, internet, vivo fibra, claro fibra, tim ultra, banda larga]
+
+  - id: dev-ferramentas-nuvem
+    name: Ferramentas e serviços em nuvem
+    explanation: Servidores, domínios e licenças fazem parte da bancada de trabalho de quem programa.
+    essentiality: essential
+    brand: Trabalho
+    match:
+      categories: [services]
+      keywords: [github, jetbrains, aws, azure, cloud, vercel, digitalocean, dominio, hosting, docker]
+
+  - id: dev-educacao-tecnica
+    name: Cursos e livros técnicos
+    explanation: A área muda rápido; investir em cursos, livros e certificações ajuda a manter a carreira em dia.
+    essentiality: important
+    brand: Estudo
+    match:
+      categories: [education]
+      keywords: [alura, udemy, coursera, oreilly, livro tecnico, certificacao, bootcamp]
+
+  - id: dev-equipamento-escritorio
+    name: Equipamentos e periféricos de trabalho
+    explanation: Periféricos, cadeira ergonômica e upgrades evitam desgaste físico e sustentam a rotina de trabalho.
+    essentiality: important
+    brand: Trabalho
+    match:
+      categories: [shopping]
+      keywords: [kabum, pichau, teclado mecanico, monitor, cadeira ergonomica, ssd, notebook]

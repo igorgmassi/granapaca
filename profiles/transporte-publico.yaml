@@ -1,0 +1,22 @@
+id: transporte-publico
+group: transport
+label: Transporte público
+description: Quem se desloca principalmente de ônibus, metrô, trem ou VLT.
+rules:
+  - id: transit-passagens-recarga
+    name: Recarga de bilhete e passagens
+    explanation: Passagens e recargas do cartão de transporte garantem os deslocamentos diários.
+    essentiality: essential
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [bilhete unico, riocard, bom, top, metro, onibus, trem, cptm, vlt, brt, recarga transporte, passagem]
+
+  - id: transit-corrida-apoio
+    name: Corridas pontuais de apoio
+    explanation: Corridas por aplicativo em dias de chuva, atraso ou volta tarde complementam o transporte público e variam conforme o mês.
+    essentiality: flexible
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [uber, "99", taxi, cabify, indrive]

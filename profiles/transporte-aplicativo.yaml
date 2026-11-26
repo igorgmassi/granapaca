@@ -1,0 +1,22 @@
+id: transporte-aplicativo
+group: transport
+label: Aplicativo de corrida
+description: Quem prefere não manter veículo próprio e usa aplicativos de corrida ou táxi como principal meio de deslocamento.
+rules:
+  - id: ridehail-corridas-rotina
+    name: Corridas de aplicativo e táxi
+    explanation: Para quem escolheu não manter carro próprio, as corridas de app substituem combustível, seguro e estacionamento.
+    essentiality: essential
+    brand: Transporte
+    match:
+      categories: [transport]
+      keywords: [uber, "99", 99app, taxi, cabify, indrive]
+
+  - id: ridehail-assinatura-desconto
+    name: Assinatura de benefícios em corridas
+    explanation: Planos de desconto costumam se pagar para quem faz várias corridas ao longo do mês.
+    essentiality: important
+    brand: Transporte
+    match:
+      categories: [services, transport]
+      keywords: [uber one, uber pass, clube 99]
