@@ -6,10 +6,22 @@ services:
     build: ../backend
     image: granapaca-api:local
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
-      # Gere a senha em hex (README): ";" ou "'" quebrariam a connection string.
-      ConnectionStrings__Postgres: "Host=db;Database=${POSTGRES_DB:-granapaca};Username=${POSTGRES_USER:-granapaca};Password=${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no infra/.env}"
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-granapaca}
+      POSTGRES_USER: ${POSTGRES_USER:-granapaca}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      GRANAPACA_MASTER_KEY_FILE: /run/secrets/master_key
+      PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
+      PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
       TZ: ${TZ:-America/Sao_Paulo}
+    secrets:
+      - postgres_password
+      - master_key
+    volumes:
+      - appdata:/var/lib/granapaca/files
     # Só localhost: para acessar de fora, use a rede privada (Tailscale), nunca a porta aberta.
     ports:
       - "127.0.0.1:8080:8080"
@@ -27,11 +39,15 @@ services:
   db:
     image: postgres:18-alpine
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-granapaca}
       POSTGRES_USER: ${POSTGRES_USER:-granapaca}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no infra/.env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       TZ: ${TZ:-America/Sao_Paulo}
+    secrets:
+      - postgres_password
     # No published port: only the API reaches the database, through the compose network.
     volumes:
       # PostgreSQL 18 keeps its data under /var/lib/postgresql/18, so the volume mounts the parent.
@@ -44,5 +60,12 @@ services:
       start_period: 30s
       start_interval: 1s
 
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  master_key:
+    file: ./secrets/master_key.txt
+
 volumes:
   pgdata:
+  appdata:

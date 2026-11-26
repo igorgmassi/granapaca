@@ -10,7 +10,7 @@ RUN dotnet restore src/GranaPaCa.Api --locked-mode \
  && dotnet publish src/GranaPaCa.Api --no-restore -c Release -o /app
 
 # Only COPY below, so the arm64 image builds without emulation.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra
 WORKDIR /app
 COPY --from=build /app .
 # The chiseled image already runs as the non-root user "app" and listens on 8080.

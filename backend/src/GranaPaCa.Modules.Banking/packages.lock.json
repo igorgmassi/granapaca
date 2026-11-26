@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "Dapper": {
+        "type": "Direct",
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
+      },
+      "Npgsql": {
+        "type": "Direct",
+        "requested": "[10.0.3, )",
+        "resolved": "10.0.3",
+        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w=="
+      },
+      "granapaca.modules.alerts": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
+      "granapaca.modules.categorization": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "Npgsql": "[10.0.3, )",
+          "YamlDotNet": "[18.1.0, )"
+        }
+      },
+      "granapaca.modules.keyring": {
+        "type": "Project",
+        "dependencies": {
+          "Dapper": "[2.1.89, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
+      "YamlDotNet": {
+        "type": "CentralTransitive",
+        "requested": "[18.1.0, )",
+        "resolved": "18.1.0",
+        "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
+      }
+    }
+  }
+}

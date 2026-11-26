@@ -6,26 +6,27 @@ API e jobs do GranaPaCá em .NET 10 (LTS) e ASP.NET Core, como monólito modular
 
 | Caminho | O que tem |
 |---|---|
-| `src/GranaPaCa.Api` | Host: configuração, health check e migrações na subida |
-| `src/GranaPaCa.Modules.Sample` | Módulo de exemplo e molde dos próximos: schema `sample`, script SQL embutido e um endpoint com Dapper |
-| `tests/GranaPaCa.Tests` | Testes com PostgreSQL real (Testcontainers) e teste de arquitetura (ArchUnitNET) |
+| `src/GranaPaCa.Api` | Host: configuração, validação de senha/segredos, autenticação por bearer opaco, health check e migrações na subida |
+| `src/GranaPaCa.Modules.Keyring` | Criptografia de campo em envelope AES-256-GCM e gestão de DEKs (schema `keyring`, ADR-016) |
+| `src/GranaPaCa.Modules.Identity` | Setup do dono, login com Argon2id, 2FA TOTP, códigos de recuperação e sessões com refresh rotativo (schema `identity`, ADR-019, ADR-024) |
+| `src/GranaPaCa.Modules.Banking` | Ledger *append-only* versionado, ajustes/desfazer, pareamento de transferências, cartões/faturas, provedores `Synthetic` e `Pluggy` e consultas (schema `banking`, ADR-003, ADR-004, ADR-012..015) |
+| `src/GranaPaCa.Modules.Categorization` | Motor determinístico em camadas (usuário > perfil > sistema), perfis YAML e fila de revisão (schema `categorization`, ADR-021) |
+| `src/GranaPaCa.Modules.Alerts` | Caixa de entrada deduplicada de alertas com fechamento automático (schema `alerts`, ADR-011) |
+| `tests/GranaPaCa.Tests` | Testes de integração contra PostgreSQL 18 real (Testcontainers), testes de fronteira (ArchUnitNET) e verificação RNF-06 |
 
-As decisões estão nos ADRs [001](../docs/adr/0001-dotnet-10-e-aspnet-core.md), [002](../docs/adr/0002-monolito-modular.md) e [017](../docs/adr/0017-persistencia-dapper-e-dbup.md).
+As decisões estão nos ADRs em [`docs/adr`](../docs/adr/README.md).
 
 ## Como rodar
 
 Precisa do SDK do .NET fixado em [`global.json`](global.json) e, para os testes de integração, de Docker.
 
 ```bash
-dotnet build
-dotnet test
+dotnet restore --locked-mode
+dotnet build --no-restore
+dotnet test --no-build
 ```
 
-A API precisa de um PostgreSQL. Ela aplica as migrações pendentes antes de atender e responde em `GET /health`:
-
-```bash
-ConnectionStrings__Postgres="Host=localhost;Database=granapaca;Username=granapaca;Password=<senha>" dotnet run --project src/GranaPaCa.Api
-```
+Para subir a instância completa com PostgreSQL 18 e Docker secrets, veja [`infra/README.md`](../infra/README.md).
 
 ## Regras
 

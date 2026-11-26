@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Http.Json;
+using GranaPaCa.Api;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
@@ -14,7 +14,12 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
     // Migrations folder or file would run it again on existing databases. Append new scripts; never edit an entry.
     private static readonly string[] AppliedMigrations =
     [
-        "GranaPaCa.Modules.Sample.Migrations.0001_create_sample_schema.sql",
+        "GranaPaCa.Api.Migrations.0001_drop_sample_schema.sql",
+        "GranaPaCa.Modules.Alerts.Migrations.0001_create_alerts_schema.sql",
+        "GranaPaCa.Modules.Banking.Migrations.0001_create_banking_schema.sql",
+        "GranaPaCa.Modules.Categorization.Migrations.0001_create_categorization_schema.sql",
+        "GranaPaCa.Modules.Identity.Migrations.0001_create_identity_schema.sql",
+        "GranaPaCa.Modules.Keyring.Migrations.0001_create_keyring_schema.sql",
     ];
 
     [Fact]
@@ -38,21 +43,44 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sample_items_come_from_the_migrated_schema()
+    public async Task Sample_schema_and_endpoint_were_removed()
     {
-        var id = Guid.CreateVersion7();
-        await using (var insert = api.Services.GetRequiredService<NpgsqlDataSource>()
-            .CreateCommand("INSERT INTO sample.item (id, name) VALUES ($1, $2)"))
-        {
-            insert.Parameters.Add(new NpgsqlParameter { Value = id });
-            insert.Parameters.Add(new NpgsqlParameter { Value = "first item" });
-            await insert.ExecuteNonQueryAsync(Ct);
-        }
+        await using var query = api.Services.GetRequiredService<NpgsqlDataSource>()
+            .CreateCommand("SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = 'sample'");
+        var count = Convert.ToInt64(await query.ExecuteScalarAsync(Ct));
+        Assert.Equal(0, count);
 
-        var items = await api.CreateClient().GetFromJsonAsync<Item[]>("/sample/items", Ct);
-
-        Assert.Contains(new Item(id, "first item"), items!);
+        var response = await api.CreateClient().GetAsync("/sample/items", Ct);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private sealed record Item(Guid Id, string Name);
+    [Fact]
+    public async Task Protected_endpoints_reject_unauthenticated_requests()
+    {
+        var client = api.CreateClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/summary", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/transactions", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/alerts", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/rules", Ct)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short")]
+    [InlineData("postgres")]
+    [InlineData("1234567890123456")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaa")]
+    public void Weak_database_passwords_are_rejected(string weakPassword)
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            PostgresConnectionResolver.ValidatePasswordStrength(weakPassword));
+    }
+
+    [Fact]
+    public void Strong_database_password_is_accepted()
+    {
+        var generated = Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        PostgresConnectionResolver.ValidatePasswordStrength(generated);
+    }
 }
