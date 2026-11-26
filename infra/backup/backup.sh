@@ -16,6 +16,7 @@ STATUS_FILE="${BACKUP_STATUS_FILE:-}"
 ALERT_WEBHOOK_URL="${BACKUP_ALERT_WEBHOOK_URL:-}"
 CURRENT_STEP="init"
 BACKUP_SUCCEEDED="false"
+RESTIC_OUT_FILE=""
 
 log() {
   printf '%s [granapaca-backup] %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$1"
@@ -25,9 +26,18 @@ write_status() {
   local state="$1"
   local detail="$2"
   if [[ -n "$STATUS_FILE" ]]; then
-    mkdir -p "$(dirname "$STATUS_FILE")"
-    printf 'timestamp=%s\nstatus=%s\nstep=%s\n' \
-      "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$state" "$detail" > "$STATUS_FILE"
+    local status_dir tmp_status
+    status_dir="$(dirname "$STATUS_FILE")"
+    mkdir -p "$status_dir"
+    tmp_status="$(mktemp "${status_dir}/.granapaca-backup-status.XXXXXX")"
+    if ! printf 'timestamp=%s\nstatus=%s\nstep=%s\n' \
+      "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$state" "$detail" > "$tmp_status"; then
+      rm -f "$tmp_status"
+      return 1
+    fi
+    # Status file holds only timestamp/status/step (no secrets); 0644 allows non-root containers to read it.
+    chmod 644 "$tmp_status"
+    mv -f "$tmp_status" "$STATUS_FILE"
   fi
 }
 
@@ -46,13 +56,48 @@ notify_failure() {
 
 on_exit() {
   local exit_code=$?
+  if [[ -n "${RESTIC_OUT_FILE:-}" ]]; then
+    rm -f "$RESTIC_OUT_FILE" 2>/dev/null || true
+  fi
   if [[ "$BACKUP_SUCCEEDED" != "true" ]]; then
     log "ERROR: backup failed during step '${CURRENT_STEP}' (exit ${exit_code})."
-    write_status "failed" "$CURRENT_STEP"
-    notify_failure "$CURRENT_STEP"
+    write_status "failed" "$CURRENT_STEP" || true
+    notify_failure "$CURRENT_STEP" || true
   fi
 }
 trap on_exit EXIT
+
+extract_snapshot_id() {
+  local json_file="$1"
+  local snapshot_id=""
+  if command -v jq >/dev/null 2>&1; then
+    snapshot_id="$(jq -r 'select(.message_type == "summary") | .snapshot_id // empty' "$json_file" 2>/dev/null | tail -n 1 || true)"
+  fi
+  if [[ -z "$snapshot_id" ]]; then
+    snapshot_id="$(grep -oE '"snapshot_id"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]+"' "$json_file" | tail -n 1 | sed -E 's/.*"([0-9a-fA-F]+)"$/\1/' || true)"
+  fi
+  printf '%s' "$snapshot_id"
+}
+
+extract_total_bytes() {
+  local json_file="$1"
+  local total_bytes=""
+  if command -v jq >/dev/null 2>&1; then
+    total_bytes="$(jq -r 'select(.message_type == "summary") | .total_bytes_processed // empty' "$json_file" 2>/dev/null | tail -n 1 || true)"
+  fi
+  if [[ -z "$total_bytes" ]]; then
+    total_bytes="$(grep -oE '"total_bytes_processed"[[:space:]]*:[[:space:]]*[0-9]+' "$json_file" | tail -n 1 | sed -E 's/.*:[[:space:]]*([0-9]+)$/\1/' || true)"
+  fi
+  printf '%s' "$total_bytes"
+}
+
+forget_partial_snapshot() {
+  local snapshot_id="$1"
+  if [[ -n "$snapshot_id" ]]; then
+    log "Removing partial or empty snapshot '${snapshot_id}' from restic repository..."
+    restic forget --prune --quiet "$snapshot_id" || log "WARNING: failed to remove partial snapshot '${snapshot_id}'."
+  fi
+}
 
 read_env_value() {
   local key="$1"
@@ -107,8 +152,17 @@ main() {
   log "Checking restic repository accessibility..."
   restic cat config >/dev/null
 
+  CURRENT_STEP="postgres_healthcheck"
+  log "Checking PostgreSQL container health..."
+  docker compose -f "$COMPOSE_FILE" exec -T db \
+    pg_isready -U "$postgres_user" -d "$postgres_db" >/dev/null
+
   CURRENT_STEP="postgres_backup"
   log "Streaming PostgreSQL dump directly into restic..."
+  local producer_status restic_status snapshot_id total_bytes
+  RESTIC_OUT_FILE="$(mktemp)"
+
+  set +e
   docker compose -f "$COMPOSE_FILE" exec -T db \
     pg_dump -U "$postgres_user" -d "$postgres_db" --format=custom --no-owner \
     | restic backup \
@@ -116,11 +170,33 @@ main() {
       --stdin-filename granapaca-postgres.dump \
       --tag granapaca \
       --tag postgres \
-      --quiet
+      --json >"$RESTIC_OUT_FILE"
+  producer_status=${PIPESTATUS[0]}
+  restic_status=${PIPESTATUS[1]}
+  set -e
+
+  snapshot_id="$(extract_snapshot_id "$RESTIC_OUT_FILE")"
+  total_bytes="$(extract_total_bytes "$RESTIC_OUT_FILE")"
+  rm -f "$RESTIC_OUT_FILE"
+  RESTIC_OUT_FILE=""
+
+  if [[ "$producer_status" -ne 0 || "$restic_status" -ne 0 ]]; then
+    forget_partial_snapshot "$snapshot_id"
+    log "ERROR: PostgreSQL backup stream failed (pg_dump=${producer_status}, restic=${restic_status})."
+    return 1
+  fi
+  if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]]; then
+    forget_partial_snapshot "$snapshot_id"
+    log "ERROR: PostgreSQL backup produced an empty snapshot (0 bytes)."
+    return 1
+  fi
 
   CURRENT_STEP="files_backup"
   if docker volume inspect "$APPDATA_VOLUME" >/dev/null 2>&1; then
     log "Streaming encrypted files volume (${APPDATA_VOLUME}) into restic..."
+    RESTIC_OUT_FILE="$(mktemp)"
+
+    set +e
     docker run --rm \
       -v "${APPDATA_VOLUME}:/data:ro" \
       postgres:18-alpine \
@@ -130,7 +206,26 @@ main() {
         --stdin-filename granapaca-files.tar \
         --tag granapaca \
         --tag files \
-        --quiet
+        --json >"$RESTIC_OUT_FILE"
+    producer_status=${PIPESTATUS[0]}
+    restic_status=${PIPESTATUS[1]}
+    set -e
+
+    snapshot_id="$(extract_snapshot_id "$RESTIC_OUT_FILE")"
+    total_bytes="$(extract_total_bytes "$RESTIC_OUT_FILE")"
+    rm -f "$RESTIC_OUT_FILE"
+    RESTIC_OUT_FILE=""
+
+    if [[ "$producer_status" -ne 0 || "$restic_status" -ne 0 ]]; then
+      forget_partial_snapshot "$snapshot_id"
+      log "ERROR: files volume backup stream failed (tar=${producer_status}, restic=${restic_status})."
+      return 1
+    fi
+    if [[ -z "$total_bytes" || "$total_bytes" -le 0 ]]; then
+      forget_partial_snapshot "$snapshot_id"
+      log "ERROR: files volume backup produced an empty snapshot (0 bytes)."
+      return 1
+    fi
   else
     log "Files volume (${APPDATA_VOLUME}) not present; skipping files snapshot."
   fi
@@ -150,8 +245,9 @@ main() {
   log "Verifying repository integrity..."
   restic check --quiet
 
-  BACKUP_SUCCEEDED="true"
+  CURRENT_STEP="write_status"
   write_status "ok" "completed"
+  BACKUP_SUCCEEDED="true"
   log "Backup completed and verified successfully."
 }
 

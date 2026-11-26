@@ -66,10 +66,11 @@ set +a
 
 O script:
 
-1. Faz `pg_dump --format=custom --no-owner` direto para `restic backup --stdin` (nenhum arquivo `.dump` sem cifra toca o disco).
-2. Envia o volume `granapaca_appdata` (anexos/arquivos cifrados) em fluxo direto para o `restic`.
-3. Aplica a política de retenção padrão: **7 diários, 4 semanais e 6 mensais** (`--keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`).
-4. Roda `restic check` para validar a integridade do repositório.
+1. Verifica a saúde do PostgreSQL (`pg_isready`) antes de iniciar o dump.
+2. Faz `pg_dump --format=custom --no-owner` direto para `restic backup --stdin --json` (nenhum arquivo `.dump` sem cifra toca o disco) e valida o código de saída e o tamanho do fluxo — se o `pg_dump` ou o `tar` falharem ou gerarem fluxo vazio, o snapshot parcial é removido imediatamente com `restic forget --prune`.
+3. Envia o volume `granapaca_appdata` (anexos/arquivos cifrados) em fluxo direto para o `restic` com a mesma proteção contra snapshot parcial.
+4. Aplica a política de retenção padrão: **7 diários, 4 semanais e 6 mensais** (`--keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`).
+5. Roda `restic check` para validar a integridade do repositório.
 
 ## 4. Agendar backup diário
 
@@ -119,7 +120,7 @@ systemctl --user list-timers granapaca-backup.timer
 
 ### Alerta em caso de falha
 
-Quando o backup falha, `backup.sh` grava `status=failed` em `BACKUP_STATUS_FILE` (com o nome da etapa, sem credenciais nem dados pessoais) e, se `BACKUP_ALERT_WEBHOOK_URL` estiver definido, envia um aviso genérico em JSON. A instância pode ler `BACKUP_STATUS_FILE` para abrir um alerta na caixa de entrada do app (RF-56, RF-65).
+Quando o backup falha, `backup.sh` grava `status=failed` de forma atômica em `BACKUP_STATUS_FILE` (permissão `0644`, contendo apenas `timestamp`, `status` e `step`, sem credenciais nem dados pessoais) e, se `BACKUP_ALERT_WEBHOOK_URL` estiver definido, envia um aviso genérico em JSON. O arquivo fica pronto para monitoramento externo ou futura leitura pela instância para abrir um alerta na caixa de entrada do app (RF-56, RF-65).
 
 ## 5. Runbook de restauração em máquina nova (RNF-24)
 
@@ -140,26 +141,33 @@ Siga estes passos para subir a instância do zero em outra máquina e validar a 
    chmod 444 secrets/master_key.txt
    ```
    A senha do PostgreSQL (`secrets/postgres_password.txt`) pode ser a recém-gerada — ela só protege o banco local da nova máquina.
-4. **Configure as variáveis do `restic`** (`RESTIC_REPOSITORY`, `RESTIC_PASSWORD_FILE` e credenciais do bucket) e confira os snapshots disponíveis:
+4. **Carregue as variáveis do `restic`** (`RESTIC_REPOSITORY`, `RESTIC_PASSWORD_FILE` e credenciais do bucket) e confira os snapshots disponíveis:
    ```bash
+   set -a
+   source ~/.config/granapaca-backup/backup.env
+   set +a
    restic snapshots --tag granapaca
    ```
 5. **Suba apenas o banco de dados** e aguarde ficar saudável:
    ```bash
    docker compose up --detach --wait db
    ```
-6. **Execute a restauração** (sem argumento restaura o snapshot `latest`, ou passe um ID específico):
+6. **Execute a restauração** (sem argumento restaura os snapshots `latest` de banco e de arquivos; ou passe IDs específicos):
    ```bash
    ./backup/restore.sh
-   # ou: ./backup/restore.sh <snapshot_id>
+   # ou apenas um snapshot específico do banco:
+   # ./backup/restore.sh <postgres_snapshot_id>
+   # ou banco e arquivos de snapshots específicos (também aceita FILES_SNAPSHOT_ID=<id|latest>):
+   # ./backup/restore.sh <postgres_snapshot_id> <files_snapshot_id>
    ```
-   O script restaura o dump com `pg_restore --clean --if-exists --no-owner`, restaura o volume `granapaca_appdata` (se houver snapshot `files`) e executa a consulta de verificação de tabelas e migrações `schemaversions`.
+   O script restaura o dump de forma atômica com `pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error --single-transaction`, limpa e restaura o volume `granapaca_appdata` (quando há snapshot `files` ou quando um `<files_snapshot_id>` é informado; se um `<postgres_snapshot_id>` específico for passado sem `<files_snapshot_id>`, o script avisa que o volume de arquivos não foi alterado) e executa a consulta de verificação de tabelas e migrações `schemaversions`. Para pular explicitamente o volume de arquivos, defina `RESTORE_FILES=false`.
 7. **Suba a API** e valide a instância:
    ```bash
    docker compose up --build --detach --wait
    curl --fail http://127.0.0.1:8080/health
    curl --fail http://127.0.0.1:8080/api/v1/server-info
    ```
+   Confirme que `/health` responde `Healthy` e `/api/v1/server-info` retorna `"ownerConfigured": true`.
 8. **Confirme no app:** faça login com a sua conta e código TOTP (validando também que a `master_key` decifra o segredo TOTP corretamente) e verifique o saldo e as correções recentes.
 
 > **Boa prática:** teste este runbook periodicamente (por exemplo, uma vez por mês) numa VM descartável ou ambiente local separado. Backup que nunca foi restaurado é suposição.
