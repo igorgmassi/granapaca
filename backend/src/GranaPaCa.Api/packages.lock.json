@@ -29,9 +29,13 @@
       },
       "Npgsql": {
         "type": "Direct",
-        "requested": "[10.0.3, )",
-        "resolved": "10.0.3",
-        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "ozQ8GJcEAiW6XSKz2RUpdJDvM4l380BdHx/MRB7QJHL2cTH/0js7f/cisCaYMrZvVUj4/HIW80UjXxI+ikQQzQ==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "11.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "11.0.0"
+        }
       },
       "dbup-core": {
         "type": "Transitive",
@@ -43,16 +47,35 @@
         "resolved": "1.1.1",
         "contentHash": "odwOyzj/J/lHJZNwFWJGU/LRecBShupAJ2S8TQqZfhUe9niHzu/voBYK5wuVKsvSpzbfupKQYZguVyIk1sgOkQ=="
       },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "a2c4Kp55miXT6G+DSb75pczXQJHgNMzPyZEyMxrrKxuQrgvctcDWJWD9fVe/uGbQdu4Z0c3B7AVKp1DXmD64nQ=="
+      },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "MTMO2V1eT9Dm5VIpJGLNwIjAjoBErUlfuB+DEaZ0tb8J+Nf/Xlj8he5AztK9p1iOJPIyuBeOrVy2u/CSdsfzPw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "11.0.0",
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
+      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "2.13.0",
         "contentHash": "wavlgBYnn7uU/ZGhFHNl0UlDOlwz+6KRduKkqdCCbfxxANaQ1rmBpETVGdwXanAM6twQOxsvI3CBEGF4OScbeQ=="
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
       "granapaca.modules.alerts": {
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.89, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.assistant": {
@@ -63,7 +86,7 @@
           "GranaPaCa.Modules.Categorization": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
           "GranaPaCa.Modules.Planning": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.banking": {
@@ -73,14 +96,14 @@
           "GranaPaCa.Modules.Alerts": "[1.0.0, )",
           "GranaPaCa.Modules.Categorization": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.categorization": {
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.89, )",
-          "Npgsql": "[10.0.3, )",
+          "Npgsql": "[11.0.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
@@ -90,14 +113,14 @@
           "Dapper": "[2.1.89, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
           "Konscious.Security.Cryptography.Argon2": "[1.3.1, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.keyring": {
         "type": "Project",
         "dependencies": {
           "Dapper": "[2.1.89, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.planning": {
@@ -106,7 +129,7 @@
           "Dapper": "[2.1.89, )",
           "GranaPaCa.Modules.Alerts": "[1.0.0, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "granapaca.modules.receipts": {
@@ -115,7 +138,7 @@
           "Dapper": "[2.1.89, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
+          "Npgsql": "[11.0.0, )"
         }
       },
       "Konscious.Security.Cryptography.Argon2": {
