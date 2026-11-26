@@ -12,12 +12,12 @@ O ponto de partida é o [briefing original](00-briefing.md). Onde o briefing e a
 | [4](04-logo-e-icone.md) | Logo e ícone do app | Pronta | Ajustes por PR |
 | [5](05-componentes.md) | Biblioteca de componentes, com estados | Pronta | Ajustes por PR |
 | [6](06-telas-a.md) | Telas A: primeiro acesso e Início | Pronta | Ajustes por PR |
-| 7 | Telas B: extrato, detalhe, correção e Gastos | A fazer | Colaboração |
-| 8 | Telas C: chat, nota fiscal, gasto em dinheiro, planejamento, alertas, configurações e demo | A fazer | Colaboração |
-| 9 | Fluxos | A fazer | Colaboração |
-| 10 | Guia de microcopy | A fazer | Colaboração |
-| 11 | Checagem de acessibilidade | A fazer | Colaboração |
-| 12 | Passagem para o Flutter | A fazer | Colaboração |
+| [7](07-telas-b.md) | Telas B: extrato, detalhe, correção e Gastos | Pronta | Ajustes por PR |
+| [8](08-telas-c.md) | Telas C: chat, nota fiscal, gasto em dinheiro, planejamento, alertas, configurações e demo | Pronta | Ajustes por PR |
+| [9](09-fluxos.md) | Fluxos | Pronta | Ajustes por PR |
+| [10](10-microcopy.md) | Guia de microcopy | Pronta | Ajustes por PR |
+| [11](11-acessibilidade.md) | Checagem de acessibilidade | Pronta | Ajustes por PR |
+| [12](12-passagem-flutter.md) | Passagem para o Flutter | Pronta | Ajustes por PR |
 
 ## Convenções
 
