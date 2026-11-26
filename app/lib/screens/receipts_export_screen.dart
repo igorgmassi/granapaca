@@ -7,6 +7,7 @@ import '../finance/model.dart';
 import '../finance/planning_queries.dart';
 import '../finance/queries.dart';
 import '../state/app_state.dart';
+import '../storage/encrypted_cache.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 
@@ -704,6 +705,16 @@ class _RestoreBackupDialogState extends State<_RestoreBackupDialog> {
     } on FormatException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
+    } on CacheIntegrityException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _error =
+            'Não foi possível restaurar o backup neste aparelho. Seus dados '
+            'atuais foram preservados.',
+      );
     } finally {
       if (mounted) setState(() => _restoring = false);
     }

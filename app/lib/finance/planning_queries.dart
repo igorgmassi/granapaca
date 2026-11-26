@@ -31,7 +31,10 @@ int? parseBrlToCents(String raw) {
     cleaned = cleaned.substring(1);
   }
 
-  // Decide whether comma or dot is the decimal separator.
+  // Decide whether comma or dot is the decimal separator with strict
+  // thousands-grouping validation so decimals like "0.125" or "1.2345" are
+  // never multiplied by 1000x/10000x and malformed strings like "1.23.45" are
+  // rejected.
   final lastComma = cleaned.lastIndexOf(',');
   final lastDot = cleaned.lastIndexOf('.');
   String intPart;
@@ -40,27 +43,47 @@ int? parseBrlToCents(String raw) {
   if (lastComma != -1 && lastDot != -1) {
     if (lastComma > lastDot) {
       // pt-BR: 1.234,56
-      intPart = cleaned.substring(0, lastComma).replaceAll('.', '');
+      if (cleaned.indexOf(',') != lastComma) return null;
+      final rawInt = cleaned.substring(0, lastComma);
+      if (!RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(rawInt)) return null;
+      intPart = rawInt.replaceAll('.', '');
       fracPart = cleaned.substring(lastComma + 1);
     } else {
       // en-US: 1,234.56
-      intPart = cleaned.substring(0, lastDot).replaceAll(',', '');
+      if (cleaned.indexOf('.') != lastDot) return null;
+      final rawInt = cleaned.substring(0, lastDot);
+      if (!RegExp(r'^\d{1,3}(,\d{3})+$').hasMatch(rawInt)) return null;
+      intPart = rawInt.replaceAll(',', '');
       fracPart = cleaned.substring(lastDot + 1);
     }
   } else if (lastComma != -1) {
-    intPart = cleaned.substring(0, lastComma).replaceAll('.', '');
-    fracPart = cleaned.substring(lastComma + 1);
-  } else if (lastDot != -1) {
-    final afterDot = cleaned.substring(lastDot + 1);
-    if (afterDot.length == 3 && cleaned.indexOf('.') == lastDot) {
-      // Thousands separator like "1.200" -> 1200 reais.
-      intPart = cleaned.replaceAll('.', '');
-    } else if (afterDot.length <= 2) {
-      // Decimal dot like "49.90" or "49.9".
-      intPart = cleaned.substring(0, lastDot).replaceAll('.', '');
-      fracPart = afterDot;
+    if (cleaned.indexOf(',') != lastComma) {
+      // Multiple commas only valid as strict en-US integer thousands grouping.
+      if (!RegExp(r'^\d{1,3}(,\d{3})+$').hasMatch(cleaned)) return null;
+      intPart = cleaned.replaceAll(',', '');
     } else {
+      intPart = cleaned.substring(0, lastComma);
+      fracPart = cleaned.substring(lastComma + 1);
+    }
+  } else if (lastDot != -1) {
+    if (cleaned.indexOf('.') != lastDot) {
+      // Multiple dots only valid as strict pt-BR integer thousands grouping.
+      if (!RegExp(r'^\d{1,3}(\.\d{3})+$').hasMatch(cleaned)) return null;
       intPart = cleaned.replaceAll('.', '');
+    } else {
+      final beforeDot = cleaned.substring(0, lastDot);
+      final afterDot = cleaned.substring(lastDot + 1);
+      if (afterDot.length == 3 &&
+          RegExp(r'^[1-9]\d{0,2}$').hasMatch(beforeDot)) {
+        // pt-BR thousands separator like "1.200" -> 1200 reais.
+        // Leading-zero values like "0.125" do NOT match and fall through as
+        // decimal fractions!
+        intPart = '$beforeDot$afterDot';
+      } else {
+        // Decimal dot like "49.90", "49.9", "0.125", or "1.2345".
+        intPart = beforeDot;
+        fracPart = afterDot;
+      }
     }
   } else {
     intPart = cleaned;
@@ -999,8 +1022,30 @@ String buildBackupJson({
   return const JsonEncoder.withIndent('  ').convert(payload);
 }
 
+List<Map<String, dynamic>> _requireBackupObjectList(
+  Map<String, dynamic> root,
+  String key,
+) {
+  if (!root.containsKey(key) || root[key] == null) return const [];
+  final raw = root[key];
+  if (raw is! List) {
+    throw FormatException('Campo "$key" inválido no backup JSON.');
+  }
+  final out = <Map<String, dynamic>>[];
+  for (final item in raw) {
+    if (item is! Map<String, dynamic>) {
+      throw FormatException(
+        'Item inválido encontrado na lista "$key" do backup JSON.',
+      );
+    }
+    out.add(item);
+  }
+  return out;
+}
+
 /// Parses and validates a JSON backup produced by [buildBackupJson].
-/// Throws [FormatException] with a friendly pt-BR error if invalid.
+/// Enforces strict JSON types, supported version, and RN-24 split invariants,
+/// always throwing [FormatException] with a friendly pt-BR error if invalid.
 BackupPayload parseBackupJson(String raw) {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) {
@@ -1021,6 +1066,12 @@ BackupPayload parseBackupJson(String raw) {
       'Formato de backup inválido. Esperava um objeto JSON do GranaPaCá.',
     );
   }
+  final rawVersion = decoded['version'];
+  if (rawVersion != null && rawVersion != 1) {
+    throw const FormatException(
+      'Versão do backup JSON não suportada por esta versão do GranaPaCá.',
+    );
+  }
   final appName = decoded['app'];
   final hasCoreKeys =
       decoded.containsKey('banks') ||
@@ -1031,46 +1082,80 @@ BackupPayload parseBackupJson(String raw) {
       'Este arquivo não parece ser um backup gerado pelo GranaPaCá.',
     );
   }
+  final rawConsent = decoded['receiptConsentAccepted'];
+  if (rawConsent != null && rawConsent is! bool) {
+    throw const FormatException(
+      'Campo "receiptConsentAccepted" inválido no backup JSON.',
+    );
+  }
+  DateTime? exportedAt;
+  final rawExportedAt = decoded['exportedAt'];
+  if (rawExportedAt != null) {
+    if (rawExportedAt is! String) {
+      throw const FormatException(
+        'Campo "exportedAt" inválido no backup JSON.',
+      );
+    }
+    exportedAt = DateTime.tryParse(rawExportedAt);
+    if (exportedAt == null) {
+      throw const FormatException(
+        'Data "exportedAt" inválida no backup JSON.',
+      );
+    }
+  }
 
-  return BackupPayload(
-    banks: ((decoded['banks'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(bankFromJson)
-        .toList(growable: false),
-    accounts: ((decoded['accounts'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(accountFromJson)
-        .toList(growable: false),
-    transactions: ((decoded['transactions'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
+  final rawBanks = _requireBackupObjectList(decoded, 'banks');
+  final rawAccounts = _requireBackupObjectList(decoded, 'accounts');
+  final rawTransactions = _requireBackupObjectList(decoded, 'transactions');
+  final rawRules = _requireBackupObjectList(decoded, 'rules');
+  final rawAdjustments = _requireBackupObjectList(decoded, 'adjustments');
+  final rawBudgets = _requireBackupObjectList(decoded, 'budgets');
+  final rawGoals = _requireBackupObjectList(decoded, 'goals');
+  final rawAlertRules = _requireBackupObjectList(decoded, 'alertRules');
+
+  try {
+    final banks = rawBanks.map(bankFromJson).toList(growable: false);
+    final accounts = rawAccounts.map(accountFromJson).toList(growable: false);
+    final transactions = rawTransactions
         .map(transactionFromJson)
-        .toList(growable: false),
-    rules: ((decoded['rules'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(userRuleFromJson)
-        .toList(growable: false),
-    adjustments: ((decoded['adjustments'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    for (final tx in transactions) {
+      if (tx.splits.isNotEmpty && !validateSplitTotal(tx.amountCents, tx.splits)) {
+        throw FormatException(
+          'Divisão (splits) inválida no backup para "${tx.description}": a '
+          'soma das partes não fecha o valor exato da transação.',
+        );
+      }
+    }
+    final rules = rawRules.map(userRuleFromJson).toList(growable: false);
+    final adjustments = rawAdjustments
         .map(adjustmentFromJson)
-        .toList(growable: false),
-    budgets: ((decoded['budgets'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(budgetFromJson)
-        .toList(growable: false),
-    goals: ((decoded['goals'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(goalFromJson)
-        .toList(growable: false),
-    alertRules: ((decoded['alertRules'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    final budgets = rawBudgets.map(budgetFromJson).toList(growable: false);
+    final goals = rawGoals.map(goalFromJson).toList(growable: false);
+    final alertRules = rawAlertRules
         .map(spendingAlertRuleFromJson)
-        .toList(growable: false),
-    receiptConsentAccepted:
-        (decoded['receiptConsentAccepted'] as bool?) ?? false,
-    exportedAt: decoded['exportedAt'] is String
-        ? DateTime.tryParse(decoded['exportedAt'] as String)
-        : null,
-  );
+        .toList(growable: false);
+
+    return BackupPayload(
+      banks: banks,
+      accounts: accounts,
+      transactions: transactions,
+      rules: rules,
+      adjustments: adjustments,
+      budgets: budgets,
+      goals: goals,
+      alertRules: alertRules,
+      receiptConsentAccepted: (rawConsent as bool?) ?? false,
+      exportedAt: exportedAt,
+    );
+  } on FormatException {
+    rethrow;
+  } catch (_) {
+    throw const FormatException(
+      'Algum registro do backup JSON possui campos com formato incompatível.',
+    );
+  }
 }
 
 /// Parses OFX (`<STMTTRN>`) or simple CSV (`data,descricao,valor`) bank
@@ -1117,7 +1202,9 @@ List<Transaction> parseStatementImport(
         final y = int.parse(d.substring(0, 4));
         final m = int.parse(d.substring(4, 6));
         final day = int.parse(d.substring(6, 8));
-        date = DateTime(y, m, day);
+        final parsed = _strictCalendarDate(y, m, day);
+        if (parsed == null) continue;
+        date = parsed;
       }
       final description = memoMatch?.group(1)?.trim() ?? 'Lançamento OFX';
       result.add(
@@ -1195,13 +1282,37 @@ List<String> _splitCsvLine(String line, String sep) {
   return out;
 }
 
+DateTime? _strictCalendarDate(int year, int month, int day) {
+  if (year < 1900 ||
+      year > 2100 ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31) {
+    return null;
+  }
+  final dt = DateTime(year, month, day);
+  if (dt.year != year || dt.month != month || dt.day != day) {
+    return null;
+  }
+  return dt;
+}
+
 DateTime? _parseFlexibleDate(String raw) {
   final cleaned = raw.replaceAll('"', '').trim();
-  final iso = DateTime.tryParse(cleaned);
-  if (iso != null) return DateTime(iso.year, iso.month, iso.day);
+  final isoMatch = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$',
+  ).firstMatch(cleaned);
+  if (isoMatch != null) {
+    return _strictCalendarDate(
+      int.parse(isoMatch.group(1)!),
+      int.parse(isoMatch.group(2)!),
+      int.parse(isoMatch.group(3)!),
+    );
+  }
   final brMatch = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(cleaned);
   if (brMatch != null) {
-    return DateTime(
+    return _strictCalendarDate(
       int.parse(brMatch.group(3)!),
       int.parse(brMatch.group(2)!),
       int.parse(brMatch.group(1)!),

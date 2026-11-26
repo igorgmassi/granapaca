@@ -5,15 +5,21 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:granapaca/api/api_models.dart';
+import 'package:granapaca/api/granapaca_api_client.dart';
+import 'package:granapaca/api/http_transport.dart';
 import 'package:granapaca/demo/demo_data.dart';
 import 'package:granapaca/finance/model.dart';
 import 'package:granapaca/finance/planning_queries.dart';
 import 'package:granapaca/finance/queries.dart';
 import 'package:granapaca/finance/taxonomy.dart';
 import 'package:granapaca/main.dart';
+import 'package:granapaca/screens/app_lock_screen.dart';
+import 'package:granapaca/screens/app_shell.dart';
 import 'package:granapaca/screens/cash_entry_sheet.dart';
 import 'package:granapaca/screens/local_account_sheet.dart';
 import 'package:granapaca/screens/receipts_export_screen.dart';
+import 'package:granapaca/security/app_lock.dart';
 import 'package:granapaca/state/app_state.dart';
 import 'package:granapaca/state/demo_profiles.dart';
 import 'package:granapaca/state/preferences_store.dart';
@@ -729,4 +735,677 @@ void main() {
       },
     );
   });
+
+  group('Local-device cold-start, PIN unlock & progressive lockout', () {
+    Future<void> enterPin(WidgetTester tester, String digits) async {
+      for (final ch in digits.split('')) {
+        final keyFinder = find.byKey(Key('pin_key_$ch'));
+        await tester.ensureVisible(keyFinder);
+        await tester.tap(keyFinder);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'cold start in localDevice with PIN restores encrypted vault on unlock '
+      'and explicit initialMode: demo is not hijacked',
+      (tester) async {
+        final prefs = InMemoryPreferencesStore();
+        final dataStorage = InMemoryCacheStorage();
+        final keyStorage = InMemoryCacheStorage();
+        final initialCache = EncryptedCacheStore(
+          storage: dataStorage,
+          keyStorage: keyStorage,
+        );
+        final setupLock = AppLockController(
+          preferencesStore: prefs,
+          hashIterations: 50,
+        );
+
+        final firstSession = AppState(
+          preferencesStore: prefs,
+          encryptedCache: initialCache,
+          appLock: setupLock,
+        );
+        await firstSession.startLocalDeviceMode(
+          openingBalanceCents: 25000,
+        );
+        final checking = await firstSession.addLocalBankAccount(
+          bankName: 'Banco do Bairro',
+          accountName: 'Conta corrente',
+          kind: AccountKind.checking,
+          openingBalanceCents: 180000,
+        );
+        await firstSession.addManualTransaction(
+          date: DateTime(2026, 2, 18),
+          description: 'Padaria do Bairro',
+          amountCents: 3200,
+          accountId: checking.id,
+          paymentMethod: PaymentMethod.pix,
+          category: SpendingCategory.food,
+        );
+        await firstSession.appLock.configurePin('135791');
+        // Wait for async PIN-wrapping callback before locking DEK in memory.
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        initialCache.lockInMemory();
+        firstSession.dispose();
+
+        // Explicit initialMode: AppMode.demo must NOT be hijacked by saved
+        // localDevice preference.
+        final noPinPrefs = InMemoryPreferencesStore();
+        await noPinPrefs.writeAppMode(AppMode.localDevice.name);
+        await tester.pumpWidget(
+          GranaPaCaApp(
+            key: const ValueKey('explicit_demo_app'),
+            preferencesStore: noPinPrefs,
+            initialMode: AppMode.demo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Modo demonstração'), findsWidgets);
+
+        // Cold start in localDevice with PIN-wrapped encrypted vault:
+        final coldCache = EncryptedCacheStore(
+          storage: dataStorage,
+          keyStorage: keyStorage,
+        );
+        final coldLock = AppLockController(
+          preferencesStore: prefs,
+          hashIterations: 50,
+        );
+        await tester.pumpWidget(
+          GranaPaCaApp(
+            key: const ValueKey('cold_local_device_app'),
+            preferencesStore: prefs,
+            encryptedCache: coldCache,
+            appLock: coldLock,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AppLockScreen), findsOneWidget);
+        expect(find.byType(AppShell), findsNothing);
+        expect(find.text('Banco do Bairro'), findsNothing);
+
+        await enterPin(tester, '135791');
+        // Allow async unwrap + vault restore to settle.
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 80)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AppLockScreen), findsNothing);
+        expect(find.byType(AppShell), findsOneWidget);
+        final bankFinder = find.text('Banco do Bairro');
+        await _scrollTo(tester, bankFinder);
+        expect(bankFinder, findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '5 failed PIN attempts in localDevice keep vault intact with progressive '
+      'cooldown and allow explicit double-confirmed reset',
+      (tester) async {
+        var now = DateTime(2026, 2, 20, 10, 0, 0);
+        final prefs = InMemoryPreferencesStore();
+        final dataStorage = InMemoryCacheStorage();
+        final keyStorage = InMemoryCacheStorage();
+        final cache = EncryptedCacheStore(
+          storage: dataStorage,
+          keyStorage: keyStorage,
+        );
+        final setupLock = AppLockController(
+          preferencesStore: prefs,
+          clock: () => now,
+          hashIterations: 50,
+        );
+
+        final firstSession = AppState(
+          preferencesStore: prefs,
+          encryptedCache: cache,
+          appLock: setupLock,
+        );
+        await firstSession.startLocalDeviceMode();
+        await firstSession.addLocalBankAccount(
+          bankName: 'Banco Cofre Seguro',
+          accountName: 'Poupança',
+          kind: AccountKind.savings,
+          openingBalanceCents: 90000,
+        );
+        await firstSession.appLock.configurePin('246810');
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        cache.lockInMemory();
+        firstSession.dispose();
+
+        final coldCache = EncryptedCacheStore(
+          storage: dataStorage,
+          keyStorage: keyStorage,
+        );
+        final coldLock = AppLockController(
+          preferencesStore: prefs,
+          clock: () => now,
+          hashIterations: 50,
+        );
+        await tester.pumpWidget(
+          GranaPaCaApp(
+            preferencesStore: prefs,
+            encryptedCache: coldCache,
+            appLock: coldLock,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 5 consecutive wrong PINs trigger cooldown without wiping vault or
+        // letting the user past AppLockScreen.
+        for (var i = 0; i < 5; i++) {
+          await enterPin(tester, '000000');
+        }
+        expect(coldLock.isLocked, isTrue);
+        expect(coldLock.isInCooldown, isTrue);
+        expect(coldLock.lockoutRounds, 1);
+        expect(coldLock.remainingCooldown.inSeconds, 30);
+        expect(find.byType(AppLockScreen), findsOneWidget);
+        expect(find.byType(AppShell), findsNothing);
+        expect(await coldCache.readRawCiphertext(), isNotNull);
+
+        // Even the correct PIN is blocked during cooldown.
+        expect(coldLock.verifyPin('246810'), isFalse);
+        expect(coldLock.isLocked, isTrue);
+
+        // Once cooldown expires, valid PIN unlocks and restores vault.
+        now = now.add(const Duration(seconds: 31));
+        expect(coldLock.isInCooldown, isFalse);
+
+        // Explicit double-confirmed reset wipes vault ONLY after checkbox +
+        // typing APAGAR.
+        final resetBtn = find.byKey(const Key('local_forgot_pin_reset_button'));
+        await tester.ensureVisible(resetBtn);
+        await tester.tap(resetBtn);
+        await tester.pumpAndSettle();
+
+        final confirmButton = find.byKey(
+          const Key('confirm_local_vault_wipe_button'),
+        );
+        expect(
+          tester.widget<FilledButton>(confirmButton).onPressed,
+          isNull,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('local_wipe_confirm_checkbox')),
+        );
+        await tester.enterText(
+          find.byKey(const Key('local_wipe_confirm_field')),
+          'APAGAR',
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.widget<FilledButton>(confirmButton).onPressed,
+          isNotNull,
+        );
+        await tester.tap(confirmButton);
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(coldLock.isLocked, isFalse);
+        expect(coldLock.isEnabled, isFalse);
+        expect(find.byType(AppShell), findsOneWidget);
+        expect(find.text('Banco Cofre Seguro'), findsNothing);
+      },
+    );
+  });
+
+  group('Backend #69 AI provider contracts, TLS validation & ADR-030 notice', () {
+    test(
+      'fetchAiProviderPresets, fetchAiProviderConfig, updateAiProviderConfig '
+      'and validateAiProviderBaseUrl follow backend #69 contract',
+      () async {
+        final requests = <HttpTransportRequest>[];
+        var nextStatus = 200;
+        var nextBody = '{}';
+        final transport = _FakeAiHttpTransport((request) async {
+          requests.add(request);
+          if (request.method == 'GET' &&
+              request.uri.path == '/api/v1/assistant/presets') {
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'items': [
+                  {
+                    'provider': 'ollama',
+                    'label': 'Ollama local',
+                    'defaultModel': 'qwen2.5:7b',
+                    'defaultBaseUrl': 'http://host.docker.internal:11434/',
+                    'isFree': true,
+                    'requiresApiKey': false,
+                    'isExternalCloud': false,
+                  },
+                  {
+                    'provider': 'openai_compatible',
+                    'label': 'Endpoint compatível OpenAI',
+                    'defaultModel': 'llama-3.3-70b-versatile',
+                    'defaultBaseUrl': 'http://host.docker.internal:1234/v1/',
+                    'isFree': true,
+                    'requiresApiKey': false,
+                    'isExternalCloud': true,
+                  },
+                ],
+              }),
+            );
+          }
+          if (request.method == 'GET' &&
+              request.uri.path == '/api/v1/assistant/provider') {
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'provider': 'openai_compatible',
+                'model': 'local-llm',
+                'baseUrl': 'https://llm.exemplo.com/v1/',
+                'hasApiKey': true,
+              }),
+            );
+          }
+          return HttpTransportResponse(statusCode: nextStatus, body: nextBody);
+        });
+
+        final client = GranaPaCaApiClient(
+          baseUrl: Uri.parse('https://casa.exemplo.local'),
+          transport: transport,
+          initialTokens: AuthTokens(
+            accessToken: 'test-access-token',
+            refreshToken: 'test-refresh-token',
+            expiresAt: DateTime(2030, 1, 1),
+            sessionId: 'sess-1',
+            owner: const OwnerSummary(
+              id: 'owner-1',
+              householdId: 'hh-1',
+              email: 'bia@exemplo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        final presets = await client.fetchAiProviderPresets();
+        expect(presets, hasLength(2));
+        expect(presets[0].provider, AiProviderKind.ollama);
+        expect(
+          presets[0].defaultBaseUrl,
+          'http://host.docker.internal:11434/',
+        );
+        expect(presets[1].provider, AiProviderKind.openaiCompatible);
+
+        final loaded = await client.fetchAiProviderConfig();
+        expect(loaded.provider, AiProviderKind.openaiCompatible);
+        expect(loaded.endpointUrl, 'https://llm.exemplo.com/v1/');
+        expect(loaded.hasApiKey, isTrue);
+
+        // TLS / SSRF rules matching backend #69.
+        expect(
+          () => GranaPaCaApiClient.validateAiProviderBaseUrl(
+            provider: AiProviderKind.openaiCompatible,
+            rawUrl: 'http://evil.example/v1/',
+          ),
+          throwsA(isA<ApiException>()),
+        );
+        expect(
+          () => GranaPaCaApiClient.validateAiProviderBaseUrl(
+            provider: AiProviderKind.ollama,
+            rawUrl: 'http://169.254.169.254/latest/meta-data',
+          ),
+          throwsA(isA<ApiException>()),
+        );
+        expect(
+          () => GranaPaCaApiClient.validateAiProviderBaseUrl(
+            provider: AiProviderKind.groq,
+            rawUrl: 'http://localhost:11434/v1/',
+          ),
+          throwsA(isA<ApiException>()),
+        );
+        expect(
+          GranaPaCaApiClient.validateAiProviderBaseUrl(
+            provider: AiProviderKind.openaiCompatible,
+            rawUrl: 'http://localhost:1234/v1/',
+          ).host,
+          'localhost',
+        );
+        expect(
+          GranaPaCaApiClient.validateAiProviderBaseUrl(
+            provider: AiProviderKind.ollama,
+            rawUrl: 'http://host.docker.internal:11434/',
+          ).host,
+          'host.docker.internal',
+        );
+
+        // AppState integration: error from server MUST NOT mutate local config,
+        // and provider/endpoint change clears hasApiKey + sends clearApiKey.
+        final state = AppState(
+          apiClient: client,
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://casa.exemplo.local',
+          preferencesStore: InMemoryPreferencesStore(),
+          encryptedCache: EncryptedCacheStore(storage: InMemoryCacheStorage()),
+        );
+
+        nextStatus = 200;
+        nextBody = jsonEncode({
+          'provider': 'groq',
+          'model': 'llama-3.3-70b-versatile',
+          'hasApiKey': true,
+        });
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(
+            provider: AiProviderKind.groq,
+            model: 'llama-3.3-70b-versatile',
+          ),
+          apiKey: 'fake-provider-token-for-unit-test',
+        );
+        expect(state.aiProviderConfig.provider, AiProviderKind.groq);
+        expect(state.aiProviderConfig.hasApiKey, isTrue);
+
+        // Server 400 error keeps previous Groq config intact.
+        nextStatus = 400;
+        nextBody = jsonEncode({'message': 'Endpoint rejeitado pelo servidor.'});
+        await expectLater(
+          state.updateAiProviderConfig(
+            const AiProviderConfig(
+              provider: AiProviderKind.openaiCompatible,
+              model: 'local-llm',
+              endpointUrl: 'https://llm.exemplo.com/v1/',
+            ),
+          ),
+          throwsA(isA<ApiException>()),
+        );
+        expect(state.aiProviderConfig.provider, AiProviderKind.groq);
+        expect(state.aiProviderConfig.hasApiKey, isTrue);
+
+        // Switching provider without new key sends clearApiKey: true and
+        // resets hasApiKey to false.
+        nextStatus = 200;
+        nextBody = jsonEncode({
+          'provider': 'openai_compatible',
+          'model': 'local-llm',
+          'baseUrl': 'http://localhost:1234/v1/',
+          'hasApiKey': false,
+        });
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(
+            provider: AiProviderKind.openaiCompatible,
+            model: 'local-llm',
+            endpointUrl: 'http://localhost:1234/v1/',
+          ),
+        );
+        final lastPut = requests.last;
+        expect(lastPut.method, 'PUT');
+        expect(lastPut.uri.path, '/api/v1/assistant/provider');
+        final sentBody = jsonDecode(lastPut.body!) as Map<String, dynamic>;
+        expect(sentBody['provider'], 'openai_compatible');
+        expect(sentBody['baseUrl'], 'http://localhost:1234/v1/');
+        expect(sentBody['clearApiKey'], isTrue);
+        expect(state.aiProviderConfig.provider, AiProviderKind.openaiCompatible);
+        expect(state.aiProviderConfig.hasApiKey, isFalse);
+
+        state.dispose();
+      },
+    );
+
+    testWidgets(
+      'AssistantScreen shows ADR-030 external free-tier retention notice in '
+      'server mode',
+      (tester) async {
+        final client = GranaPaCaApiClient(
+          baseUrl: Uri.parse('https://casa.exemplo.local'),
+          transport: _FakeAiHttpTransport(
+            (_) async => const HttpTransportResponse(statusCode: 200, body: '{}'),
+          ),
+          initialTokens: AuthTokens(
+            accessToken: 'test-access-token',
+            refreshToken: 'test-refresh-token',
+            expiresAt: DateTime(2030, 1, 1),
+            sessionId: 'sess-1',
+            owner: const OwnerSummary(
+              id: 'owner-1',
+              householdId: 'hh-1',
+              email: 'bia@exemplo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(
+          GranaPaCaApp(
+            apiClient: client,
+            initialMode: AppMode.server,
+            initialServerUrl: 'https://casa.exemplo.local',
+            preferencesStore: InMemoryPreferencesStore(),
+            encryptedCache: EncryptedCacheStore(storage: InMemoryCacheStorage()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await _tapTab(tester, 'Paçoca');
+        await tester.tap(
+          find.byKey(const Key('assistant_provider_config_button')),
+        );
+        await tester.pumpAndSettle();
+
+        final sheetScroll = find
+            .descendant(
+              of: find.byKey(const Key('assistant_provider_sheet_scroll')),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final groqOption = find.byKey(const Key('ai_provider_groq'));
+        await _scrollTo(tester, groqOption, scrollable: sheetScroll);
+        await tester.tap(groqOption);
+        await tester.pumpAndSettle();
+
+        final notice = find.byKey(const Key('ai_cloud_privacy_notice'));
+        await _scrollTo(tester, notice, scrollable: sheetScroll);
+        expect(notice, findsOneWidget);
+        expect(find.textContaining('política de retenção'), findsWidgets);
+        expect(find.textContaining('camadas gratuitas externas'), findsOneWidget);
+      },
+    );
+  });
+
+  group('parseBrlToCents, strict calendar dates & atomic backup rollback', () {
+    test('parseBrlToCents avoids 1000x/10000x corruption and rejects malformed', () {
+      expect(parseBrlToCents('0.125'), 13);
+      expect(parseBrlToCents('1.2345'), 123);
+      expect(parseBrlToCents('1.23.45'), isNull);
+      expect(parseBrlToCents('1.200'), 120000);
+      expect(parseBrlToCents('1.234.567'), 123456700);
+      expect(parseBrlToCents('1,234,567.89'), 123456789);
+      expect(parseBrlToCents('999999999999999999999,99'), isNull);
+    });
+
+    test(
+      'parseStatementImport rejects impossible calendar dates in OFX and CSV',
+      () {
+        const ofx = '''
+<OFX>
+<STMTTRN>
+<DTPOSTED>20260231120000
+<TRNAMT>-50.00
+<MEMO>DATA IMPOSSIVEL OFX
+</STMTTRN>
+<STMTTRN>
+<DTPOSTED>20260228120000
+<TRNAMT>-42.50
+<MEMO>COMPRA VALIDA OFX
+</STMTTRN>
+</OFX>
+''';
+        final ofxParsed = parseStatementImport(ofx, accountId: 'acct-1');
+        expect(ofxParsed, hasLength(1));
+        expect(ofxParsed.single.date, DateTime(2026, 2, 28));
+        expect(ofxParsed.single.description, 'COMPRA VALIDA OFX');
+
+        const csv = '''
+Data;Descricao;Valor
+31/02/2026;DATA IMPOSSIVEL PTBR;-30,00
+2026-02-31;DATA IMPOSSIVEL ISO;-40,00
+28/02/2026;COMPRA VALIDA CSV;-19,90
+''';
+        final csvParsed = parseStatementImport(csv, accountId: 'acct-1');
+        expect(csvParsed, hasLength(1));
+        expect(csvParsed.single.date, DateTime(2026, 2, 28));
+        expect(csvParsed.single.amountCents, -1990);
+      },
+    );
+
+    test(
+      'parseBackupJson always throws FormatException on invalid types/version/RN-24',
+      () {
+        expect(
+          () => parseBackupJson('{"app":"GranaPaCa","transactions":"invalido"}'),
+          throwsA(isA<FormatException>()),
+        );
+        expect(
+          () => parseBackupJson('{"app":"GranaPaCa","version":99,"banks":[]}'),
+          throwsA(isA<FormatException>()),
+        );
+        expect(
+          () => parseBackupJson(
+            '{"app":"GranaPaCa","version":1,"banks":[],"receiptConsentAccepted":"yes"}',
+          ),
+          throwsA(isA<FormatException>()),
+        );
+        expect(
+          () => parseBackupJson(
+            jsonEncode({
+              'app': 'GranaPaCa',
+              'version': 1,
+              'banks': [
+                {'id': 'b1', 'name': 'Banco Aurora', 'colorValue': 4287315461},
+              ],
+              'accounts': [
+                {
+                  'id': 'a1',
+                  'bankId': 'b1',
+                  'name': 'Conta',
+                  'kind': 'checking',
+                  'openingBalanceCents': 0,
+                },
+              ],
+              'transactions': [
+                {
+                  'id': 1,
+                  'accountId': 'a1',
+                  'date': '2026-02-10T00:00:00.000',
+                  'description': 'Compra dividida inválida',
+                  'amountCents': -10000,
+                  'kind': 'expense',
+                  'splits': [
+                    {
+                      'id': 's1',
+                      'description': 'Mercado',
+                      'category': 'food',
+                      'amountCents': 5000,
+                    },
+                  ],
+                },
+              ],
+            }),
+          ),
+          throwsA(isA<FormatException>()),
+        );
+      },
+    );
+
+    test(
+      'restoreFromBackupJson rolls back atomically when encrypted persistence fails',
+      () async {
+        final prefs = InMemoryPreferencesStore();
+        final storage = _ToggleableFailingStorage();
+        final cache = EncryptedCacheStore(storage: storage);
+        final state = AppState(
+          preferencesStore: prefs,
+          encryptedCache: cache,
+        );
+        await state.startLocalDeviceMode(openingBalanceCents: 10000);
+        await state.addLocalBankAccount(
+          bankName: 'Banco Original',
+          accountName: 'Conta Original',
+          kind: AccountKind.checking,
+          openingBalanceCents: 50000,
+        );
+
+        final backupFromOther = AppState(
+          preferencesStore: InMemoryPreferencesStore(),
+          encryptedCache: EncryptedCacheStore(storage: InMemoryCacheStorage()),
+        );
+        await backupFromOther.startLocalDeviceMode();
+        await backupFromOther.addLocalBankAccount(
+          bankName: 'Banco Novo Do Backup',
+          accountName: 'Conta Nova',
+          kind: AccountKind.checking,
+          openingBalanceCents: 999900,
+        );
+        final backupJson = buildBackupJson(
+          dataset: backupFromOther.effectiveDataset,
+          rules: backupFromOther.rules,
+          adjustments: backupFromOther.adjustments,
+          budgets: backupFromOther.budgets,
+          goals: backupFromOther.goals,
+          alertRules: backupFromOther.spendingAlertRules,
+          modeLabel: backupFromOther.mode.name,
+          receiptConsentAccepted: backupFromOther.receiptConsentAccepted,
+        );
+        backupFromOther.dispose();
+
+        // Force storage write failure during restore.
+        storage.failWrites = true;
+        await expectLater(
+          state.restoreFromBackupJson(backupJson),
+          throwsA(isA<StateError>()),
+        );
+
+        // Every state field must remain intact from before the failed restore.
+        expect(state.mode, AppMode.localDevice);
+        expect(
+          state.originalDataset.banks.any((b) => b.name == 'Banco Original'),
+          isTrue,
+        );
+        expect(
+          state.originalDataset.banks.any(
+            (b) => b.name == 'Banco Novo Do Backup',
+          ),
+          isFalse,
+        );
+        state.dispose();
+      },
+    );
+  });
+}
+
+class _FakeAiHttpTransport extends HttpTransport {
+  _FakeAiHttpTransport(this._handler);
+
+  final Future<HttpTransportResponse> Function(HttpTransportRequest request)
+  _handler;
+
+  @override
+  Future<HttpTransportResponse> send(HttpTransportRequest request) =>
+      _handler(request);
+}
+
+class _ToggleableFailingStorage extends InMemoryCacheStorage {
+  bool failWrites = false;
+
+  @override
+  Future<void> writeBytes(String key, Uint8List data) async {
+    if (failWrites) {
+      throw StateError('Simulated disk write failure');
+    }
+    return super.writeBytes(key, data);
+  }
 }

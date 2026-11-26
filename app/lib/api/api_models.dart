@@ -1112,10 +1112,32 @@ AiProviderKind parseAiProviderKind(String? raw) {
   if (raw == null || raw.trim().isEmpty) return AiProviderKind.none;
   final normalized = raw.toLowerCase().trim();
   for (final kind in AiProviderKind.values) {
-    if (kind.name.toLowerCase() == normalized) return kind;
+    if (kind.apiValue == normalized || kind.name.toLowerCase() == normalized) {
+      return kind;
+    }
   }
   return AiProviderKind.none;
 }
+
+AiProviderPreset aiProviderPresetFromJson(Map<String, dynamic> json) =>
+    AiProviderPreset(
+      provider: parseAiProviderKind(json['provider'] as String?),
+      displayName: (json['displayName'] as String?) ?? '',
+      description: (json['description'] as String?) ?? '',
+      costTier: (json['costTier'] as String?) ?? '',
+      costLabel: (json['costLabel'] as String?) ?? '',
+      recommendedModel: (json['recommendedModel'] as String?) ?? '',
+      alternativeModels:
+          ((json['alternativeModels'] as List<dynamic>?) ?? const [])
+              .map((e) => e.toString())
+              .toList(growable: false),
+      defaultBaseUrl: json['defaultBaseUrl'] as String?,
+      requiresApiKey: (json['requiresApiKey'] as bool?) ?? false,
+      isLocal: (json['isLocal'] as bool?) ?? false,
+      pseudonymizationActive: (json['pseudonymizationActive'] as bool?) ?? true,
+      privacyNote: (json['privacyNote'] as String?) ?? '',
+      setupUrl: json['setupUrl'] as String?,
+    );
 
 AiProviderConfig aiProviderConfigFromApiJson(
   Map<String, dynamic> json, {
@@ -1233,8 +1255,9 @@ AiProviderConfig aiProviderConfigFromJson(Map<String, dynamic> json) =>
     );
 
 Map<String, dynamic> aiProviderConfigToJson(AiProviderConfig config) => {
-  'provider': config.provider.name,
+  'provider': config.provider.apiValue,
   'model': config.model,
+  'baseUrl': config.endpointUrl,
   'endpointUrl': config.endpointUrl,
   'hasApiKey': config.hasApiKey,
 };

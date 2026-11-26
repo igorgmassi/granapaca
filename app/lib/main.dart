@@ -77,17 +77,6 @@ class _GranaPaCaAppState extends State<GranaPaCaApp>
       initialLastSyncedAt: widget.initialLastSyncedAt,
     );
     unawaited(_state.initialize());
-    final savedMode = _state.preferencesStore.readAppMode();
-    if (widget.dataset == null &&
-        !widget.startInServerAuth &&
-        !widget.startInOnboarding &&
-        !_state.appLock.isLocked &&
-        (widget.initialMode == AppMode.localDevice ||
-            ((widget.initialMode == null ||
-                    widget.initialMode == AppMode.demo) &&
-                savedMode == AppMode.localDevice.name))) {
-      unawaited(_state.restoreLocalDeviceFromCache());
-    }
   }
 
   @override

@@ -90,7 +90,8 @@ class AppState extends ChangeNotifier {
     List<BankConnectionInfo>? initialConnections,
     bool initialOffline = false,
     DateTime? initialLastSyncedAt,
-  }) : _preferences = preferencesStore ?? createDefaultPreferencesStore(),
+  }) : _hasExplicitDataset = dataset != null,
+       _preferences = preferencesStore ?? createDefaultPreferencesStore(),
        _apiClient = apiClient ?? GranaPaCaApiClient(),
        _encryptedCache = encryptedCache ?? EncryptedCacheStore(),
        _appLock = appLock ?? AppLockController(),
@@ -130,6 +131,7 @@ class AppState extends ChangeNotifier {
     }
     _appLock.attachPreferencesStore(_preferences);
     _apiClient.onTokensChanged = _handleTokensChanged;
+    _appLock.isLocalOnlyMode = () => _mode == AppMode.localDevice;
     _appLock.onLockoutSessionCleared = _handleLockoutSessionCleared;
     _appLock.onPinConfigured = _handlePinConfigured;
     _appLock.onPinUnlocked = _handlePinUnlocked;
@@ -212,6 +214,7 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  final bool _hasExplicitDataset;
   late Dataset _dataset;
   final PreferencesStore _preferences;
   final GranaPaCaApiClient _apiClient;
@@ -330,16 +333,18 @@ class AppState extends ChangeNotifier {
       error.isOffline || error.statusCode == null || error.statusCode! >= 500;
 
   /// Cold-start initialization: initializes app lock hardware checks and
-  /// restores the encrypted offline cache for a previously configured server
-  /// profile when unlocked (RF-04, RF-21).
+  /// restores either the encrypted offline server cache or the encrypted
+  /// local-device vault when unlocked (RF-04, RF-21, ADR-030).
   Future<void> initialize() async {
     await _appLock.initialize();
+    if (_appLock.isLocked) return;
     if (_mode == AppMode.server &&
         !isAuthenticated &&
         !_isOffline &&
-        !_appLock.isLocked &&
         _preferences.readHasActiveServerProfile()) {
       await restoreFromEncryptedCache(markOffline: true);
+    } else if (_mode == AppMode.localDevice && !_hasExplicitDataset) {
+      await restoreLocalDeviceFromCache();
     }
   }
 
@@ -619,6 +624,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Explicit double-confirmed reset for users who forgot their PIN in
+  /// zero-server `AppMode.localDevice` mode: wipes the encrypted vault,
+  /// disables PIN lock, and starts a clean local workspace.
+  Future<void> resetLocalVaultAfterForgottenPin() async {
+    await _encryptedCache.wipeAll();
+    _appLock.disableLock();
+    await startLocalDeviceMode();
+  }
+
   void _handlePinConfigured(String pin) {
     unawaited(
       _encryptedCache.protectWithPin(pin, iterations: _appLock.hashIterations),
@@ -626,25 +640,36 @@ class AppState extends ChangeNotifier {
   }
 
   void _handlePinUnlocked(String pin) {
-    final shouldRestore =
+    final shouldRestoreServer =
         _mode == AppMode.server &&
         !isAuthenticated &&
         !_isOffline &&
         _preferences.readHasActiveServerProfile();
-    if (shouldRestore) {
+    final shouldRestoreLocal =
+        _mode == AppMode.localDevice && !_hasExplicitDataset;
+    if (shouldRestoreServer || shouldRestoreLocal) {
       _isRestoringOfflineCache = true;
     }
-    unawaited(_completePinUnlock(pin, shouldRestore: shouldRestore));
+    unawaited(
+      _completePinUnlock(
+        pin,
+        shouldRestoreServer: shouldRestoreServer,
+        shouldRestoreLocal: shouldRestoreLocal,
+      ),
+    );
   }
 
   Future<void> _completePinUnlock(
     String pin, {
-    required bool shouldRestore,
+    required bool shouldRestoreServer,
+    required bool shouldRestoreLocal,
   }) async {
     try {
       await _encryptedCache.unlockWithPin(pin);
-      if (shouldRestore && !isAuthenticated && !_isOffline) {
+      if (shouldRestoreServer && !isAuthenticated && !_isOffline) {
         await restoreFromEncryptedCache(markOffline: true);
+      } else if (shouldRestoreLocal && _mode == AppMode.localDevice) {
+        await restoreLocalDeviceFromCache();
       }
     } finally {
       if (_isRestoringOfflineCache) {
@@ -655,18 +680,34 @@ class AppState extends ChangeNotifier {
   }
 
   void _handleBiometricUnlocked() {
-    if (_mode == AppMode.server &&
+    final shouldRestoreServer =
+        _mode == AppMode.server &&
         !isAuthenticated &&
         !_isOffline &&
-        _preferences.readHasActiveServerProfile()) {
+        _preferences.readHasActiveServerProfile();
+    final shouldRestoreLocal =
+        _mode == AppMode.localDevice && !_hasExplicitDataset;
+    if (shouldRestoreServer || shouldRestoreLocal) {
       _isRestoringOfflineCache = true;
-      unawaited(_completeBiometricRestore());
+      unawaited(
+        _completeBiometricRestore(
+          shouldRestoreServer: shouldRestoreServer,
+          shouldRestoreLocal: shouldRestoreLocal,
+        ),
+      );
     }
   }
 
-  Future<void> _completeBiometricRestore() async {
+  Future<void> _completeBiometricRestore({
+    required bool shouldRestoreServer,
+    required bool shouldRestoreLocal,
+  }) async {
     try {
-      await restoreFromEncryptedCache(markOffline: true);
+      if (shouldRestoreServer && !isAuthenticated && !_isOffline) {
+        await restoreFromEncryptedCache(markOffline: true);
+      } else if (shouldRestoreLocal && _mode == AppMode.localDevice) {
+        await restoreLocalDeviceFromCache();
+      }
     } finally {
       if (_isRestoringOfflineCache) {
         _isRestoringOfflineCache = false;
@@ -1024,6 +1065,38 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    // Capture full previous state so any persistence failure rolls back
+    // atomically without leaving RAM diverged from the encrypted vault on disk.
+    final prevMode = _mode;
+    final prevOffline = _isOffline;
+    final prevSimulateNoConnections = _simulateNoConnections;
+    final prevConnections = List<BankConnectionInfo>.from(_serverConnections);
+    final prevSyncCursor = _syncCursor;
+    final prevLastSyncedAt = _lastSyncedAt;
+    final prevOutbox = List<PendingOutboxMutation>.from(_outbox);
+    final prevSuggestions = List<AssistantSuggestion>.from(
+      _assistantSuggestions,
+    );
+    final prevAlerts = List<AppAlert>.from(_alerts);
+    final prevDataset = _dataset;
+    final prevRules = List<UserRule>.from(_rules);
+    final prevAdjustments = List<TxAdjustment>.from(_adjustments);
+    final prevSplits = <int, List<TxSplit>>{
+      for (final e in _splitsByTxId.entries)
+        e.key: List<TxSplit>.from(e.value),
+    };
+    final prevBudgets = List<Budget>.from(_budgets);
+    final prevGoals = List<Goal>.from(_goals);
+    final prevAlertRules = List<SpendingAlertRule>.from(_spendingAlertRules);
+    final prevConsent = _receiptConsentAccepted;
+    final prevSelectedMonth = _selectedMonth;
+    final prevSpendingMonth = _spendingMonth;
+    final prevHistoryFilter = _historyFilter;
+    final prevAssistantMessages = List<AssistantMessage>.from(
+      _assistantMessages,
+    );
+    final prevAppModePref = _preferences.readAppMode();
+
     _mode = AppMode.localDevice;
     _isOffline = false;
     _simulateNoConnections = false;
@@ -1075,10 +1148,59 @@ class AppState extends ChangeNotifier {
     _seedAssistantWelcome();
     _recompute();
 
-    await _preferences.writeAppMode(AppMode.localDevice.name);
-    await _persistLocalDeviceIfNeeded();
-    notifyListeners();
-    return payload.transactions.length;
+    try {
+      await _localPersistChain.catchError((_) {});
+      await _persistEncryptedCache(namespaceOverride: localDeviceNamespace);
+      await _preferences.writeAppMode(AppMode.localDevice.name);
+      notifyListeners();
+      return payload.transactions.length;
+    } catch (_) {
+      _mode = prevMode;
+      _isOffline = prevOffline;
+      _simulateNoConnections = prevSimulateNoConnections;
+      _serverConnections = prevConnections;
+      _syncCursor = prevSyncCursor;
+      _lastSyncedAt = prevLastSyncedAt;
+      _outbox
+        ..clear()
+        ..addAll(prevOutbox);
+      _assistantSuggestions
+        ..clear()
+        ..addAll(prevSuggestions);
+      _alerts = prevAlerts;
+      _dataset = prevDataset;
+      _rules
+        ..clear()
+        ..addAll(prevRules);
+      _adjustments
+        ..clear()
+        ..addAll(prevAdjustments);
+      _splitsByTxId
+        ..clear()
+        ..addAll(prevSplits);
+      _budgets
+        ..clear()
+        ..addAll(prevBudgets);
+      _goals
+        ..clear()
+        ..addAll(prevGoals);
+      _spendingAlertRules
+        ..clear()
+        ..addAll(prevAlertRules);
+      _receiptConsentAccepted = prevConsent;
+      _selectedMonth = prevSelectedMonth;
+      _spendingMonth = prevSpendingMonth;
+      _historyFilter = prevHistoryFilter;
+      _assistantMessages
+        ..clear()
+        ..addAll(prevAssistantMessages);
+      _recompute();
+      try {
+        await _preferences.writeAppMode(prevAppModePref);
+      } catch (_) {}
+      notifyListeners();
+      rethrow;
+    }
   }
 
   /// Waits for any queued local-device encrypted persistence write to complete.
@@ -2995,6 +3117,16 @@ class AppState extends ChangeNotifier {
   }) async {
     final previous = _aiProviderConfig;
     final providerChanged = previous.provider != config.provider;
+    final sanitizedEndpoint = config.provider.supportsCustomEndpoint
+        ? config.endpointUrl.trim()
+        : '';
+    if (sanitizedEndpoint.isNotEmpty) {
+      GranaPaCaApiClient.validateAiProviderBaseUrl(
+        provider: config.provider,
+        rawUrl: sanitizedEndpoint,
+      );
+    }
+    final endpointChanged = previous.endpointUrl.trim() != sanitizedEndpoint;
     final trimmedKey = apiKey?.trim() ?? '';
     final hasNewKey = trimmedKey.isNotEmpty;
     final isLocalOrNone =
@@ -3003,10 +3135,7 @@ class AppState extends ChangeNotifier {
     final shouldClearKey =
         clearApiKey ||
         config.provider == AiProviderKind.none ||
-        (providerChanged && !hasNewKey);
-    final sanitizedEndpoint = config.provider == AiProviderKind.ollama
-        ? config.endpointUrl.trim()
-        : '';
+        ((providerChanged || endpointChanged) && !hasNewKey);
     final sanitizedModel = config.provider == AiProviderKind.none
         ? ''
         : config.model.trim();

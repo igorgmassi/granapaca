@@ -502,9 +502,13 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
 
   void _selectPreset(AiProviderKind kind) {
     setState(() {
+      final changed = _selectedProvider != kind;
       _selectedProvider = kind;
       _modelController.text = kind.defaultModel;
       _endpointController.text = kind.defaultEndpoint;
+      if (changed) {
+        _apiKeyController.clear();
+      }
     });
   }
 
@@ -732,10 +736,14 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                         const SizedBox(width: GranaSpacing.sm),
                         Expanded(
                           child: Text(
-                            'Privacidade: antes de enviar qualquer pergunta '
-                            'a provedores externos, sua instância aplica '
-                            'minimização e pseudonimização (sem CPF, números '
-                            'de conta ou credenciais).',
+                            'Privacidade e política de retenção: antes de '
+                            'enviar qualquer pergunta a provedores externos, '
+                            'sua instância aplica minimização e '
+                            'pseudonimização (sem CPF, números de conta ou '
+                            'credenciais). Atenção: camadas gratuitas '
+                            'externas podem reter ou usar prompts conforme '
+                            'os termos do provedor escolhido — revise a '
+                            'política de retenção antes de ativar.',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -758,9 +766,7 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                     hintText: _selectedProvider.defaultModel,
                   ),
                 ),
-                if (_selectedProvider == AiProviderKind.ollama ||
-                    _selectedProvider == AiProviderKind.groq ||
-                    _selectedProvider == AiProviderKind.openrouter) ...[
+                if (_selectedProvider.supportsCustomEndpoint) ...[
                   const SizedBox(height: GranaSpacing.md),
                   TextField(
                     key: const Key('ai_provider_endpoint_field'),
@@ -768,7 +774,7 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                     decoration: InputDecoration(
                       labelText: _selectedProvider == AiProviderKind.ollama
                           ? 'Endereço do servidor Ollama'
-                          : 'Endpoint da API (opcional)',
+                          : 'Endpoint da API (HTTPS fora da rede local)',
                       hintText: _selectedProvider.defaultEndpoint,
                     ),
                   ),
@@ -784,6 +790,8 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                           _selectedProvider == state.aiProviderConfig.provider &&
                               state.aiProviderConfig.hasApiKey
                           ? 'Nova chave de API (opcional, já salva)'
+                          : _selectedProvider == AiProviderKind.openaiCompatible
+                          ? 'Chave de API (opcional para servidor local)'
                           : 'Chave de API (cifrada no servidor)',
                     ),
                   ),
@@ -795,10 +803,16 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                 onPressed: () async {
                   final sameProvider =
                       _selectedProvider == state.aiProviderConfig.provider;
+                  final endpointText = _selectedProvider.supportsCustomEndpoint
+                      ? _endpointController.text.trim()
+                      : '';
+                  final endpointChanged =
+                      endpointText != state.aiProviderConfig.endpointUrl.trim();
                   final enteredKey = _apiKeyController.text.trim();
                   final shouldClearKey =
                       _selectedProvider == AiProviderKind.none ||
-                      (!sameProvider && enteredKey.isEmpty);
+                      ((!sameProvider || endpointChanged) &&
+                          enteredKey.isEmpty);
                   try {
                     await state.updateAiProviderConfig(
                       AiProviderConfig(
@@ -806,10 +820,9 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                         model: _selectedProvider == AiProviderKind.none
                             ? ''
                             : _modelController.text.trim(),
-                        endpointUrl: _selectedProvider == AiProviderKind.ollama
-                            ? _endpointController.text.trim()
-                            : '',
+                        endpointUrl: endpointText,
                         hasApiKey: sameProvider &&
+                            !endpointChanged &&
                             state.aiProviderConfig.hasApiKey &&
                             !shouldClearKey,
                       ),
