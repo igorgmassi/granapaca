@@ -1,8 +1,6 @@
-// [Suposição] Everything in this file waits on the pending requirements of
-// Part 2: P1 (the category list and the donut size) and P2 (the essentiality
-// levels). Change it here when they are decided; nothing else hard-codes them.
+// Spending categories, essentiality levels, movement types and rule layers.
 
-/// [Suposição, P1] Spending categories: 8 groups plus "Outros".
+/// Spending categories: 8 groups plus "Outros".
 enum SpendingCategory {
   housing('Moradia'),
   food('Alimentação'),
@@ -19,18 +17,46 @@ enum SpendingCategory {
   final String label;
 }
 
-/// [Suposição, P2] Essentiality, kept apart from the category: a restaurant
-/// is food, but it is not essential.
+/// Essentiality, kept apart from the category with judgment-free labels:
+/// a restaurant is food, and can be flexible rather than essential.
 enum Essentiality {
   essential('Essencial'),
   important('Importante'),
-  superfluous('Supérfluo');
+  flexible('Flexível');
 
   const Essentiality(this.label);
 
   final String label;
 }
 
-/// [Suposição, P1] Categories the donut shows before the rest goes into one
-/// remainder slice (P1: 5 or 6).
+/// What a movement is. Only [expense] and [refund] count toward spending and
+/// only [income] counts as income; the others move the same money around and
+/// are never counted twice (ADR-014).
+enum TxKind {
+  expense('Gasto'),
+  income('Receita'),
+  ownTransfer('Transferência própria'),
+  billPayment('Pagamento de fatura'),
+  refund('Estorno'),
+  investment('Aplicação'),
+  redemption('Resgate'),
+  cashWithdrawal('Saque');
+
+  const TxKind(this.label);
+
+  final String label;
+}
+
+/// Rule layers ordered by precedence below manual adjustments.
+enum RuleLayer {
+  user('Regra minha'),
+  profile('Regra do perfil'),
+  system('Regra do sistema');
+
+  const RuleLayer(this.label);
+
+  final String label;
+}
+
+/// Categories the donut shows before the rest goes into one remainder slice.
 const donutCategories = 5;
