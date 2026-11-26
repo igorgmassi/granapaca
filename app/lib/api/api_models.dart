@@ -702,9 +702,30 @@ AccountKind parseAccountKind(String? raw) {
     case 'credit_card':
     case 'creditcard':
       return AccountKind.creditCard;
+    case 'cash':
+    case 'wallet':
+      return AccountKind.cash;
     default:
       return AccountKind.checking;
   }
+}
+
+/// Converts [AccountKind] to the canonical snake_case string accepted by the
+/// backend API (`checking`, `savings`, `credit_card`, `cash`).
+String accountKindToApiString(AccountKind kind) => switch (kind) {
+  AccountKind.checking => 'checking',
+  AccountKind.savings => 'savings',
+  AccountKind.creditCard => 'credit_card',
+  AccountKind.cash => 'cash',
+};
+
+PaymentMethod? parsePaymentMethod(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final normalized = raw.toLowerCase().trim();
+  for (final p in PaymentMethod.values) {
+    if (p.name.toLowerCase() == normalized) return p;
+  }
+  return null;
 }
 
 Account accountFromJson(Map<String, dynamic> json) => Account(
@@ -808,25 +829,75 @@ int stableTransactionId(dynamic rawId) {
   return hash;
 }
 
+TxSplit txSplitFromJson(Map<String, dynamic> json) => TxSplit(
+  id: (json['id'] ?? '').toString(),
+  description: (json['description'] as String?) ?? '',
+  amountCents: (json['amountCents'] as num?)?.toInt() ?? 0,
+  category: parseSpendingCategory(json['category'] as String?),
+  essentiality: parseEssentiality(json['essentiality'] as String?),
+);
+
+Map<String, dynamic> txSplitToJson(TxSplit split) => {
+  'id': split.id,
+  'description': split.description,
+  'amountCents': split.amountCents,
+  'category': split.category?.name,
+  'essentiality': split.essentiality?.name,
+};
+
 Transaction transactionFromJson(Map<String, dynamic> json) {
   final rawDate = (json['date'] ?? json['occurredOn'] ?? '').toString();
   final parsedDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+  final rawTags = (json['tags'] as List<dynamic>?) ?? const [];
+  final rawSplits =
+      (json['splits'] as List<dynamic>?) ??
+      (json['parts'] as List<dynamic>?) ??
+      const [];
+  final rawDescription =
+      json['description'] ??
+      json['effectiveDescription'] ??
+      json['originalDescription'] ??
+      '';
+  final rawKind = (json['kind'] ?? json['effectiveKind']) as String?;
+  final rawCategory =
+      (json['category'] ?? json['effectiveCategory']) as String?;
+  final rawEssentiality =
+      (json['essentiality'] ?? json['effectiveEssentiality']) as String?;
+  final rawPaymentMethod =
+      (json['paymentMethod'] ??
+              json['effectivePaymentMethod'] ??
+              json['originalPaymentMethod'])
+          as String?;
+  final rawAtypical =
+      (json['isAtypical'] as bool?) ??
+      (json['effectiveIsAtypical'] as bool?) ??
+      false;
   return Transaction(
     id: stableTransactionId(json['id']),
     accountId: (json['accountId'] ?? '').toString(),
     date: DateTime(parsedDate.year, parsedDate.month, parsedDate.day),
-    description:
-        (json['description'] ?? json['originalDescription'] ?? '').toString(),
+    description: rawDescription.toString(),
     amountCents: (json['amountCents'] as num?)?.toInt() ?? 0,
-    kind: parseTxKind(json['kind'] as String?),
-    category: parseSpendingCategory(json['category'] as String?),
-    essentiality: parseEssentiality(json['essentiality'] as String?),
+    kind: parseTxKind(rawKind),
+    category: parseSpendingCategory(rawCategory),
+    essentiality: parseEssentiality(rawEssentiality),
     installment:
         (json['installment'] as num?)?.toInt() ??
         (json['installmentNumber'] as num?)?.toInt(),
     installmentCount:
         (json['installmentCount'] as num?)?.toInt() ??
         (json['installmentTotal'] as num?)?.toInt(),
+    paymentMethod: parsePaymentMethod(rawPaymentMethod),
+    tags: rawTags.map((e) => e.toString()).toList(growable: false),
+    isAtypical: rawAtypical,
+    splits: rawSplits
+        .whereType<Map<String, dynamic>>()
+        .map(txSplitFromJson)
+        .toList(growable: false),
+    isCashEntry:
+        (json['isCashEntry'] as bool?) ??
+        (parsePaymentMethod(rawPaymentMethod) == PaymentMethod.cash),
+    pendingSync: (json['pendingSync'] as bool?) ?? false,
   );
 }
 
@@ -841,6 +912,13 @@ Map<String, dynamic> transactionToJson(Transaction tx) => {
   'essentiality': tx.essentiality?.name,
   'installment': tx.installment,
   'installmentCount': tx.installmentCount,
+  if (tx.paymentMethod != null) 'paymentMethod': tx.paymentMethod!.name,
+  if (tx.tags.isNotEmpty) 'tags': tx.tags,
+  if (tx.isAtypical) 'isAtypical': true,
+  if (tx.splits.isNotEmpty)
+    'splits': [for (final s in tx.splits) txSplitToJson(s)],
+  if (tx.isCashEntry) 'isCashEntry': true,
+  if (tx.pendingSync) 'pendingSync': true,
 };
 
 UserRule userRuleFromJson(Map<String, dynamic> json) {
@@ -880,10 +958,39 @@ Map<String, dynamic> userRuleToJson(UserRule rule) => {
   'layer': rule.layer.name,
 };
 
+AdjustmentField parseAdjustmentField(String? raw) {
+  switch (raw?.toLowerCase().trim()) {
+    case 'category':
+      return AdjustmentField.category;
+    case 'essentiality':
+      return AdjustmentField.essentiality;
+    case 'kind' || 'tx_kind':
+      return AdjustmentField.kind;
+    case 'description':
+      return AdjustmentField.description;
+    case 'payment_method' || 'paymentmethod':
+      return AdjustmentField.paymentMethod;
+    case 'tags':
+      return AdjustmentField.tags;
+    case 'is_atypical' || 'isatypical' || 'atypical':
+      return AdjustmentField.atypical;
+    default:
+      return AdjustmentField.category;
+  }
+}
+
 String? _normalizeAdjustmentValue(AdjustmentField field, String? raw) {
   if (raw == null) return null;
   if (field == AdjustmentField.kind) {
     return parseTxKind(raw).name;
+  }
+  if (field == AdjustmentField.paymentMethod) {
+    return parsePaymentMethod(raw)?.name ?? raw;
+  }
+  if (field == AdjustmentField.atypical) {
+    final lower = raw.toLowerCase().trim();
+    if (lower == 'true' || lower == '1') return 'true';
+    if (lower == 'false' || lower == '0') return 'false';
   }
   return raw;
 }
@@ -891,10 +998,7 @@ String? _normalizeAdjustmentValue(AdjustmentField field, String? raw) {
 TxAdjustment adjustmentFromJson(Map<String, dynamic> json, {int? fallbackTxId}) {
   final fieldName =
       (json['fieldName'] as String?) ?? (json['field'] as String?) ?? 'category';
-  final field = AdjustmentField.values.firstWhere(
-    (f) => f.name == fieldName,
-    orElse: () => AdjustmentField.category,
-  );
+  final field = parseAdjustmentField(fieldName);
   final rawTx = json['transactionId'] ?? json['txId'];
   final txId = rawTx != null ? stableTransactionId(rawTx) : (fallbackTxId ?? 0);
   return TxAdjustment(
@@ -924,4 +1028,132 @@ Map<String, dynamic> adjustmentToJson(TxAdjustment adj) => {
   'reason': adj.reason,
   'timestamp': adj.timestamp.toIso8601String(),
   'undoesId': adj.undoesId,
+};
+
+Budget budgetFromApiJson(Map<String, dynamic> json, {Budget? fallback}) {
+  final category =
+      parseSpendingCategory(json['category'] as String?) ??
+      fallback?.category ??
+      SpendingCategory.other;
+  final limitCents =
+      (json['monthLimitCents'] as num?)?.toInt() ??
+      (json['limitCents'] as num?)?.toInt() ??
+      fallback?.limitCents ??
+      0;
+  final rawPercent = json['alertThresholdPercent'] as num?;
+  final alertThreshold = rawPercent != null
+      ? (rawPercent.toDouble() / 100.0).clamp(0.01, 1.0)
+      : (json['alertThreshold'] as num?)?.toDouble() ??
+            fallback?.alertThreshold ??
+            0.8;
+  return Budget(
+    id: (json['id'] ?? fallback?.id ?? '').toString(),
+    category: category,
+    limitCents: limitCents,
+    alertThreshold: alertThreshold,
+  );
+}
+
+Goal goalFromApiJson(Map<String, dynamic> json, {Goal? fallback}) {
+  final rawTargetDate = json['targetDate'] as String?;
+  final parsedDate =
+      rawTargetDate != null && rawTargetDate.isNotEmpty
+          ? DateTime.tryParse(rawTargetDate)
+          : fallback?.targetDate;
+  return Goal(
+    id: (json['id'] ?? fallback?.id ?? '').toString(),
+    name: (json['name'] as String?) ?? fallback?.name ?? '',
+    targetCents:
+        (json['targetCents'] as num?)?.toInt() ?? fallback?.targetCents ?? 0,
+    currentCents:
+        (json['currentCents'] as num?)?.toInt() ?? fallback?.currentCents ?? 0,
+    targetDate: parsedDate,
+  );
+}
+
+SpendingAlertRule spendingAlertRuleFromApiJson(
+  Map<String, dynamic> json, {
+  SpendingAlertRule? fallback,
+}) {
+  final category =
+      parseSpendingCategory(json['category'] as String?) ?? fallback?.category;
+  final keyword =
+      (json['merchantKeyword'] as String?) ??
+      (json['keyword'] as String?) ??
+      fallback?.keyword;
+  final expression =
+      (json['expression'] as String?) ??
+      (json['rawExpression'] as String?) ??
+      fallback?.rawExpression ??
+      '';
+  final label =
+      (json['categoryLabel'] as String?) ??
+      (json['label'] as String?) ??
+      fallback?.label ??
+      category?.label ??
+      keyword ??
+      expression;
+  return SpendingAlertRule(
+    id: (json['id'] ?? fallback?.id ?? '').toString(),
+    rawExpression: expression,
+    label: label,
+    thresholdCents:
+        (json['limitCents'] as num?)?.toInt() ??
+        (json['thresholdCents'] as num?)?.toInt() ??
+        fallback?.thresholdCents ??
+        0,
+    category: category,
+    keyword: keyword,
+    isActive: (json['isActive'] as bool?) ?? fallback?.isActive ?? true,
+  );
+}
+
+AiProviderConfig aiProviderConfigFromApiJson(
+  Map<String, dynamic> json, {
+  AiProviderConfig? fallback,
+}) {
+  final rawProvider = (json['provider'] as String?)?.toLowerCase().trim();
+  final provider = AiProviderKind.values.firstWhere(
+    (k) => k.name == rawProvider,
+    orElse: () => fallback?.provider ?? AiProviderKind.none,
+  );
+  return AiProviderConfig(
+    provider: provider,
+    model: (json['model'] as String?) ?? fallback?.model ?? '',
+    endpointUrl:
+        (json['baseUrl'] as String?) ??
+        (json['endpointUrl'] as String?) ??
+        fallback?.endpointUrl ??
+        '',
+    hasApiKey: (json['hasApiKey'] as bool?) ?? fallback?.hasApiKey ?? false,
+  );
+}
+
+PendingOutboxMutation outboxMutationFromJson(Map<String, dynamic> json) {
+  final rawType = (json['type'] as String?) ?? OutboxMutationType.cashEntry.name;
+  final type = OutboxMutationType.values.firstWhere(
+    (t) => t.name == rawType,
+    orElse: () => OutboxMutationType.cashEntry,
+  );
+  final rawPayload = json['payload'];
+  final payload = rawPayload is Map<String, dynamic>
+      ? Map<String, dynamic>.from(rawPayload)
+      : const <String, dynamic>{};
+  return PendingOutboxMutation(
+    id: (json['id'] ?? '').toString(),
+    type: type,
+    createdAt:
+        DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+        DateTime.now(),
+    localTxId: (json['localTxId'] as num?)?.toInt() ?? 0,
+    payload: payload,
+  );
+}
+
+Map<String, dynamic> outboxMutationToJson(PendingOutboxMutation m) => {
+  'id': m.id,
+  'type': m.type.name,
+  'createdAt': m.createdAt.toIso8601String(),
+  'localTxId': m.localTxId,
+  'payload': m.payload,
 };

@@ -20,11 +20,12 @@ Future<void> _scrollTo(
   WidgetTester tester,
   Finder finder, {
   Finder? scrollable,
+  double delta = 250,
 }) async {
   final targetScrollable = scrollable ?? find.byType(Scrollable).last;
   await tester.scrollUntilVisible(
     finder,
-    250,
+    delta,
     scrollable: targetScrollable,
   );
   await tester.ensureVisible(finder);
@@ -479,8 +480,15 @@ void main() {
         await tester.pumpAndSettle();
 
         // Second category adjustment on the same field: Lazer -> Saúde (adj-2)
+        // Category chips sit above the save button after Wave 3 fields were
+        // added, so scroll back up to reach them.
         final healthChip = find.byKey(const Key('cat_choice_health'));
-        await _scrollTo(tester, healthChip, scrollable: sheetScrollable);
+        await _scrollTo(
+          tester,
+          healthChip,
+          scrollable: sheetScrollable,
+          delta: -250,
+        );
         await tester.tap(healthChip);
         await tester.pumpAndSettle();
 

@@ -3,21 +3,81 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../finance/model.dart';
+import '../finance/planning_queries.dart';
 import '../finance/queries.dart';
 import '../finance/taxonomy.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
+import 'spending_analytics_widgets.dart';
+import 'spending_planning_tab.dart';
 
-/// Gastos screen with interactive Donut chart (RF-34), full horizontal bar
-/// ranking (RF-35), explicit "Sem categoria" representation (RF-31), and
-/// period/bank/account filters aligned with Extrato (RF-36, RF-05).
-class SpendingScreen extends StatelessWidget {
+export 'spending_analytics_widgets.dart'
+    show CalendarHeatmapWidget, FiftyThirtyTwentyCard, MonthComparisonCard;
+
+/// Gastos screen with 2 tabs:
+/// - `Análise`: Donut (RF-34), Ranking (RF-35, RF-31), Calendar Heatmap
+///   (ADR-006), 50/30/20 Rule Card, and Month-over-Month Comparison Card.
+/// - `Planejamento`: End-of-month Projection (excluding atypical expenses),
+///   Monthly Category Budgets, Financial Goals, Detected Subscriptions, and
+///   Custom Natural-Language Spending Alerts.
+class SpendingScreen extends StatefulWidget {
   const SpendingScreen({super.key});
+
+  @override
+  State<SpendingScreen> createState() => _SpendingScreenState();
+}
+
+class _SpendingScreenState extends State<SpendingScreen> {
+  int _selectedSubTab = 0;
 
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            GranaSpacing.lg,
+            GranaSpacing.md,
+            GranaSpacing.lg,
+            GranaSpacing.sm,
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              key: const Key('spending_subtab_switcher'),
+              segments: const [
+                ButtonSegment<int>(
+                  value: 0,
+                  label: Text('Análise'),
+                  icon: Icon(Icons.pie_chart_outline_rounded),
+                ),
+                ButtonSegment<int>(
+                  value: 1,
+                  label: Text('Planejamento'),
+                  icon: Icon(Icons.flag_outlined),
+                ),
+              ],
+              selected: {_selectedSubTab},
+              onSelectionChanged: (selected) =>
+                  setState(() => _selectedSubTab = selected.first),
+            ),
+          ),
+        ),
+        Divider(height: 1, color: scheme.outlineVariant),
+        Expanded(
+          child: _selectedSubTab == 0
+              ? _buildAnalysisTab(context, state)
+              : const SpendingPlanningTab(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnalysisTab(BuildContext context, AppState state) {
     final data = state.effectiveDataset;
     final month = state.spendingMonth;
     final (from, to) = monthRange(month);
@@ -31,6 +91,25 @@ class SpendingScreen extends StatelessWidget {
     final ranking = categoryRanking(h.items);
     final donut = categoryDonut(ranking);
     final totalSpentCents = -h.totalCents;
+
+    // Transactions matching bank/account filter across all months (for MoM & 50/30/20).
+    final scopedAllMonths = data.transactions
+        .where((t) {
+          if (state.spendingBankId != null &&
+              data.account(t.accountId).bankId != state.spendingBankId) {
+            return false;
+          }
+          if (state.spendingAccountId != null &&
+              t.accountId != state.spendingAccountId) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+
+    final heatmapCells = dailySpendingHeatmap(h.items, month);
+    final rule503020 = fiftyThirtyTwenty(scopedAllMonths, month);
+    final comparison = monthComparison(scopedAllMonths, month);
 
     final availableAccounts = data.accounts
         .where(
@@ -63,6 +142,18 @@ class SpendingScreen extends StatelessWidget {
               ? restCategories
               : null,
           uncategorizedOnly: uncategorizedOnly || restHasUncategorized,
+          spendingOnly: true,
+        ),
+      );
+    }
+
+    void openDayInHistory(DateTime day) {
+      state.openHistoryWithFilter(
+        TxFilter(
+          from: DateTime(day.year, day.month, day.day),
+          to: DateTime(day.year, day.month, day.day + 1),
+          bankId: state.spendingBankId,
+          accountId: state.spendingAccountId,
           spendingOnly: true,
         ),
       );
@@ -186,12 +277,29 @@ class SpendingScreen extends StatelessWidget {
           ),
         );
 
+        final heatmapCard = CalendarHeatmapWidget(
+          month: month,
+          cells: heatmapCells,
+          hideValues: state.hideValues,
+          onOpenDayInHistory: openDayInHistory,
+        );
+
+        final ruleCard = FiftyThirtyTwentyCard(
+          breakdown: rule503020,
+          hideValues: state.hideValues,
+        );
+
+        final comparisonCard = MonthComparisonCard(
+          comparison: comparison,
+          hideValues: state.hideValues,
+        );
+
         return ListView(
           padding: const EdgeInsets.all(GranaSpacing.lg),
           children: [
             filterBar,
             const SizedBox(height: GranaSpacing.lg),
-            if (isDesktop)
+            if (isDesktop) ...[
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -199,11 +307,35 @@ class SpendingScreen extends StatelessWidget {
                   const SizedBox(width: GranaSpacing.lg),
                   Expanded(child: rankingCard),
                 ],
-              )
-            else ...[
+              ),
+              const SizedBox(height: GranaSpacing.lg),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: heatmapCard),
+                  const SizedBox(width: GranaSpacing.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ruleCard,
+                        const SizedBox(height: GranaSpacing.lg),
+                        comparisonCard,
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
               donutCard,
               const SizedBox(height: GranaSpacing.lg),
               rankingCard,
+              const SizedBox(height: GranaSpacing.lg),
+              heatmapCard,
+              const SizedBox(height: GranaSpacing.lg),
+              ruleCard,
+              const SizedBox(height: GranaSpacing.lg),
+              comparisonCard,
             ],
           ],
         );

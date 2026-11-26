@@ -4,22 +4,31 @@ import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 import 'alerts_screen.dart';
+import 'assistant_screen.dart';
+import 'cash_entry_sheet.dart';
 import 'connections_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
+import 'receipts_export_screen.dart';
 import 'review_queue_screen.dart';
 import 'rules_screen.dart';
 import 'settings_screen.dart';
 import 'spending_screen.dart';
 
 /// Responsive application shell with DemoBanner / OfflineBanner,
-/// NavigationBar / NavigationRail, hide-values toggle, quick actions sheet,
-/// and alerts badge.
+/// NavigationBar / NavigationRail (`Início`, `Extrato`, `Gastos`, `Paçoca`,
+/// `Ajustes`), hide-values toggle, quick actions sheet, and alerts badge.
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
 
-  static const _titles = ['GranaPaCá', 'Extrato', 'Gastos', 'Configurações'];
+  static const _titles = [
+    'GranaPaCá',
+    'Extrato',
+    'Gastos',
+    'Paçoca',
+    'Configurações',
+  ];
 
   static const _destinations = [
     NavigationDestination(
@@ -36,6 +45,11 @@ class AppShell extends StatelessWidget {
       icon: Icon(Icons.pie_chart_outline_rounded),
       selectedIcon: Icon(Icons.pie_chart_rounded),
       label: 'Gastos',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.auto_awesome_outlined),
+      selectedIcon: Icon(Icons.auto_awesome_rounded),
+      label: 'Paçoca',
     ),
     NavigationDestination(
       icon: Icon(Icons.settings_outlined),
@@ -61,6 +75,11 @@ class AppShell extends StatelessWidget {
       label: Text('Gastos'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.auto_awesome_outlined),
+      selectedIcon: Icon(Icons.auto_awesome_rounded),
+      label: Text('Paçoca'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.settings_outlined),
       selectedIcon: Icon(Icons.settings_rounded),
       label: Text('Ajustes'),
@@ -76,6 +95,8 @@ class AppShell extends StatelessWidget {
       case 2:
         return const SpendingScreen();
       case 3:
+        return const AssistantScreen();
+      case 4:
         return const SettingsScreen();
       default:
         return const HomeScreen();
@@ -84,6 +105,7 @@ class AppShell extends StatelessWidget {
 
   Future<void> _showQuickActions(BuildContext context, AppState state) {
     final pendingGroups = state.reviewQueueGroups.length;
+    final pendingOutbox = state.pendingOutboxCount;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -96,6 +118,36 @@ class AppShell extends StatelessWidget {
               'Ações rápidas',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
+          ),
+          ListTile(
+            key: const Key('quick_action_cash_entry'),
+            leading: const Icon(Icons.payments_outlined),
+            title: const Text('Lançar gasto em dinheiro'),
+            subtitle: Text(
+              pendingOutbox > 0
+                  ? '$pendingOutbox lançamento(s) na fila offline'
+                  : 'Registro rápido em dinheiro físico (funciona offline)',
+            ),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              showCashEntrySheet(context);
+            },
+          ),
+          ListTile(
+            key: const Key('quick_action_nfce'),
+            leading: const Icon(Icons.qr_code_scanner_rounded),
+            title: const Text('Ler nota fiscal (NFC-e)'),
+            subtitle: const Text(
+              'Colar XML ou QR Code da SEFAZ para dividir itens',
+            ),
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ReceiptsExportScreen(),
+                ),
+              );
+            },
           ),
           ListTile(
             key: const Key('quick_action_review_queue'),
@@ -165,7 +217,7 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
-    final selected = state.selectedTab;
+    final selected = state.selectedTab.clamp(0, _titles.length - 1);
     final unread = state.unreadAlertCount;
     final scheme = Theme.of(context).colorScheme;
 

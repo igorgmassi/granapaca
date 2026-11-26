@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../finance/model.dart';
 import '../finance/taxonomy.dart';
 
 /// Spacing constants for the GranaPaCá design system ("Mata e Fruta").
@@ -106,6 +107,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     required this.importante,
     required this.flexivel,
     required this.categoryColors,
+    required this.heatmapScale,
     required this.valorDestaque,
     required this.valorGrande,
     required this.valorLinha,
@@ -119,6 +121,10 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   final Color importante;
   final Color flexivel;
   final Map<SpendingCategory, Color> categoryColors;
+
+  /// Sequential 5-shade Caramelo scale for the spending calendar heatmap
+  /// (intensity 1..5; intensity 0 uses transparent fill + outlineVariant border).
+  final List<Color> heatmapScale;
   final TextStyle valorDestaque;
   final TextStyle valorGrande;
   final TextStyle valorLinha;
@@ -146,6 +152,13 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       SpendingCategory.services: Color(0xFF02A8AA),
       SpendingCategory.other: Color(0xFFA3958A),
     },
+    heatmapScale: [
+      Color(0xFFFADCC4),
+      Color(0xFFEBB68C),
+      Color(0xFFD48952),
+      Color(0xFFB8662B),
+      Color(0xFF8B3E05),
+    ],
     valorDestaque: TextStyle(
       fontSize: 32,
       fontWeight: FontWeight.w700,
@@ -190,6 +203,13 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       SpendingCategory.services: Color(0xFF008E97),
       SpendingCategory.other: Color(0xFF8A7D73),
     },
+    heatmapScale: [
+      Color(0xFF422715),
+      Color(0xFF66381A),
+      Color(0xFF8F4E22),
+      Color(0xFFC27438),
+      Color(0xFFE8A066),
+    ],
     valorDestaque: TextStyle(
       fontSize: 32,
       fontWeight: FontWeight.w700,
@@ -235,6 +255,14 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     }
   }
 
+  /// Returns the Caramelo shade for intensity `1..5`, or `null` for `0`
+  /// (empty day).
+  Color? colorForHeatmapIntensity(int intensity) {
+    if (intensity <= 0 || heatmapScale.isEmpty) return null;
+    final idx = (intensity - 1).clamp(0, heatmapScale.length - 1);
+    return heatmapScale[idx];
+  }
+
   @override
   GranaTokens copyWith({
     Color? mata,
@@ -245,6 +273,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     Color? importante,
     Color? flexivel,
     Map<SpendingCategory, Color>? categoryColors,
+    List<Color>? heatmapScale,
     TextStyle? valorDestaque,
     TextStyle? valorGrande,
     TextStyle? valorLinha,
@@ -257,6 +286,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     importante: importante ?? this.importante,
     flexivel: flexivel ?? this.flexivel,
     categoryColors: categoryColors ?? this.categoryColors,
+    heatmapScale: heatmapScale ?? this.heatmapScale,
     valorDestaque: valorDestaque ?? this.valorDestaque,
     valorGrande: valorGrande ?? this.valorGrande,
     valorLinha: valorLinha ?? this.valorLinha,
@@ -279,6 +309,17 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
               Color.lerp(categoryColors[c], other.categoryColors[c], t) ??
               categoryColors[c]!,
       },
+      heatmapScale: [
+        for (var i = 0; i < heatmapScale.length; i++)
+          Color.lerp(
+                heatmapScale[i],
+                i < other.heatmapScale.length
+                    ? other.heatmapScale[i]
+                    : heatmapScale[i],
+                t,
+              ) ??
+              heatmapScale[i],
+      ],
       valorDestaque:
           TextStyle.lerp(valorDestaque, other.valorDestaque, t) ??
           valorDestaque,
@@ -314,6 +355,25 @@ IconData iconForCategory(SpendingCategory category) {
 
 IconData iconForOptionalCategory(SpendingCategory? category) =>
     category != null ? iconForCategory(category) : Icons.help_outline_rounded;
+
+IconData iconForPaymentMethod(PaymentMethod method) {
+  switch (method) {
+    case PaymentMethod.pix:
+      return Icons.bolt_rounded;
+    case PaymentMethod.debit:
+      return Icons.account_balance_wallet_outlined;
+    case PaymentMethod.credit:
+      return Icons.credit_card_outlined;
+    case PaymentMethod.cash:
+      return Icons.payments_outlined;
+    case PaymentMethod.boleto:
+      return Icons.qr_code_2_outlined;
+    case PaymentMethod.transfer:
+      return Icons.swap_horiz_rounded;
+    case PaymentMethod.other:
+      return Icons.more_horiz_rounded;
+  }
+}
 
 IconData iconForTxKind(TxKind kind) {
   switch (kind) {
