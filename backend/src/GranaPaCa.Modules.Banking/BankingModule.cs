@@ -37,6 +37,8 @@ public static class BankingModule
         services.AddScoped<IBankingSyncTrigger>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<ITransactionReclassifier>(sp => sp.GetRequiredService<BankingSyncService>());
         services.AddScoped<BankingQueries>();
+        services.AddScoped<BankingDeltaSyncService>();
+        services.AddSingleton<IBankingPurgeService, BankingPurgeService>();
 
         services.AddHostedService<DailySyncWorker>();
         return services;
@@ -352,6 +354,98 @@ public static class BankingModule
                 summary.FailedConnections,
                 message));
         });
+
+        api.MapGet("/sync/changes", async (
+            string? cursor,
+            ClaimsPrincipal user,
+            BankingDeltaSyncService deltaSync,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, errorCode, error, data) = await deltaSync.GetChangesAsync(householdId, cursor, cancellationToken);
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Cursor de sincronização inválido",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = errorCode ?? "invalid_cursor",
+                        ["fullResyncRequired"] = true,
+                    });
+        })
+        .WithName("GetSyncChanges")
+        .WithTags("Sync")
+        .Produces<SyncChangesResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
+
+        api.MapPost("/imports/ofx", async (
+            ImportStatementRequest? request,
+            ClaimsPrincipal user,
+            BankingSyncService syncService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, data) = await syncService.ImportStatementAsync(
+                householdId,
+                "ofx",
+                request,
+                cancellationToken);
+
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Erro ao importar extrato OFX",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_ofx" });
+        })
+        .WithName("ImportOfxStatement")
+        .WithTags("Imports")
+        .Produces<ImportResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
+
+        api.MapPost("/imports/csv", async (
+            ImportStatementRequest? request,
+            ClaimsPrincipal user,
+            BankingSyncService syncService,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryGetHouseholdId(user, out var householdId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var (ok, error, data) = await syncService.ImportStatementAsync(
+                householdId,
+                "csv",
+                request,
+                cancellationToken);
+
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Erro ao importar extrato CSV",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_csv" });
+        })
+        .WithName("ImportCsvStatement")
+        .WithTags("Imports")
+        .Produces<ImportResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }

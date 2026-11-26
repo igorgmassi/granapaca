@@ -2,6 +2,7 @@
   <ItemGroup>
     <PackageReference Include="Dapper" />
     <PackageReference Include="dbup-postgresql" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Npgsql" />
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>

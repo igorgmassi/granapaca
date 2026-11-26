@@ -943,7 +943,8 @@ internal sealed class BankingQueries(NpgsqlDataSource dataSource, IConfiguration
             SET institution_name = CASE
                     WHEN @HasExplicitName THEN EXCLUDED.institution_name
                     ELSE banking.connection.institution_name
-                END
+                END,
+                updated_at = now()
             RETURNING
                 id AS Id,
                 provider AS Provider,

@@ -5,6 +5,7 @@ using GranaPaCa.Modules.Banking.Contracts;
 using GranaPaCa.Modules.Banking.Providers;
 using GranaPaCa.Modules.Categorization.Contracts;
 using GranaPaCa.Modules.Keyring.Contracts;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -17,9 +18,14 @@ internal sealed class BankingSyncService(
     ICategorizationEngine categorizationEngine,
     IEnvelopeEncryptor envelopeEncryptor,
     IAlertPublisher alertPublisher,
+    IConfiguration configuration,
     ILogger<BankingSyncService> logger) : IBankingSyncTrigger, ITransactionReclassifier
 {
     private const string RawPayloadPurpose = "banking.raw_payload";
+    private const int MaxImportBytes = 5 * 1024 * 1024;
+    private static readonly HashSet<string> AllowedAccountKinds =
+        new(StringComparer.Ordinal) { "checking", "savings", "credit_card" };
+    private readonly TimeZoneInfo _instanceTimeZone = DateParser.ResolveInstanceTimeZone(configuration);
 
     public async Task<SyncSummary> SyncHouseholdAsync(
         Guid householdId,
@@ -184,6 +190,203 @@ internal sealed class BankingSyncService(
         return rows.ToDictionary(r => r.RuleId, r => r.MatchCount);
     }
 
+    public async Task<(bool Ok, string? Error, ImportResponse? Data)> ImportStatementAsync(
+        Guid householdId,
+        string format,
+        ImportStatementRequest? request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Content))
+        {
+            return (false, "Conteúdo do arquivo é obrigatório.", null);
+        }
+
+        if (Encoding.UTF8.GetByteCount(request.Content) > MaxImportBytes)
+        {
+            return (false, "O arquivo excede o limite máximo de 5 MB.", null);
+        }
+
+        string? requestedKind = null;
+        if (!string.IsNullOrWhiteSpace(request.AccountKind))
+        {
+            requestedKind = request.AccountKind.Trim().ToLowerInvariant();
+            if (!AllowedAccountKinds.Contains(requestedKind))
+            {
+                return (false, "Tipo de conta inválido; use checking, savings ou credit_card.", null);
+            }
+        }
+
+        var (parseOk, parseError, statement) = format switch
+        {
+            "ofx" => OfxStatementParser.Parse(request.Content, _instanceTimeZone),
+            "csv" => CsvStatementParser.Parse(request.Content, _instanceTimeZone),
+            _ => (false, "Formato de importação não suportado.", null)
+        };
+
+        if (!parseOk || statement is null)
+        {
+            return (false, parseError ?? "Não foi possível ler o arquivo enviado.", null);
+        }
+
+        var institutionName = !string.IsNullOrWhiteSpace(request.InstitutionName)
+            ? request.InstitutionName.Trim()
+            : !string.IsNullOrWhiteSpace(statement.InstitutionName)
+                ? statement.InstitutionName.Trim()
+                : !string.IsNullOrWhiteSpace(statement.BankId)
+                    ? $"Banco {statement.BankId.Trim()}"
+                    : format == "ofx" ? "Importação OFX" : "Importação CSV";
+
+        var accountKind = requestedKind ?? statement.AccountKind ?? "checking";
+
+        var accountName = !string.IsNullOrWhiteSpace(request.AccountName)
+            ? request.AccountName.Trim()
+            : accountKind switch
+            {
+                "credit_card" => "Cartão importado",
+                "savings" => "Poupança importada",
+                _ => "Conta importada"
+            };
+
+        var institutionSlug = StatementIdHelper.Slugify(institutionName, "arquivo");
+        var externalItemId = $"file:{institutionSlug}";
+        var externalAccountId = !string.IsNullOrWhiteSpace(statement.AccountId)
+            ? $"file:{accountKind}:{statement.AccountId.Trim()}"
+            : $"file:{accountKind}:{StatementIdHelper.Slugify(accountName, "conta")}";
+
+        var seenFileExternalIds = new HashSet<string>(StringComparer.Ordinal);
+        var uniqueTransactions = new List<ProviderTransactionData>(statement.Transactions.Count);
+        var inFileDuplicates = 0;
+
+        foreach (var tx in statement.Transactions)
+        {
+            if (!seenFileExternalIds.Add(tx.ExternalId))
+            {
+                inFileDuplicates++;
+                continue;
+            }
+
+            uniqueTransactions.Add(new ProviderTransactionData(
+                Source: "file",
+                ExternalId: tx.ExternalId,
+                OccurredOn: tx.OccurredOn,
+                PurchaseOn: null,
+                Description: tx.Description,
+                MerchantCnpj: null,
+                AmountCents: tx.AmountCents,
+                Currency: "BRL",
+                Status: "posted",
+                ExternalBillId: null,
+                InstallmentNumber: null,
+                InstallmentTotal: null,
+                RawPayloadJson: tx.RawPayloadJson));
+        }
+
+        Guid connectionId;
+        await using (var conn = await dataSource.OpenConnectionAsync(cancellationToken))
+        {
+            connectionId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(
+                """
+                INSERT INTO banking.connection (
+                    id,
+                    household_id,
+                    provider,
+                    external_item_id,
+                    institution_name,
+                    brand_color,
+                    status,
+                    last_synced_at
+                )
+                VALUES (
+                    @Id,
+                    @HouseholdId,
+                    'file',
+                    @ExternalItemId,
+                    @InstitutionName,
+                    '#A0521A',
+                    'up_to_date',
+                    now()
+                )
+                ON CONFLICT (household_id, provider, external_item_id) DO UPDATE
+                SET institution_name = EXCLUDED.institution_name,
+                    status = 'up_to_date',
+                    last_synced_at = now(),
+                    updated_at = now()
+                RETURNING id
+                """,
+                new
+                {
+                    Id = Guid.CreateVersion7(),
+                    HouseholdId = householdId,
+                    ExternalItemId = externalItemId,
+                    InstitutionName = institutionName
+                },
+                cancellationToken: cancellationToken));
+        }
+
+        var providerAccount = new ProviderAccountData(
+            ExternalAccountId: externalAccountId,
+            Name: accountName,
+            Kind: accountKind,
+            LastFourDigits: BankingTaxonomy.ExtractLastFourDigits(statement.AccountId),
+            Currency: "BRL",
+            OpeningBalanceCents: 0,
+            CurrentBalanceCents: statement.LedgerBalanceCents ?? 0,
+            Bills: [],
+            Transactions: uniqueTransactions);
+
+        var ingest = await IngestAccountAsync(
+            householdId,
+            connectionId,
+            providerAccount,
+            cancellationToken,
+            markMissingAsRemoved: false,
+            recordBalanceSnapshot: statement.LedgerBalanceCents.HasValue);
+
+        var (_, transfersLinked) = await ReclassifyAndLinkInternalAsync(householdId, cancellationToken);
+
+        var uncategorizedCount = 0;
+        if (ingest.SeenTransactionIds.Count > 0)
+        {
+            await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
+            uncategorizedCount = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT COUNT(*)::int
+                FROM banking.transaction_effective
+                WHERE household_id = @HouseholdId
+                  AND id = ANY(@TransactionIds)
+                  AND effective_kind IN ('expense', 'refund')
+                  AND effective_category IS NULL
+                """,
+                new
+                {
+                    HouseholdId = householdId,
+                    TransactionIds = ingest.SeenTransactionIds.ToArray()
+                },
+                cancellationToken: cancellationToken));
+        }
+
+        var skippedDuplicates = ingest.SkippedDuplicates + inFileDuplicates;
+
+        logger.LogInformation(
+            "File statement imported: format={Format} inserted={Inserted} skippedDuplicates={SkippedDuplicates} transfersLinked={TransfersLinked} uncategorized={Uncategorized}",
+            format,
+            ingest.Inserted,
+            skippedDuplicates,
+            transfersLinked,
+            uncategorizedCount);
+
+        return (
+            true,
+            null,
+            new ImportResponse(
+                connectionId,
+                ingest.AccountId,
+                ingest.Inserted,
+                skippedDuplicates,
+                transfersLinked,
+                uncategorizedCount));
+    }
+
     private async Task<List<ConnectionRow>> LoadConnectionsAsync(
         Guid householdId,
         CancellationToken cancellationToken)
@@ -292,7 +495,8 @@ internal sealed class BankingSyncService(
             SET status = 'error',
                 last_error_code = @ErrorCode,
                 consecutive_failures = consecutive_failures + 1,
-                first_failure_at = COALESCE(first_failure_at, now())
+                first_failure_at = COALESCE(first_failure_at, now()),
+                updated_at = now()
             WHERE id = @ConnectionId
             """,
             new { ConnectionId = connectionId, ErrorCode = errorCode },
@@ -323,7 +527,8 @@ internal sealed class BankingSyncService(
                     last_synced_at = now(),
                     last_error_code = NULL,
                     consecutive_failures = 0,
-                    first_failure_at = NULL
+                    first_failure_at = NULL,
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -347,7 +552,8 @@ internal sealed class BankingSyncService(
                     consent_expires_at = @ConsentExpiresAt,
                     last_error_code = @LastErrorCode,
                     consecutive_failures = consecutive_failures + 1,
-                    first_failure_at = COALESCE(first_failure_at, now())
+                    first_failure_at = COALESCE(first_failure_at, now()),
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -371,7 +577,8 @@ internal sealed class BankingSyncService(
                     status = @Status,
                     consent_expires_at = @ConsentExpiresAt,
                     last_synced_at = now(),
-                    last_error_code = @LastErrorCode
+                    last_error_code = @LastErrorCode,
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -391,7 +598,9 @@ internal sealed class BankingSyncService(
         Guid householdId,
         Guid connectionId,
         ProviderAccountData account,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool markMissingAsRemoved = true,
+        bool recordBalanceSnapshot = true)
     {
         await using var dbConn = await dataSource.OpenConnectionAsync(cancellationToken);
 
@@ -424,7 +633,15 @@ internal sealed class BankingSyncService(
             SET name = EXCLUDED.name,
                 kind = EXCLUDED.kind,
                 last_four_digits = COALESCE(EXCLUDED.last_four_digits, banking.account.last_four_digits),
-                opening_balance_cents = EXCLUDED.opening_balance_cents
+                opening_balance_cents = EXCLUDED.opening_balance_cents,
+                updated_at = CASE
+                    WHEN banking.account.name IS DISTINCT FROM EXCLUDED.name
+                      OR banking.account.kind IS DISTINCT FROM EXCLUDED.kind
+                      OR banking.account.last_four_digits IS DISTINCT FROM COALESCE(EXCLUDED.last_four_digits, banking.account.last_four_digits)
+                      OR banking.account.opening_balance_cents IS DISTINCT FROM EXCLUDED.opening_balance_cents
+                    THEN now()
+                    ELSE banking.account.updated_at
+                END
             RETURNING id
             """,
             new
@@ -441,19 +658,22 @@ internal sealed class BankingSyncService(
             },
             cancellationToken: cancellationToken));
 
-        // 2. Append balance snapshot
-        await dbConn.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO banking.balance_snapshot (id, account_id, balance_cents)
-            VALUES (@Id, @AccountId, @BalanceCents)
-            """,
-            new
-            {
-                Id = Guid.CreateVersion7(),
-                AccountId = accountId,
-                BalanceCents = account.CurrentBalanceCents
-            },
-            cancellationToken: cancellationToken));
+        // 2. Append balance snapshot when provided by the feed
+        if (recordBalanceSnapshot)
+        {
+            await dbConn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO banking.balance_snapshot (id, account_id, balance_cents)
+                VALUES (@Id, @AccountId, @BalanceCents)
+                """,
+                new
+                {
+                    Id = Guid.CreateVersion7(),
+                    AccountId = accountId,
+                    BalanceCents = account.CurrentBalanceCents
+                },
+                cancellationToken: cancellationToken));
+        }
 
         // 3. Upsert card bills (encrypting raw payload with AAD bound to exact billId)
         var existingBills = (await dbConn.QueryAsync<ExistingBillRow>(new CommandDefinition(
@@ -602,6 +822,7 @@ internal sealed class BankingSyncService(
         var inserted = 0;
         var versioned = 0;
         var removed = 0;
+        var skippedDuplicates = 0;
 
         var pendingInserts = new List<(Guid TxId, ProviderTransactionData Tx, Guid? BillId, int VersionNumber, string ContentHash, Guid VersionId, byte[] RawEnc, bool IsNewTx, bool NeedsSourceLink)>();
 
@@ -654,6 +875,10 @@ internal sealed class BankingSyncService(
 
                 pendingInserts.Add((txId, tx, billId, latest.VersionNumber + 1, contentHash, versionId, rawEnc, false, false));
                 versioned++;
+            }
+            else
+            {
+                skippedDuplicates++;
             }
         }
 
@@ -739,14 +964,16 @@ internal sealed class BankingSyncService(
             }
         }
 
-        // Transactions that vanished from provider feed get an appended removal version (ADR-012).
-        var removals = latestVersions.Values
-            .Where(v => !v.IsRemoved && !seenTransactionIds.Contains(v.TransactionId))
-            .ToList();
+        // Transactions that vanished from full provider feeds get an appended removal version (ADR-012).
+        var removals = markMissingAsRemoved
+            ? latestVersions.Values
+                .Where(v => !v.IsRemoved && !seenTransactionIds.Contains(v.TransactionId))
+                .ToList()
+            : [];
 
         if (pendingInserts.Count == 0 && removals.Count == 0)
         {
-            return new AccountIngestCounts(0, 0, 0);
+            return new AccountIngestCounts(accountId, 0, 0, 0, skippedDuplicates, seenTransactionIds.ToList());
         }
 
         await using var dbTx = await dbConn.BeginTransactionAsync(cancellationToken);
@@ -924,7 +1151,7 @@ internal sealed class BankingSyncService(
         }
 
         await dbTx.CommitAsync(cancellationToken);
-        return new AccountIngestCounts(inserted, versioned, removed);
+        return new AccountIngestCounts(accountId, inserted, versioned, removed, skippedDuplicates, seenTransactionIds.ToList());
     }
 
     private async Task<(int ClassifiedCount, int TransfersLinked)> ReclassifyAndLinkInternalAsync(
@@ -1122,6 +1349,14 @@ internal sealed class BankingSyncService(
                     deciding_rule_name = EXCLUDED.deciding_rule_name,
                     explanation = EXCLUDED.explanation,
                     classified_at = now()
+                WHERE banking.classification.tx_kind IS DISTINCT FROM EXCLUDED.tx_kind
+                   OR banking.classification.category IS DISTINCT FROM EXCLUDED.category
+                   OR banking.classification.essentiality IS DISTINCT FROM EXCLUDED.essentiality
+                   OR banking.classification.brand IS DISTINCT FROM EXCLUDED.brand
+                   OR banking.classification.deciding_layer IS DISTINCT FROM EXCLUDED.deciding_layer
+                   OR banking.classification.deciding_rule_id IS DISTINCT FROM EXCLUDED.deciding_rule_id
+                   OR banking.classification.deciding_rule_name IS DISTINCT FROM EXCLUDED.deciding_rule_name
+                   OR banking.classification.explanation IS DISTINCT FROM EXCLUDED.explanation
                 """,
                 new
                 {
@@ -1384,5 +1619,26 @@ internal sealed class BankingSyncService(
 
     private sealed record RuleMatchRow(Guid RuleId, int MatchCount);
 
-    private sealed record AccountIngestCounts(int Inserted, int Versioned, int Removed);
+    private sealed record AccountIngestCounts(
+        Guid AccountId,
+        int Inserted,
+        int Versioned,
+        int Removed,
+        int SkippedDuplicates,
+        IReadOnlyList<Guid> SeenTransactionIds);
 }
+
+internal sealed record ImportStatementRequest(
+    string? InstitutionName,
+    string? AccountName,
+    string? AccountKind,
+    string? Content);
+
+internal sealed record ImportResponse(
+    Guid ConnectionId,
+    Guid AccountId,
+    int Inserted,
+    int SkippedDuplicates,
+    int TransfersLinked,
+    int UncategorizedCount);
+

@@ -1,3 +1,5 @@
+using Npgsql;
+
 namespace GranaPaCa.Modules.Keyring.Contracts;
 
 /// <summary>
@@ -29,4 +31,12 @@ public interface IEnvelopeEncryptor
     Task RewrapAllDataKeysAsync(CancellationToken cancellationToken = default);
 
     Task DestroyHouseholdKeysAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    Task DestroyHouseholdKeysAsync(
+        Guid householdId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    void EvictHouseholdKeysFromCache(Guid householdId);
 }

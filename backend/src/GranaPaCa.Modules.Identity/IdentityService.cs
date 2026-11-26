@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using System.Security.Cryptography;
 using Dapper;
+using GranaPaCa.Modules.Identity.Contracts;
 using GranaPaCa.Modules.Keyring.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -12,7 +13,7 @@ internal sealed class IdentityService(
     NpgsqlDataSource dataSource,
     IEnvelopeEncryptor envelopeEncryptor,
     SessionService sessionService,
-    IConfiguration configuration)
+    IConfiguration configuration) : IIdentityPurgeService
 {
     private const string AppName = "GranaPaCa";
     private const string AppVersion = "0.2.0";
@@ -467,6 +468,120 @@ internal sealed class IdentityService(
             issued.ExpiresAt,
             issued.SessionId,
             issued.Owner));
+    }
+
+    public async Task<OwnerCredentialVerificationStatus> VerifyOwnerCredentialsAsync(
+        Guid ownerId,
+        Guid householdId,
+        string password,
+        string totpCode,
+        string clientIp,
+        CancellationToken cancellationToken = default)
+    {
+        if (ownerId == Guid.Empty || householdId == Guid.Empty)
+        {
+            PasswordHasher.VerifyDummy(password);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var owner = await connection.QuerySingleOrDefaultAsync<OwnerRow>(new CommandDefinition(
+            """
+            SELECT id AS Id,
+                   household_id AS HouseholdId,
+                   email AS Email,
+                   display_name AS DisplayName,
+                   password_hash AS PasswordHash,
+                   totp_secret_enc AS TotpSecretEnc,
+                   totp_enabled AS TotpEnabled
+            FROM identity.owner
+            WHERE id = @OwnerId
+              AND household_id = @HouseholdId
+            """,
+            new { OwnerId = ownerId, HouseholdId = householdId },
+            cancellationToken: cancellationToken));
+
+        var normalizedClientIp = string.IsNullOrWhiteSpace(clientIp) ? "local" : clientIp.Trim();
+        var clientKey = owner is not null
+            ? BuildClientKey(normalizedClientIp, owner.Email)
+            : BuildClientKey(normalizedClientIp, ownerId.ToString("D"));
+
+        if (await IsRateLimitedAsync(connection, clientKey, cancellationToken))
+        {
+            return OwnerCredentialVerificationStatus.RateLimited;
+        }
+
+        if (owner is null || string.IsNullOrEmpty(password) || string.IsNullOrWhiteSpace(totpCode))
+        {
+            PasswordHasher.VerifyDummy(password);
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        if (!PasswordHasher.Verify(password, owner.PasswordHash))
+        {
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        if (!owner.TotpEnabled || owner.TotpSecretEnc is null)
+        {
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        bool validCode;
+        var decryptedSecret = await envelopeEncryptor.DecryptAsync(
+            owner.TotpSecretEnc,
+            OwnerTable,
+            TotpSecretColumn,
+            owner.Id,
+            cancellationToken);
+        try
+        {
+            validCode = TotpService.VerifyCode(decryptedSecret, totpCode);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(decryptedSecret);
+        }
+
+        if (!validCode)
+        {
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: true, cancellationToken);
+        return OwnerCredentialVerificationStatus.Valid;
+    }
+
+    public async Task PurgeHouseholdAsync(
+        Guid householdId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        // Remove auth attempt entries linked to purged household owners before cascading household delete.
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM identity.auth_attempt a
+            USING identity.owner o
+            WHERE o.household_id = @HouseholdId
+              AND right(a.client_key, length(o.email) + 1) = ':' || o.email
+            """,
+            new { HouseholdId = householdId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM identity.household WHERE id = @HouseholdId",
+            new { HouseholdId = householdId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
     }
 
     private async Task<bool> VerifySecondFactorAsync(
