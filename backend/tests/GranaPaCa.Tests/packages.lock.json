@@ -603,7 +603,7 @@
       "granapaca.api": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Alerts": "[1.0.0, )",
           "GranaPaCa.Modules.Assistant": "[1.0.0, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
@@ -620,14 +620,14 @@
       "granapaca.modules.alerts": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "Npgsql": "[10.0.3, )"
         }
       },
       "granapaca.modules.assistant": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
           "GranaPaCa.Modules.Categorization": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
@@ -638,7 +638,7 @@
       "granapaca.modules.banking": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Alerts": "[1.0.0, )",
           "GranaPaCa.Modules.Categorization": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
@@ -648,7 +648,7 @@
       "granapaca.modules.categorization": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "Npgsql": "[10.0.3, )",
           "YamlDotNet": "[18.1.0, )"
         }
@@ -656,7 +656,7 @@
       "granapaca.modules.identity": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
           "Konscious.Security.Cryptography.Argon2": "[1.3.1, )",
           "Npgsql": "[10.0.3, )"
@@ -665,14 +665,14 @@
       "granapaca.modules.keyring": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "Npgsql": "[10.0.3, )"
         }
       },
       "granapaca.modules.planning": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Alerts": "[1.0.0, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
@@ -681,7 +681,7 @@
       "granapaca.modules.receipts": {
         "type": "Project",
         "dependencies": {
-          "Dapper": "[2.1.89, )",
+          "Dapper": "[2.1.100, )",
           "GranaPaCa.Modules.Banking": "[1.0.0, )",
           "GranaPaCa.Modules.Keyring": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
@@ -689,9 +689,9 @@
       },
       "Dapper": {
         "type": "CentralTransitive",
-        "requested": "[2.1.89, )",
-        "resolved": "2.1.89",
-        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
+        "requested": "[2.1.100, )",
+        "resolved": "2.1.100",
+        "contentHash": "zKwgGfxkDIVLGU2WIsl57DwTgj17+fa5v0u2eiVMxU92GXN2fRIn2M8QMGtyGFrPSbVOYKgGFxAxEFL6CB9tTw=="
       },
       "dbup-postgresql": {
         "type": "CentralTransitive",
