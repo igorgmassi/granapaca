@@ -8,6 +8,8 @@ namespace GranaPaCa.Modules.Assistant;
 /// </summary>
 internal sealed partial class PrivacyPseudonymizer
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
     private readonly Dictionary<string, string> _originalToToken = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _tokenToOriginal = new(StringComparer.Ordinal);
     private int _bankCounter;
@@ -46,11 +48,13 @@ internal sealed partial class PrivacyPseudonymizer
                 result,
                 Regex.Escape(pair.Key),
                 pair.Value,
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                RegexTimeout);
         }
 
-        // Redact irreversible PII patterns (order matters: CNPJ 14-digit before CPF 11-digit, full cards before shorter masks).
+        // Redact irreversible PII patterns (order matters: UUID/email/CNPJ before shorter numeric tokens).
         result = EmailRegex().Replace(result, "[EMAIL_OCULTO]");
+        result = PixUuidRegex().Replace(result, "[CHAVE_PIX_OCULTA]");
         result = FormattedCnpjRegex().Replace(result, "[CNPJ_OCULTO]");
         result = FormattedCpfRegex().Replace(result, "[CPF_OCULTO]");
         result = CardNumberRegex().Replace(result, "[CARTAO_OCULTO]");
@@ -100,33 +104,36 @@ internal sealed partial class PrivacyPseudonymizer
         return token;
     }
 
-    [GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex EmailRegex();
 
-    [GeneratedRegex(@"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b")]
+    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex PixUuidRegex();
+
+    [GeneratedRegex(@"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex FormattedCnpjRegex();
 
-    [GeneratedRegex(@"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")]
+    [GeneratedRegex(@"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex FormattedCpfRegex();
 
-    [GeneratedRegex(@"(?<!\d)\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{3,4}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{3,4}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex CardNumberRegex();
 
-    [GeneratedRegex(@"(?:\*{2,4}|[xX]{2,4})[\s\-]?(?:\*{2,4}|[xX]{2,4})?[\s\-]?\d{4}\b")]
+    [GeneratedRegex(@"(?:\*{2,4}|[xX]{2,4})[\s\-]?(?:\*{2,4}|[xX]{2,4})?[\s\-]?\d{4}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex MaskedCardRegex();
 
-    [GeneratedRegex(@"\b(conta|ag[eê]ncia|ag\.?|cart[aã]o|final|c/c)\s*[:#\-]?\s*\d[\d.\-/\s]{3,18}[\dXx]\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(conta|ag[eê]ncia|ag\.?|cart[aã]o|final|c/c)\s*[:#\-]?\s*\d[\d.\-/\s]{3,18}[\dXx]\b", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex LabeledAccountOrCardRegex();
 
-    [GeneratedRegex(@"(?<!\d)(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)(?:9\d{4}|\d{4})[\-\s]\d{4}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)(?:9\d{4}|\d{4})[\-\s]\d{4}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex PhoneRegex();
 
-    [GeneratedRegex(@"(?<!\d)\d{14}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)\d{14}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex RawCnpjRegex();
 
-    [GeneratedRegex(@"(?<!\d)\d{11}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)\d{11}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex RawCpfRegex();
 
-    [GeneratedRegex(@"(?<!\d)\d{5,10}-[\dXx](?!\d)")]
+    [GeneratedRegex(@"(?<!\d)\d{5,10}-[\dXx](?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex AccountWithCheckDigitRegex();
 }

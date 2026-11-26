@@ -147,9 +147,9 @@ internal sealed class EncryptedReceiptFileStore
             return resolved;
         }
 
-        var fallback = Path.Combine(Path.GetTempPath(), "granapaca-receipts");
-        Directory.CreateDirectory(fallback);
-        return Path.GetFullPath(fallback);
+        throw new InvalidOperationException(
+            $"Receipt storage directory '{configuredPath}' is not writable. " +
+            "Mount a writable persistent volume at /var/lib/granapaca/files or configure Receipts:StoragePath.");
     }
 
     private static bool TryEnsureWritable(string path, out string fullPath)

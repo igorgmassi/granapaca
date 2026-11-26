@@ -85,6 +85,7 @@ internal static class AccountPurgeEndpoints
                     extensions: new Dictionary<string, object?> { ["code"] = "invalid_credentials" });
             }
 
+            IReadOnlyList<string> receiptFilesToDelete;
             await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
             await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
             {
@@ -95,7 +96,7 @@ internal static class AccountPurgeEndpoints
                     cancellationToken: cancellationToken));
 
                 await assistantPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
-                await receiptsPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
+                receiptFilesToDelete = await receiptsPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await planningPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await bankingPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await categorizationPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
@@ -107,8 +108,9 @@ internal static class AccountPurgeEndpoints
                 await transaction.CommitAsync(cancellationToken);
             }
 
-            // Evict cached DEKs only after commit so a rolled-back purge never invalidates active keys.
+            // Evict cached DEKs and remove encrypted receipt files only after commit so a rollback never loses data.
             envelopeEncryptor.EvictHouseholdKeysFromCache(householdId);
+            receiptsPurge.DeletePurgedFiles(householdId, receiptFilesToDelete);
 
             return Results.NoContent();
         })

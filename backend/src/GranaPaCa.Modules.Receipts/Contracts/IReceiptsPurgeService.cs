@@ -4,9 +4,11 @@ namespace GranaPaCa.Modules.Receipts.Contracts;
 
 public interface IReceiptsPurgeService
 {
-    Task PurgeHouseholdAsync(
+    Task<IReadOnlyList<string>> PurgeHouseholdAsync(
         Guid householdId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken = default);
+
+    void DeletePurgedFiles(Guid householdId, IReadOnlyList<string> storageRelPaths);
 }

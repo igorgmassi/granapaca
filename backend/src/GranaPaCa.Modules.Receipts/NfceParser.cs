@@ -188,14 +188,32 @@ internal static partial class NfceParser
 
         var icmsTot = Child(Child(infNFe, "total"), "ICMSTot");
         long? totalCents = null;
-        if (TryParseDecimalCents(ChildValue(icmsTot, "vNF"), out var vNfCents))
+        if (TryParseDecimalCents(ChildValue(icmsTot, "vNF"), out var vNfCents, out var vNfOverflow))
         {
             totalCents = vNfCents;
         }
-        else if (TryParseDecimalCents(ChildValue(icmsTot, "vProd"), out var vProdCents))
+        else if (vNfOverflow)
         {
-            var vDescCents = TryParseDecimalCents(ChildValue(icmsTot, "vDesc"), out var desc) ? desc : 0L;
-            totalCents = Math.Max(0L, vProdCents - vDescCents);
+            return (false, "Valor total da NFC-e excede o limite suportado.", null);
+        }
+        else if (TryParseDecimalCents(ChildValue(icmsTot, "vProd"), out var vProdCents, out var vProdOverflow))
+        {
+            if (TryParseDecimalCents(ChildValue(icmsTot, "vDesc"), out var desc, out var vDescOverflow))
+            {
+                totalCents = Math.Max(0L, vProdCents - desc);
+            }
+            else if (vDescOverflow)
+            {
+                return (false, "Valor de desconto da NFC-e excede o limite suportado.", null);
+            }
+            else
+            {
+                totalCents = Math.Max(0L, vProdCents);
+            }
+        }
+        else if (vProdOverflow)
+        {
+            return (false, "Valor dos produtos da NFC-e excede o limite suportado.", null);
         }
 
         var qrCodeText = doc.Descendants()
@@ -234,22 +252,39 @@ internal static partial class NfceParser
                 ? Math.Round(qCom, 3, MidpointRounding.AwayFromZero)
                 : 1m;
 
-            var hasUnitPrice = TryParseDecimalCents(ChildValue(prod, "vUnCom"), out var unitPriceCents);
-            var hasItemTotal = TryParseDecimalCents(ChildValue(prod, "vProd"), out var itemTotalCents);
-            var itemDiscountCents = TryParseDecimalCents(ChildValue(prod, "vDesc"), out var itemDesc) ? itemDesc : 0L;
-
-            if (!hasItemTotal && hasUnitPrice)
+            var hasUnitPrice = TryParseDecimalCents(ChildValue(prod, "vUnCom"), out var unitPriceCents, out var unitOverflow);
+            var hasItemTotal = TryParseDecimalCents(ChildValue(prod, "vProd"), out var itemTotalCents, out var totalOverflow);
+            var hasDiscount = TryParseDecimalCents(ChildValue(prod, "vDesc"), out var itemDiscountCents, out var discountOverflow);
+            if (unitOverflow || totalOverflow || discountOverflow)
             {
-                itemTotalCents = decimal.ToInt64(Math.Round(quantity * unitPriceCents, 0, MidpointRounding.AwayFromZero));
-            }
-            else if (hasItemTotal && itemDiscountCents > 0 && itemDiscountCents < itemTotalCents)
-            {
-                itemTotalCents -= itemDiscountCents;
+                return (false, $"Valor numérico do item #{itemIndex} da NFC-e excede o limite suportado.", null);
             }
 
-            if (!hasUnitPrice && itemTotalCents > 0 && quantity > 0m)
+            if (!hasDiscount)
             {
-                unitPriceCents = decimal.ToInt64(Math.Round(itemTotalCents / quantity, 0, MidpointRounding.AwayFromZero));
+                itemDiscountCents = 0L;
+            }
+
+            try
+            {
+                if (!hasItemTotal && hasUnitPrice)
+                {
+                    itemTotalCents = decimal.ToInt64(Math.Round(quantity * unitPriceCents, 0, MidpointRounding.AwayFromZero));
+                }
+
+                if (itemDiscountCents > 0 && itemDiscountCents <= itemTotalCents)
+                {
+                    itemTotalCents -= itemDiscountCents;
+                }
+
+                if (!hasUnitPrice && itemTotalCents > 0 && quantity > 0m)
+                {
+                    unitPriceCents = decimal.ToInt64(Math.Round(itemTotalCents / quantity, 0, MidpointRounding.AwayFromZero));
+                }
+            }
+            catch (OverflowException)
+            {
+                return (false, $"Valor numérico do item #{itemIndex} da NFC-e excede o limite suportado.", null);
             }
 
             var suggestedCategory = SuggestItemCategory(description, issuerName);
@@ -264,7 +299,20 @@ internal static partial class NfceParser
 
         if (totalCents is null && items.Count > 0)
         {
-            totalCents = items.Sum(i => i.TotalCents);
+            try
+            {
+                long runningSum = 0;
+                foreach (var item in items)
+                {
+                    runningSum = checked(runningSum + item.TotalCents);
+                }
+
+                totalCents = runningSum;
+            }
+            catch (OverflowException)
+            {
+                return (false, "Soma dos itens da NFC-e excede o limite suportado.", null);
+            }
         }
 
         return (true, null, new NfceParseResult(
@@ -302,9 +350,16 @@ internal static partial class NfceParser
                 }
 
                 // Offline NFC-e QR v2 layout: chNFe|nVersao|tpAmb|cDest(day)|vNF|digVal|cIdToken|cHashQRCode
-                if (segments.Length >= 5 && TryParseDecimalCents(segments[4], out var offlineTotal))
+                if (segments.Length >= 5)
                 {
-                    totalCents = offlineTotal;
+                    if (TryParseDecimalCents(segments[4], out var offlineTotal, out var offlineOverflow))
+                    {
+                        totalCents = offlineTotal;
+                    }
+                    else if (offlineOverflow)
+                    {
+                        return (false, "Valor total da NFC-e excede o limite suportado.", null);
+                    }
                 }
 
                 if (segments.Length >= 4 &&
@@ -320,11 +375,16 @@ internal static partial class NfceParser
                 accessKey = Extract44DigitKey(chNFeParam);
             }
 
-            if (totalCents is null &&
-                queryParams.TryGetValue("vNF", out var vNfParam) &&
-                TryParseDecimalCents(vNfParam, out var vNfCents))
+            if (totalCents is null && queryParams.TryGetValue("vNF", out var vNfParam))
             {
-                totalCents = vNfCents;
+                if (TryParseDecimalCents(vNfParam, out var vNfCents, out var vNfOverflow))
+                {
+                    totalCents = vNfCents;
+                }
+                else if (vNfOverflow)
+                {
+                    return (false, "Valor total da NFC-e excede o limite suportado.", null);
+                }
             }
 
             if (issuedOn is null && queryParams.TryGetValue("dhEmi", out var dhEmiParam))
@@ -515,25 +575,108 @@ internal static partial class NfceParser
         }
 
         var trimmed = raw.Trim();
-        if (decimal.TryParse(trimmed, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
+        var sign = string.Empty;
+        if (trimmed[0] is '+' or '-')
         {
-            return true;
+            sign = trimmed[0] == '-' ? "-" : string.Empty;
+            trimmed = trimmed[1..];
         }
 
-        var ptBr = trimmed.Replace(".", string.Empty).Replace(',', '.');
-        return decimal.TryParse(ptBr, NumberStyles.Number, CultureInfo.InvariantCulture, out value);
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        var lastDot = trimmed.LastIndexOf('.');
+        var lastComma = trimmed.LastIndexOf(',');
+        string normalized;
+
+        if (lastDot >= 0 && lastComma >= 0)
+        {
+            if (lastComma > lastDot)
+            {
+                if (!BrazilianGroupedDecimalRegex().IsMatch(trimmed))
+                {
+                    return false;
+                }
+
+                normalized = trimmed.Replace(".", string.Empty, StringComparison.Ordinal).Replace(',', '.');
+            }
+            else
+            {
+                if (!UsGroupedDecimalRegex().IsMatch(trimmed))
+                {
+                    return false;
+                }
+
+                normalized = trimmed.Replace(",", string.Empty, StringComparison.Ordinal);
+            }
+        }
+        else if (lastComma >= 0)
+        {
+            var commaCount = trimmed.Count(c => c == ',');
+            if (commaCount == 1)
+            {
+                // Brazilian decimal separator (e.g. "45,50" -> 45.50, never 4550).
+                normalized = trimmed.Replace(',', '.');
+            }
+            else if (UsMultiThousandsRegex().IsMatch(trimmed))
+            {
+                normalized = trimmed.Replace(",", string.Empty, StringComparison.Ordinal);
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else if (lastDot >= 0)
+        {
+            var dotCount = trimmed.Count(c => c == '.');
+            if (dotCount == 1)
+            {
+                // Standard SEFAZ XML decimal (e.g. "45.50", "2.000", "12.5000").
+                normalized = trimmed;
+            }
+            else if (BrazilianMultiThousandsRegex().IsMatch(trimmed))
+            {
+                normalized = trimmed.Replace(".", string.Empty, StringComparison.Ordinal);
+            }
+            else
+            {
+                return false;
+            }
+        }
+        else
+        {
+            normalized = trimmed;
+        }
+
+        return decimal.TryParse(
+            sign + normalized,
+            NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+            CultureInfo.InvariantCulture,
+            out value);
     }
 
-    private static bool TryParseDecimalCents(string? raw, out long cents)
+    private static bool TryParseDecimalCents(string? raw, out long cents, out bool overflowed)
     {
         cents = 0;
+        overflowed = false;
         if (!TryParseNfceDecimal(raw, out var dec))
         {
             return false;
         }
 
-        cents = decimal.ToInt64(Math.Round(dec * 100m, 0, MidpointRounding.AwayFromZero));
-        return true;
+        try
+        {
+            cents = decimal.ToInt64(Math.Round(dec * 100m, 0, MidpointRounding.AwayFromZero));
+            return true;
+        }
+        catch (OverflowException)
+        {
+            overflowed = true;
+            return false;
+        }
     }
 
     private static string? CleanDigits(string? raw)
@@ -587,9 +730,21 @@ internal static partial class NfceParser
         return sb.ToString();
     }
 
-    [GeneratedRegex(@"(?<!\d)\d{44}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)\d{44}(?!\d)", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex AccessKey44Regex();
 
-    [GeneratedRegex("[^0-9]+")]
+    [GeneratedRegex("[^0-9]+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex NonDigitsRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:\.\d{3})+,\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrazilianGroupedDecimalRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:,\d{3})+\.\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex UsGroupedDecimalRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:,\d{3}){2,}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex UsMultiThousandsRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:\.\d{3}){2,}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrazilianMultiThousandsRegex();
 }

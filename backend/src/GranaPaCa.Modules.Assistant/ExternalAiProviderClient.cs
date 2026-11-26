@@ -165,7 +165,8 @@ internal sealed class ExternalAiProviderClient(
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post,
-            $"{baseUrl}/models/{Uri.EscapeDataString(model)}:generateContent?key={Uri.EscapeDataString(req.ApiKey)}");
+            $"{baseUrl}/models/{Uri.EscapeDataString(model)}:generateContent");
+        httpRequest.Headers.Add("x-goog-api-key", req.ApiKey);
 
         var payload = new
         {

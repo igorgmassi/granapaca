@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -139,21 +142,18 @@ internal sealed partial class AssistantService(
         }
 
         var model = request.Model?.Trim() ?? string.Empty;
-        string? baseUrl = null;
-        if (!string.IsNullOrWhiteSpace(request.BaseUrl))
+        if (!TryValidateProviderBaseUrl(provider, request.BaseUrl, out var baseUrl, out var baseUrlError))
         {
-            var trimmedUrl = request.BaseUrl.Trim();
-            if (!Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri) ||
-                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-            {
-                return (false, "A URL base do provedor deve começar com http:// ou https://.", null);
-            }
-
-            baseUrl = trimmedUrl;
+            return (false, baseUrlError, null);
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var existing = await LoadProviderRowAsync(connection, householdId, cancellationToken);
+
+        var sameProvider = existing is not null &&
+                           string.Equals(existing.Provider, provider, StringComparison.Ordinal);
+        var sameBaseUrl = existing is not null &&
+                          string.Equals(existing.BaseUrl ?? string.Empty, baseUrl ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 
         byte[]? encryptedKey;
         if (provider == "none" || request.ClearApiKey == true)
@@ -163,18 +163,30 @@ internal sealed partial class AssistantService(
         else if (!string.IsNullOrWhiteSpace(request.ApiKey))
         {
             var keyBytes = Encoding.UTF8.GetBytes(request.ApiKey.Trim());
-            encryptedKey = await encryptor.EncryptAsync(
-                householdId,
-                ApiKeyPurpose,
-                keyBytes,
-                ApiKeyTable,
-                ApiKeyColumn,
-                householdId,
-                cancellationToken);
+            try
+            {
+                encryptedKey = await encryptor.EncryptAsync(
+                    householdId,
+                    ApiKeyPurpose,
+                    keyBytes,
+                    ApiKeyTable,
+                    ApiKeyColumn,
+                    householdId,
+                    cancellationToken);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(keyBytes);
+            }
+        }
+        else if (sameProvider && sameBaseUrl)
+        {
+            encryptedKey = existing!.ApiKeyEnc;
         }
         else
         {
-            encryptedKey = existing?.ApiKeyEnc;
+            // Never reuse a previous provider/host API key when switching provider or baseUrl (ADR-020/023).
+            encryptedKey = null;
         }
 
         var saved = await connection.QuerySingleAsync<ProviderConfigRow>(new CommandDefinition(
@@ -318,7 +330,14 @@ internal sealed partial class AssistantService(
                     ApiKeyColumn,
                     householdId,
                     cancellationToken);
-                decryptedKey = Encoding.UTF8.GetString(keyBytes);
+                try
+                {
+                    decryptedKey = Encoding.UTF8.GetString(keyBytes);
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(keyBytes);
+                }
             }
 
             var pseudonymizer = new PrivacyPseudonymizer();
@@ -1207,10 +1226,146 @@ internal sealed partial class AssistantService(
         return sb.ToString();
     }
 
-    [GeneratedRegex(@"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])\b")]
+    internal static bool TryValidateProviderBaseUrl(
+        string provider,
+        string? rawBaseUrl,
+        out string? validatedUrl,
+        out string? error)
+    {
+        validatedUrl = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawBaseUrl))
+        {
+            return true;
+        }
+
+        var trimmedUrl = rawBaseUrl.Trim();
+        if (!Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            error = "A URL base do provedor deve começar com https:// (ou http:// apenas para Ollama local).";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            error = "A URL base do provedor não pode conter credenciais embutidas.";
+            return false;
+        }
+
+        var isOllama = string.Equals(provider, "ollama", StringComparison.Ordinal);
+        if (!isOllama && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Provedores em nuvem exigem URL base com https://.";
+            return false;
+        }
+
+        var host = uri.DnsSafeHost.Trim().TrimEnd('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            error = "Informe um host válido para a URL base do provedor.";
+            return false;
+        }
+
+        // Always block cloud metadata hostnames even for Ollama.
+        if (host is "metadata.google.internal" or "metadata" or "instance-data")
+        {
+            error = "Endereço interno de metadados não é permitido como URL base do provedor.";
+            return false;
+        }
+
+        if (IPAddress.TryParse(host, out var ipAddress))
+        {
+            if (ipAddress.IsIPv4MappedToIPv6)
+            {
+                ipAddress = ipAddress.MapToIPv4();
+            }
+
+            if (IsLinkLocalOrUnspecified(ipAddress))
+            {
+                error = "Endereços link-local ou de metadados (como 169.254.169.254) não são permitidos.";
+                return false;
+            }
+
+            if (!isOllama && IsLoopbackOrPrivate(ipAddress))
+            {
+                error = "Provedores em nuvem não podem apontar para endereços locais ou redes privadas.";
+                return false;
+            }
+        }
+        else if (!isOllama && IsLocalHostname(host))
+        {
+            error = "Provedores em nuvem não podem apontar para hosts locais ou privados.";
+            return false;
+        }
+
+        validatedUrl = trimmedUrl;
+        return true;
+    }
+
+    private static bool IsLocalHostname(string host) =>
+        host is "localhost" or "ip6-localhost" or "ip6-loopback"
+        || host.EndsWith(".localhost", StringComparison.Ordinal)
+        || host.EndsWith(".local", StringComparison.Ordinal)
+        || host.EndsWith(".internal", StringComparison.Ordinal)
+        || !host.Contains('.');
+
+    private static bool IsLinkLocalOrUnspecified(IPAddress ip)
+    {
+        if (ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any))
+        {
+            return true;
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            // 169.254.0.0/16 (link-local / cloud metadata) or 0.0.0.0/8
+            return b[0] == 0 || (b[0] == 169 && b[1] == 254);
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var b = ip.GetAddressBytes();
+            // fe80::/10 link-local
+            return b[0] == 0xFE && (b[1] & 0xC0) == 0x80;
+        }
+
+        return false;
+    }
+
+    private static bool IsLoopbackOrPrivate(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip))
+        {
+            return true;
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = ip.GetAddressBytes();
+            return b[0] == 127
+                || b[0] == 10
+                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                || (b[0] == 192 && b[1] == 168)
+                || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var b = ip.GetAddressBytes();
+            // fc00::/7 (Unique Local Addresses)
+            return (b[0] & 0xFE) == 0xFC;
+        }
+
+        return false;
+    }
+
+    [GeneratedRegex(@"\b(?:19|20)\d{2}-(?:0[1-9]|1[0-2])\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex IsoMonthRegex();
 
-    [GeneratedRegex(@"\b(?:19|20)\d{2}\b")]
+    [GeneratedRegex(@"\b(?:19|20)\d{2}\b", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex YearRegex();
 
     private sealed record ProviderConfigRow(

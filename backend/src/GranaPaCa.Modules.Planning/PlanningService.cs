@@ -414,7 +414,14 @@ internal sealed class PlanningService(
         }
         else if (request.AddCents.HasValue)
         {
-            currentCents = checked(existing.CurrentCents + request.AddCents.Value);
+            try
+            {
+                currentCents = checked(existing.CurrentCents + request.AddCents.Value);
+            }
+            catch (OverflowException)
+            {
+                return (400, "O valor acumulado da meta excede o limite suportado.", null);
+            }
         }
 
         if (currentCents < 0)

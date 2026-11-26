@@ -30,7 +30,9 @@ public static class AssistantModule
 
     public static IEndpointRouteBuilder MapAssistantEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/assistant").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/assistant")
+            .RequireAuthorization()
+            .WithTags("Assistant");
 
         group.MapGet("/provider", async (
             ClaimsPrincipal user,
@@ -44,7 +46,10 @@ public static class AssistantModule
 
             var data = await service.GetProviderConfigAsync(householdId, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("GetAssistantProvider")
+        .Produces<ProviderConfigDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPut("/provider", async (
             UpdateProviderConfigRequest? request,
@@ -58,8 +63,18 @@ public static class AssistantModule
             }
 
             var (ok, error, data) = await service.UpdateProviderConfigAsync(householdId, request, cancellationToken);
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Configuração do provedor de IA inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_provider_config" });
+        })
+        .WithName("UpdateAssistantProvider")
+        .Produces<ProviderConfigDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/history", async (
             int? limit,
@@ -74,7 +89,10 @@ public static class AssistantModule
 
             var data = await service.GetHistoryAsync(householdId, limit, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("GetAssistantHistory")
+        .Produces<ChatHistoryResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/chat", async (
             ChatRequest? request,
@@ -88,8 +106,18 @@ public static class AssistantModule
             }
 
             var (ok, error, data) = await service.ChatAsync(householdId, request, cancellationToken);
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Solicitação de chat inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_chat_request" });
+        })
+        .WithName("ChatWithAssistant")
+        .Produces<ChatResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/chat/stream", async (
             ChatRequest? request,
@@ -107,8 +135,12 @@ public static class AssistantModule
             var (ok, error, data) = await service.ChatAsync(householdId, request, cancellationToken);
             if (!ok || data is null)
             {
-                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
-                await httpContext.Response.WriteAsJsonAsync(new { error }, cancellationToken);
+                await Results.Problem(
+                    title: "Solicitação de chat inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_chat_request" })
+                    .ExecuteAsync(httpContext);
                 return;
             }
 
@@ -150,7 +182,11 @@ public static class AssistantModule
 
             await httpContext.Response.WriteAsync($"event: done\ndata: {donePayload}\n\n", cancellationToken);
             await httpContext.Response.Body.FlushAsync(cancellationToken);
-        });
+        })
+        .WithName("StreamAssistantChat")
+        .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/suggestions/generate", async (
             ClaimsPrincipal user,
@@ -164,7 +200,10 @@ public static class AssistantModule
 
             var data = await service.GenerateSuggestionsAsync(householdId, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("GenerateAssistantSuggestions")
+        .Produces<GenerateSuggestionsResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/suggestions", async (
             string? status,
@@ -179,7 +218,10 @@ public static class AssistantModule
 
             var data = await service.ListSuggestionsAsync(householdId, status, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("ListAssistantSuggestions")
+        .Produces<SuggestionsListResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/suggestions/{id:guid}/decide", async (
             Guid id,
@@ -202,11 +244,29 @@ public static class AssistantModule
             return statusCode switch
             {
                 200 => Results.Ok(data),
-                404 => Results.NotFound(),
-                409 => Results.Conflict(new { error }),
-                _ => Results.BadRequest(new { error })
+                404 => Results.Problem(
+                    title: "Sugestão não encontrada",
+                    detail: error ?? "Sugestão não encontrada.",
+                    statusCode: StatusCodes.Status404NotFound,
+                    extensions: new Dictionary<string, object?> { ["code"] = "suggestion_not_found" }),
+                409 => Results.Problem(
+                    title: "Conflito ao decidir sugestão",
+                    detail: error,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["code"] = "suggestion_conflict" }),
+                _ => Results.Problem(
+                    title: "Decisão de sugestão inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_suggestion_decision" })
             };
-        });
+        })
+        .WithName("DecideAssistantSuggestion")
+        .Produces<DecideSuggestionResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }

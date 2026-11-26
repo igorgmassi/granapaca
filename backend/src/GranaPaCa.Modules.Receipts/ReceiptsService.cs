@@ -1,7 +1,9 @@
+using System.Net.Http.Headers;
 using System.Text;
 using Dapper;
 using GranaPaCa.Modules.Banking.Contracts;
 using GranaPaCa.Modules.Receipts.Contracts;
+using Microsoft.AspNetCore.Http;
 using Npgsql;
 
 namespace GranaPaCa.Modules.Receipts;
@@ -13,11 +15,22 @@ internal sealed class ReceiptsService(
     IBankingSplitWriter splitWriter) : IReceiptsPurgeService
 {
     private const int MaxFileSizeBytes = 10 * 1024 * 1024;
+    private const int MaxBase64NonWhitespaceChars = ((MaxFileSizeBytes + 2) / 3) * 4;
     private const string ConsentNotice =
         "Os itens das suas notas fiscais ficam guardados somente na sua instância, cifrados em disco. " +
         "Você escolhe separadamente se deseja organizar itens por categoria e se autoriza notas alimentares locais.";
 
-    public async Task PurgeHouseholdAsync(
+    private static readonly HashSet<string> AllowedReceiptContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/pdf",
+        "application/xml",
+        "text/xml"
+    };
+
+    public async Task<IReadOnlyList<string>> PurgeHouseholdAsync(
         Guid householdId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -30,7 +43,10 @@ internal sealed class ReceiptsService(
             "SELECT storage_rel_path FROM receipts.receipt WHERE household_id = @HouseholdId",
             new { HouseholdId = householdId },
             transaction: transaction,
-            cancellationToken: cancellationToken))).ToList();
+            cancellationToken: cancellationToken)))
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p!)
+            .ToList();
 
         await connection.ExecuteAsync(new CommandDefinition(
             "DELETE FROM receipts.receipt WHERE household_id = @HouseholdId",
@@ -44,7 +60,13 @@ internal sealed class ReceiptsService(
             transaction: transaction,
             cancellationToken: cancellationToken));
 
-        fileStore.DeleteHouseholdFiles(householdId, filePaths);
+        // Return paths so disk erasure executes only after DB transaction commits.
+        return filePaths;
+    }
+
+    public void DeletePurgedFiles(Guid householdId, IReadOnlyList<string> storageRelPaths)
+    {
+        fileStore.DeleteHouseholdFiles(householdId, storageRelPaths);
     }
 
     public async Task<ReceiptConsentDto> GetConsentAsync(
@@ -221,19 +243,26 @@ internal sealed class ReceiptsService(
             return (false, "Informe o nome do arquivo do comprovante.", null);
         }
 
-        var contentType = string.IsNullOrWhiteSpace(request.ContentType)
-            ? "application/octet-stream"
-            : request.ContentType.Trim();
+        if (!TryNormalizeAllowedContentType(request.ContentType, out var contentType, out var contentTypeError))
+        {
+            return (false, contentTypeError, null);
+        }
 
         if (string.IsNullOrWhiteSpace(request.ContentBase64))
         {
             return (false, "Informe o conteúdo do arquivo em Base64.", null);
         }
 
+        var trimmedBase64 = request.ContentBase64.Trim();
+        if (ExceedsMaxBase64Size(trimmedBase64))
+        {
+            return (false, "O comprovante excede o tamanho máximo de 10 MB.", null);
+        }
+
         byte[] rawBytes;
         try
         {
-            rawBytes = Convert.FromBase64String(request.ContentBase64.Trim());
+            rawBytes = Convert.FromBase64String(trimmedBase64);
         }
         catch (FormatException)
         {
@@ -370,20 +399,50 @@ internal sealed class ReceiptsService(
         return true;
     }
 
-    public async Task<(bool Ok, string? Error, ParseNfceResponse? Data)> ParseNfceAsync(
+    public async Task<(int StatusCode, string? ErrorCode, string? Error, ParseNfceResponse? Data)> ParseNfceAsync(
         Guid householdId,
         ParseNfceRequest? request,
         CancellationToken cancellationToken)
     {
         if (request is null)
         {
-            return (false, "Informe o XML ou a URL do QR Code da NFC-e.", null);
+            return (StatusCodes.Status400BadRequest, "invalid_request", "Informe o XML ou a URL do QR Code da NFC-e.", null);
+        }
+
+        var hasXml = !string.IsNullOrWhiteSpace(request.Xml);
+        if (hasXml)
+        {
+            // Enforce the 10 MB ceiling BEFORE parsing XML, regardless of save=true/false (ADR-025).
+            if (request.Xml!.Length > MaxFileSizeBytes || Encoding.UTF8.GetByteCount(request.Xml) > MaxFileSizeBytes)
+            {
+                return (StatusCodes.Status400BadRequest, "payload_too_large", "O XML da NFC-e excede o tamanho máximo de 10 MB.", null);
+            }
+
+            // Require explicit household consent before extracting/categorizing NFC-e items (ADR-025).
+            await using var consentConn = await dataSource.OpenConnectionAsync(cancellationToken);
+            var itemAnalysisAccepted = await consentConn.ExecuteScalarAsync<bool?>(new CommandDefinition(
+                """
+                SELECT item_analysis_accepted
+                FROM receipts.consent
+                WHERE household_id = @HouseholdId
+                """,
+                new { HouseholdId = householdId },
+                cancellationToken: cancellationToken));
+
+            if (itemAnalysisAccepted != true)
+            {
+                return (
+                    StatusCodes.Status403Forbidden,
+                    "receipt_item_consent_required",
+                    "Para ler e categorizar os itens da NFC-e, aceite primeiro o consentimento de leitura de itens em /api/v1/receipts/consent.",
+                    null);
+            }
         }
 
         var (ok, error, parsed) = NfceParser.Parse(request.Xml, request.QrUrl);
         if (!ok || parsed is null)
         {
-            return (false, error ?? "Não foi possível interpretar a NFC-e.", null);
+            return (StatusCodes.Status400BadRequest, "invalid_nfce", error ?? "Não foi possível interpretar a NFC-e.", null);
         }
 
         var shouldSave = request.Save ?? true;
@@ -397,12 +456,12 @@ internal sealed class ReceiptsService(
             string contentType;
             long fileSizeBytes;
 
-            if (!string.IsNullOrWhiteSpace(request.Xml))
+            if (hasXml)
             {
-                var xmlBytes = Encoding.UTF8.GetBytes(request.Xml.Trim());
+                var xmlBytes = Encoding.UTF8.GetBytes(request.Xml!.Trim());
                 if (xmlBytes.Length > MaxFileSizeBytes)
                 {
-                    return (false, "O XML da NFC-e excede o tamanho máximo de 10 MB.", null);
+                    return (StatusCodes.Status400BadRequest, "payload_too_large", "O XML da NFC-e excede o tamanho máximo de 10 MB.", null);
                 }
 
                 storageRelPath = await fileStore.SaveEncryptedAsync(
@@ -521,7 +580,7 @@ internal sealed class ReceiptsService(
             }
         }
 
-        return (true, null, new ParseNfceResponse(
+        return (StatusCodes.Status200OK, null, null, new ParseNfceResponse(
             savedId,
             shouldSave,
             request.TransactionId,
@@ -534,6 +593,62 @@ internal sealed class ReceiptsService(
             parsed.QrPortalHost,
             parsed.Notice,
             parsed.Items));
+    }
+
+    internal static bool TryNormalizeAllowedContentType(
+        string? rawContentType,
+        out string normalized,
+        out string? error)
+    {
+        normalized = string.Empty;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawContentType))
+        {
+            error = "Informe o tipo de conteúdo (MIME) do comprovante (JPEG, PNG, WebP, PDF ou XML).";
+            return false;
+        }
+
+        if (!MediaTypeHeaderValue.TryParse(rawContentType.Trim(), out var parsed) ||
+            string.IsNullOrWhiteSpace(parsed.MediaType))
+        {
+            error = "Tipo de conteúdo (MIME) inválido.";
+            return false;
+        }
+
+        var mediaType = parsed.MediaType.Trim().ToLowerInvariant();
+        if (!AllowedReceiptContentTypes.Contains(mediaType))
+        {
+            error = "Tipo de arquivo não permitido. Envie imagem (JPEG, PNG, WebP), PDF ou XML de NFC-e.";
+            return false;
+        }
+
+        normalized = mediaType;
+        return true;
+    }
+
+    private static bool ExceedsMaxBase64Size(string trimmedBase64)
+    {
+        // Fast upper bound before scanning whitespace (allows line breaks every 64 chars).
+        if (trimmedBase64.Length > MaxBase64NonWhitespaceChars + (MaxBase64NonWhitespaceChars / 64) + 64)
+        {
+            return true;
+        }
+
+        var nonWhitespaceCount = 0;
+        var trailingEquals = 0;
+        for (var i = 0; i < trimmedBase64.Length; i++)
+        {
+            var ch = trimmedBase64[i];
+            if (!char.IsWhiteSpace(ch))
+            {
+                nonWhitespaceCount++;
+                trailingEquals = ch == '=' ? trailingEquals + 1 : 0;
+            }
+        }
+
+        var estimatedBytes = (nonWhitespaceCount / 4L) * 3L - Math.Min(trailingEquals, 2);
+        return estimatedBytes > MaxFileSizeBytes;
     }
 
     public async Task<(int StatusCode, string? Error, ApplyReceiptSplitsResponse? Data)> ApplySplitsAsync(

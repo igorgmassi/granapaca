@@ -29,7 +29,9 @@ public static class ReceiptsModule
 
     public static IEndpointRouteBuilder MapReceiptsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/receipts").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/receipts")
+            .RequireAuthorization()
+            .WithTags("Receipts");
 
         group.MapGet("/consent", async (
             ClaimsPrincipal user,
@@ -43,7 +45,10 @@ public static class ReceiptsModule
 
             var data = await service.GetConsentAsync(householdId, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("GetReceiptConsent")
+        .Produces<ReceiptConsentDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPut("/consent", async (
             UpdateReceiptConsentRequest? request,
@@ -58,12 +63,20 @@ public static class ReceiptsModule
 
             if (request is null)
             {
-                return Results.BadRequest(new { error = "Informe as preferências de consentimento." });
+                return Results.Problem(
+                    title: "Preferências de consentimento inválidas",
+                    detail: "Informe as preferências de consentimento.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_consent_request" });
             }
 
             var data = await service.SaveConsentAsync(householdId, request, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("SaveReceiptConsent")
+        .Produces<ReceiptConsentDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("", async (
             Guid? transactionId,
@@ -78,7 +91,10 @@ public static class ReceiptsModule
 
             var data = await service.ListReceiptsAsync(householdId, transactionId, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("ListReceipts")
+        .Produces<ReceiptsListResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("", async (
             UploadReceiptRequest? request,
@@ -94,8 +110,16 @@ public static class ReceiptsModule
             var (ok, error, data) = await service.UploadReceiptAsync(householdId, request, cancellationToken);
             return ok
                 ? Results.Created($"/api/v1/receipts/{data!.Id}", data)
-                : Results.BadRequest(new { error });
-        });
+                : Results.Problem(
+                    title: "Erro ao enviar comprovante",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_receipt_upload" });
+        })
+        .WithName("UploadReceipt")
+        .Produces<ReceiptDto>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/{id:guid}/download", async (
             Guid id,
@@ -113,10 +137,21 @@ public static class ReceiptsModule
                 id,
                 cancellationToken);
 
-            return found && bytes is not null
-                ? Results.File(bytes, contentType ?? "application/octet-stream", fileName)
-                : Results.NotFound();
-        });
+            if (!found || bytes is null)
+            {
+                return Results.NotFound();
+            }
+
+            var safeContentType = ReceiptsService.TryNormalizeAllowedContentType(contentType, out var normalized, out _)
+                ? normalized
+                : "application/octet-stream";
+
+            return Results.File(bytes, safeContentType, fileName);
+        })
+        .WithName("DownloadReceipt")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -131,7 +166,11 @@ public static class ReceiptsModule
 
             var deleted = await service.DeleteReceiptAsync(householdId, id, cancellationToken);
             return deleted ? Results.NoContent() : Results.NotFound();
-        });
+        })
+        .WithName("DeleteReceipt")
+        .Produces(StatusCodes.Status204NoContent)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/nfce/parse", async (
             ParseNfceRequest? request,
@@ -144,9 +183,27 @@ public static class ReceiptsModule
                 return Results.Unauthorized();
             }
 
-            var (ok, error, data) = await service.ParseNfceAsync(householdId, request, cancellationToken);
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            var (statusCode, errorCode, error, data) = await service.ParseNfceAsync(householdId, request, cancellationToken);
+            return statusCode switch
+            {
+                StatusCodes.Status200OK => Results.Ok(data),
+                StatusCodes.Status403Forbidden => Results.Problem(
+                    title: "Consentimento necessário",
+                    detail: error,
+                    statusCode: StatusCodes.Status403Forbidden,
+                    extensions: new Dictionary<string, object?> { ["code"] = errorCode ?? "receipt_item_consent_required" }),
+                _ => Results.Problem(
+                    title: "Erro ao interpretar NFC-e",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = errorCode ?? "invalid_nfce" })
+            };
+        })
+        .WithName("ParseNfce")
+        .Produces<ParseNfceResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/{id:guid}/apply-splits", async (
             Guid id,
@@ -169,10 +226,23 @@ public static class ReceiptsModule
             return statusCode switch
             {
                 200 => Results.Ok(data),
-                404 => Results.NotFound(),
-                _ => Results.BadRequest(new { error })
+                404 => Results.Problem(
+                    title: "Comprovante não encontrado",
+                    detail: error ?? "Comprovante não encontrado.",
+                    statusCode: StatusCodes.Status404NotFound,
+                    extensions: new Dictionary<string, object?> { ["code"] = "receipt_not_found" }),
+                _ => Results.Problem(
+                    title: "Erro ao aplicar divisão do comprovante",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_receipt_splits" })
             };
-        });
+        })
+        .WithName("ApplyReceiptSplits")
+        .Produces<ApplyReceiptSplitsResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }

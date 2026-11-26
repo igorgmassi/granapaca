@@ -112,7 +112,7 @@ internal sealed class BankingExportService(
                 ? BankingTaxonomy.GetCategoryLabel("uncategorized")
                 : BankingTaxonomy.GetCategoryLabel(row.EffectiveCategory);
 
-            var fields = new[]
+            var textFields = new[]
             {
                 row.OccurredOn.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 row.EffectiveDescription,
@@ -124,19 +124,22 @@ internal sealed class BankingExportService(
                 categoryLabel,
                 BankingTaxonomy.GetEssentialityLabel(row.EffectiveEssentiality),
                 row.EffectiveIsAtypical ? "Sim" : "Não",
-                tagsText,
-                MoneyConverter.FormatCsvBrl(row.AmountCents)
+                tagsText
             };
 
-            for (var i = 0; i < fields.Length; i++)
+            for (var i = 0; i < textFields.Length; i++)
             {
                 if (i > 0)
                 {
                     sb.Append(';');
                 }
 
-                sb.Append(EscapeCsvField(fields[i]));
+                sb.Append(EscapeCsvTextField(textFields[i]));
             }
+
+            // Preserve numeric monetary column ("Valor (R$)") intact without formula-neutralizing prefix.
+            sb.Append(';');
+            sb.Append(EscapeCsvField(MoneyConverter.FormatCsvBrl(row.AmountCents)));
 
             sb.Append("\r\n");
         }
@@ -734,6 +737,29 @@ internal sealed class BankingExportService(
 
     private static string Html(string? text) =>
         string.IsNullOrEmpty(text) ? string.Empty : WebUtility.HtmlEncode(text);
+
+    private static string EscapeCsvTextField(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = NeedsFormulaNeutralization(value) ? "'" + value : value;
+        return EscapeCsvField(sanitized);
+    }
+
+    private static bool NeedsFormulaNeutralization(string value)
+    {
+        var first = value[0];
+        if (first is '=' or '+' or '-' or '@' or '\t' or '\r')
+        {
+            return true;
+        }
+
+        var trimmedStart = value.AsSpan().TrimStart(' ');
+        return !trimmedStart.IsEmpty && trimmedStart[0] is '=' or '+' or '-' or '@';
+    }
 
     private static string EscapeCsvField(string? value)
     {

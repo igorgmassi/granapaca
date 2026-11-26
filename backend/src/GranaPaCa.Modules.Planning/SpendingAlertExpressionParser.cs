@@ -70,32 +70,39 @@ internal static partial class SpendingAlertExpressionParser
             return false;
         }
 
-        var trimmed = expression.Trim();
-        if (!TryExtractAmountCents(trimmed, out var limitCents) || limitCents <= 0)
+        try
         {
-            return false;
-        }
+            var trimmed = expression.Trim();
+            if (!TryExtractAmountCents(trimmed, out var limitCents) || limitCents <= 0)
+            {
+                return false;
+            }
 
-        var rawSubject = ExtractSubject(trimmed);
-        if (string.IsNullOrWhiteSpace(rawSubject))
-        {
-            return false;
-        }
+            var rawSubject = ExtractSubject(trimmed);
+            if (string.IsNullOrWhiteSpace(rawSubject))
+            {
+                return false;
+            }
 
-        var normalized = CleanSubject(rawSubject);
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return false;
-        }
+            var normalized = CleanSubject(rawSubject);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
 
-        if (CategoryAliases.TryGetValue(normalized, out var category))
-        {
-            parsed = new ParsedAlertRule(category, null, limitCents);
+            if (CategoryAliases.TryGetValue(normalized, out var category))
+            {
+                parsed = new ParsedAlertRule(category, null, limitCents);
+                return true;
+            }
+
+            parsed = new ParsedAlertRule(null, normalized, limitCents);
             return true;
         }
-
-        parsed = new ParsedAlertRule(null, normalized, limitCents);
-        return true;
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
     }
 
     public static bool TryExtractAmountCents(string text, out long cents)
@@ -103,23 +110,26 @@ internal static partial class SpendingAlertExpressionParser
         cents = 0;
 
         var currencyMatch = BrlAmountRegex().Match(text);
-        if (currencyMatch.Success && TryParseBrazilianDecimal(currencyMatch.Groups[1].Value, out var value))
+        if (currencyMatch.Success &&
+            TryParseBrazilianDecimal(currencyMatch.Groups[1].Value, out var value) &&
+            TryDecimalToCents(value, out cents))
         {
-            cents = DecimalToCents(value);
             return cents > 0;
         }
 
         var reaisMatch = ReaisSuffixRegex().Match(text);
-        if (reaisMatch.Success && TryParseBrazilianDecimal(reaisMatch.Groups[1].Value, out value))
+        if (reaisMatch.Success &&
+            TryParseBrazilianDecimal(reaisMatch.Groups[1].Value, out value) &&
+            TryDecimalToCents(value, out cents))
         {
-            cents = DecimalToCents(value);
             return cents > 0;
         }
 
         var fallbackMatch = ThresholdNumberRegex().Match(text);
-        if (fallbackMatch.Success && TryParseBrazilianDecimal(fallbackMatch.Groups[1].Value, out value))
+        if (fallbackMatch.Success &&
+            TryParseBrazilianDecimal(fallbackMatch.Groups[1].Value, out value) &&
+            TryDecimalToCents(value, out cents))
         {
-            cents = DecimalToCents(value);
             return cents > 0;
         }
 
@@ -199,8 +209,19 @@ internal static partial class SpendingAlertExpressionParser
             out value) && value > 0m;
     }
 
-    private static long DecimalToCents(decimal value) =>
-        decimal.ToInt64(Math.Round(value * 100m, 0, MidpointRounding.AwayFromZero));
+    private static bool TryDecimalToCents(decimal value, out long cents)
+    {
+        cents = 0;
+        try
+        {
+            cents = decimal.ToInt64(Math.Round(value * 100m, 0, MidpointRounding.AwayFromZero));
+            return true;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+    }
 
     public static string RemoveDiacriticsLower(string text)
     {
@@ -222,27 +243,27 @@ internal static partial class SpendingAlertExpressionParser
         return sb.ToString();
     }
 
-    [GeneratedRegex(@"R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"R\$\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?!\d)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex BrlAmountRegex();
 
-    [GeneratedRegex(@"(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:reais|real|brl)\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?!\d)\s*(?:reais|real|brl)\b", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ReaisSuffixRegex();
 
-    [GeneratedRegex(@"(?:passar(?:em)?\s+de|ultrapassar(?:em)?|exceder(?:em)?|chegar(?:em)?\s+(?:a|em)|atingir(?:em)?|superar(?:em)?|acima\s+de|mais\s+de|>=|>)\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:passar(?:em)?\s+de|ultrapassar(?:em)?|exceder(?:em)?|chegar(?:em)?\s+(?:a|em)|atingir(?:em)?|superar(?:em)?|acima\s+de|mais\s+de|>=|>)\s*(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?!\d)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ThresholdNumberRegex();
 
-    [GeneratedRegex(@"(?:quando|se)\s+(?:eu\s+)?(?:(?:os|meus|o)\s+)?(?:gastos?\s+(?:com|em|de|no|na)\s+)?(.+?)\s+(?:passar(?:em)?|ultrapassar(?:em)?|exceder(?:em)?|chegar(?:em)?|atingir(?:em)?|superar(?:em)?|for(?:em)?|ficar(?:em)?|>=|>)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:quando|se)\s+(?:eu\s+)?(?:(?:os|meus|o)\s+)?(?:gastos?\s+(?:com|em|de|no|na)\s+)?(.+?)\s+(?:passar(?:em)?|ultrapassar(?:em)?|exceder(?:em)?|chegar(?:em)?|atingir(?:em)?|superar(?:em)?|for(?:em)?|ficar(?:em)?|>=|>)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SubjectBeforeVerbRegex();
 
-    [GeneratedRegex(@"^\s*(?:alerta\s+(?:de|para)\s+)?([a-zA-ZÀ-ÿ0-9\s-]{2,50}?)\s*(?:>=|>|acima\s+de)\s*(?:R\$|\d)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^\s*(?:alerta\s+(?:de|para)\s+)?([a-zA-ZÀ-ÿ0-9\s-]{2,50}?)\s*(?:>=|>|acima\s+de)\s*(?:R\$|\d)", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SubjectBeforeOperatorRegex();
 
-    [GeneratedRegex(@"(?:em|com|no|na)\s+([a-zA-ZÀ-ÿ0-9\s-]{2,40})\s*[.!?]*$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:em|com|no|na)\s+([a-zA-ZÀ-ÿ0-9\s-]{2,40})\s*[.!?]*$", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SubjectAfterPrepositionRegex();
 
-    [GeneratedRegex(@"^(?:me\s+avise\s+|avisar\s+|alerta\s+|alertar\s+)?(?:quando\s+|se\s+)?(?:os\s+|meus\s+|o\s+|a\s+)?(?:gastos?\s+)?(?:com\s+|em\s+|de\s+|no\s+|na\s+|do\s+|da\s+)?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?:me\s+avise\s+|avisar\s+|alerta\s+|alertar\s+)?(?:quando\s+|se\s+)?(?:os\s+|meus\s+|o\s+|a\s+)?(?:gastos?\s+)?(?:com\s+|em\s+|de\s+|no\s+|na\s+|do\s+|da\s+)?", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex LeadingFillerRegex();
 
-    [GeneratedRegex(@"\s+(?:no\s+m[eê]s|neste\s+m[eê]s|por\s+m[eê]s|mensal|mensais)$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\s+(?:no\s+m[eê]s|neste\s+m[eê]s|por\s+m[eê]s|mensal|mensais)$", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex TrailingNoiseRegex();
 }

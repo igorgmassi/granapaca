@@ -191,9 +191,19 @@ public static class BankingModule
             {
                 201 => Results.Created($"/api/v1/transactions/{data!.Id}", data),
                 200 => Results.Ok(data),
-                _ => Results.BadRequest(new { error })
+                _ => Results.Problem(
+                    title: "Lançamento em dinheiro inválido",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_cash_transaction" })
             };
-        });
+        })
+        .WithName("CreateCashTransaction")
+        .WithTags("Transactions")
+        .Produces<TransactionDetailDto>(StatusCodes.Status201Created)
+        .Produces<TransactionDetailDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPost("/transactions/bulk-adjustments", async (
             BulkAdjustmentsRequest? request,
@@ -211,8 +221,19 @@ public static class BankingModule
                 request,
                 cancellationToken);
 
-            return statusCode == 200 ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            return statusCode == 200
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Ajuste em lote inválido",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_bulk_adjustments" });
+        })
+        .WithName("ApplyBulkAdjustments")
+        .WithTags("Transactions")
+        .Produces<BulkAdjustmentsResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapGet("/transactions/review-queue", async (
             ClaimsPrincipal user,
@@ -511,7 +532,11 @@ public static class BankingModule
 
             var data = await extensions.GetTagsAsync(householdId, cancellationToken);
             return Results.Ok(data);
-        });
+        })
+        .WithName("GetTags")
+        .WithTags("Tags")
+        .Produces<TagsListResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPost("/tags", async (
             CreateTagRequest? request,
@@ -528,10 +553,24 @@ public static class BankingModule
             return statusCode switch
             {
                 201 => Results.Created($"/api/v1/tags/{data!.Id}", data),
-                409 => Results.Conflict(new { error }),
-                _ => Results.BadRequest(new { error })
+                409 => Results.Problem(
+                    title: "Tag já existente",
+                    detail: error,
+                    statusCode: StatusCodes.Status409Conflict,
+                    extensions: new Dictionary<string, object?> { ["code"] = "tag_already_exists" }),
+                _ => Results.Problem(
+                    title: "Tag inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_tag" })
             };
-        });
+        })
+        .WithName("CreateTag")
+        .WithTags("Tags")
+        .Produces<TagDto>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status409Conflict)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapDelete("/tags/{id:guid}", async (
             Guid id,
@@ -546,7 +585,12 @@ public static class BankingModule
 
             var deleted = await extensions.DeleteTagAsync(householdId, id, cancellationToken);
             return deleted ? Results.NoContent() : Results.NotFound();
-        });
+        })
+        .WithName("DeleteTag")
+        .WithTags("Tags")
+        .Produces(StatusCodes.Status204NoContent)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPut("/transactions/{id:guid}/tags", async (
             Guid id,
@@ -569,10 +613,24 @@ public static class BankingModule
             return statusCode switch
             {
                 200 => Results.Ok(data),
-                404 => Results.NotFound(),
-                _ => Results.BadRequest(new { error })
+                404 => Results.Problem(
+                    title: "Transação não encontrada",
+                    detail: error ?? "Transação não encontrada.",
+                    statusCode: StatusCodes.Status404NotFound,
+                    extensions: new Dictionary<string, object?> { ["code"] = "transaction_not_found" }),
+                _ => Results.Problem(
+                    title: "Tags da transação inválidas",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_transaction_tags" })
             };
-        });
+        })
+        .WithName("ReplaceTransactionTags")
+        .WithTags("Tags")
+        .Produces<TransactionTagsResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapGet("/transactions/{id:guid}/splits", async (
             Guid id,
@@ -587,7 +645,12 @@ public static class BankingModule
 
             var data = await analytics.GetTransactionSplitsAsync(householdId, id, cancellationToken);
             return data is null ? Results.NotFound() : Results.Ok(data);
-        });
+        })
+        .WithName("GetTransactionSplits")
+        .WithTags("Transactions")
+        .Produces<TransactionSplitsResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPut("/transactions/{id:guid}/splits", async (
             Guid id,
@@ -610,10 +673,24 @@ public static class BankingModule
             return statusCode switch
             {
                 200 => Results.Ok(data),
-                404 => Results.NotFound(),
-                _ => Results.BadRequest(new { error })
+                404 => Results.Problem(
+                    title: "Transação não encontrada",
+                    detail: error ?? "Transação não encontrada.",
+                    statusCode: StatusCodes.Status404NotFound,
+                    extensions: new Dictionary<string, object?> { ["code"] = "transaction_not_found" }),
+                _ => Results.Problem(
+                    title: "Divisão de transação inválida",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_transaction_splits" })
             };
-        });
+        })
+        .WithName("ReplaceTransactionSplits")
+        .WithTags("Transactions")
+        .Produces<TransactionSplitsResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapGet("/export/transactions.csv", async (
             DateOnly? from,
@@ -635,8 +712,17 @@ public static class BankingModule
 
             return ok
                 ? Results.File(bytes!, "text/csv; charset=utf-8", fileName)
-                : Results.BadRequest(new { error });
-        });
+                : Results.Problem(
+                    title: "Erro ao exportar transações em CSV",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_export_query" });
+        })
+        .WithName("ExportTransactionsCsv")
+        .WithTags("Export")
+        .Produces(StatusCodes.Status200OK, contentType: "text/csv")
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapGet("/export/backup.json", async (
             ClaimsPrincipal user,
@@ -650,7 +736,11 @@ public static class BankingModule
 
             var (bytes, fileName) = await exportService.ExportBackupJsonAsync(householdId, cancellationToken);
             return Results.File(bytes, "application/json; charset=utf-8", fileName);
-        });
+        })
+        .WithName("ExportBackupJson")
+        .WithTags("Export")
+        .Produces(StatusCodes.Status200OK, contentType: "application/json")
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapGet("/export/report.html", async (
             string? month,
@@ -670,8 +760,17 @@ public static class BankingModule
 
             return ok
                 ? Results.Content(html!, "text/html; charset=utf-8")
-                : Results.BadRequest(new { error });
-        });
+                : Results.Problem(
+                    title: "Erro ao gerar relatório mensal",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_report_query" });
+        })
+        .WithName("ExportMonthlyReportHtml")
+        .WithTags("Export")
+        .Produces(StatusCodes.Status200OK, contentType: "text/html")
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }
