@@ -77,12 +77,20 @@ class _ReceiptsExportScreenState extends State<ReceiptsExportScreen> {
       if (state.isServerMode && !state.isOffline && state.isAuthenticated) {
         setState(() => _submittingServer = true);
         try {
+          final serverTxUuid = _selectedTxId != null
+              ? state.transactionUuidFor(_selectedTxId!)
+              : null;
           await state.apiClient.submitNfceReceipt(
             rawInput: _nfceController.text.trim(),
-            transactionId: _selectedTxId,
+            transactionId: serverTxUuid,
           );
-        } on ApiException {
-          // Local preview remains available even if server endpoint is absent.
+        } on ApiException catch (error) {
+          if (mounted) {
+            setState(() => _nfceError = error.message);
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(error.message)));
+          }
         } finally {
           if (mounted) setState(() => _submittingServer = false);
         }
@@ -764,15 +772,45 @@ class _StatementImportDialogState extends State<_StatementImportDialog> {
                   if (state.isServerMode &&
                       !state.isOffline &&
                       state.isAuthenticated) {
+                    final targetAccount = accounts.isNotEmpty
+                        ? accounts.first
+                        : null;
+                    final targetBank = targetAccount != null
+                        ? state.originalDataset.banks
+                              .where((b) => b.id == targetAccount.bankId)
+                              .firstOrNull
+                        : null;
                     try {
-                      await state.apiClient.importStatement(
+                      final res = await state.apiClient.importStatement(
                         format: isOfx ? 'ofx' : 'csv',
                         content: raw,
-                        accountId: defaultAccountId,
+                        institutionName:
+                            targetBank?.name ?? 'Instituição importada',
+                        accountName: targetAccount?.name ?? 'Conta importada',
+                        accountKind:
+                            targetAccount?.kind ?? AccountKind.checking,
                       );
-                    } on ApiException {
-                      // Fallback to local import below.
+                      await state.syncFromServer(triggerBankSync: false);
+                      final inserted =
+                          (res['inserted'] as num?)?.toInt() ?? _preview.length;
+                      if (!context.mounted) return;
+                      Navigator.of(context).pop();
+                      widget.messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '$inserted transação(ões) importada(s) no servidor '
+                            'com sucesso.',
+                          ),
+                        ),
+                      );
+                    } on ApiException catch (error) {
+                      if (!mounted) return;
+                      setState(() => _error = error.message);
+                      widget.messenger.showSnackBar(
+                        SnackBar(content: Text(error.message)),
+                      );
                     }
+                    return;
                   }
                   final count = state.importStatementTransactions(_preview);
                   if (!context.mounted) return;

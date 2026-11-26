@@ -15,6 +15,8 @@ import 'package:granapaca/main.dart';
 import 'package:granapaca/screens/cash_entry_sheet.dart';
 import 'package:granapaca/screens/spending_analytics_widgets.dart';
 import 'package:granapaca/state/app_state.dart';
+import 'package:granapaca/storage/cache_storage_base.dart';
+import 'package:granapaca/storage/encrypted_cache.dart';
 import 'package:granapaca/theme/grana_theme.dart';
 
 typedef _TransportHandler =
@@ -302,50 +304,77 @@ void main() {
       );
     });
 
-    test('offline cash quick-entry queues outbox mutation and flushes on syncFromServer (RF-44)', () async {
-      var cashPosted = false;
-      final transport = _FakeHttpTransport((req) async {
-        if (req.uri.path == '/api/v1/transactions/cash' &&
-            req.method == 'POST') {
-          cashPosted = true;
-          final body = jsonDecode(req.body!) as Map<String, dynamic>;
-          expect(body['description'], 'Feira orgânica');
-          expect(body['amountCents'], -3500);
-          expect(body['paymentMethod'], 'cash');
-          return HttpTransportResponse(
-            statusCode: 201,
-            body: jsonEncode({
-              'id': 9001,
-              'accountId': AppState.cashAccountId,
-              'occurredOn': '2026-03-28',
-              'description': 'Feira orgânica',
-              'amountCents': -3500,
-              'kind': 'expense',
-              'paymentMethod': 'cash',
-              'isCashEntry': true,
-            }),
-          );
-        }
-        if (req.uri.path == '/api/v1/sync/changes') {
-          return HttpTransportResponse(
-            statusCode: 200,
-            body: jsonEncode({
-              'nextCursor': 'cur-cash-1',
-              'hasMore': false,
-              'syncedAt': '2026-03-28T15:00:00Z',
-              'banks': const [],
-              'accounts': const [],
-              'transactions': const [],
-            }),
-          );
-        }
-        return const HttpTransportResponse(statusCode: 200, body: '{}');
-      });
+    test(
+      'offline cash quick-entry persists outbox in encrypted cache, sends clientMutationId, deduplicates on sync and rejects 4xx (RF-44)',
+      () async {
+        const cashUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        const serverUrl = 'https://toca.local';
+        var cashPosted = false;
+        String? sentClientMutationId;
 
-      final client = GranaPaCaApiClient(
-        transport: transport,
-        baseUrl: Uri.parse('https://toca.local'),
-        initialTokens: AuthTokens(
+        final transport = _FakeHttpTransport((req) async {
+          if (req.uri.path == '/api/v1/transactions/cash' &&
+              req.method == 'POST') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            if (body['description'] == 'ERRO_400') {
+              return HttpTransportResponse(
+                statusCode: 400,
+                body: jsonEncode({
+                  'title': 'Lançamento em dinheiro inválido',
+                  'detail': 'Descrição rejeitada pelo servidor.',
+                  'code': 'invalid_cash_transaction',
+                }),
+              );
+            }
+            cashPosted = true;
+            sentClientMutationId = body['clientMutationId'] as String?;
+            expect(body['description'], 'Feira orgânica');
+            expect(body['amountCents'], -3500);
+            expect(body['kind'], 'expense');
+            expect(sentClientMutationId, isNotNull);
+            expect(sentClientMutationId, isNotEmpty);
+            return HttpTransportResponse(
+              statusCode: 201,
+              body: jsonEncode({
+                'id': cashUuid,
+                'accountId': AppState.cashAccountId,
+                'occurredOn': '2026-03-28',
+                'description': 'Feira orgânica',
+                'amountCents': -3500,
+                'kind': 'expense',
+                'paymentMethod': 'cash',
+                'tags': const ['feira'],
+              }),
+            );
+          }
+          if (req.uri.path == '/api/v1/sync/changes') {
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'nextCursor': 'cur-cash-1',
+                'isFullSync': false,
+                'serverTime': '2026-03-28T15:00:00Z',
+                'connections': const [],
+                'accounts': const [],
+                'transactions': [
+                  {
+                    'id': cashUuid,
+                    'accountId': AppState.cashAccountId,
+                    'occurredOn': '2026-03-28',
+                    'description': 'Feira orgânica',
+                    'amountCents': -3500,
+                    'kind': 'expense',
+                    'paymentMethod': 'cash',
+                    'tags': const ['feira'],
+                  },
+                ],
+              }),
+            );
+          }
+          return const HttpTransportResponse(statusCode: 200, body: '{}');
+        });
+
+        AuthTokens sampleTokens() => AuthTokens(
           accessToken: 'tok-cash',
           refreshToken: 'ref-cash',
           expiresAt: DateTime(2026, 3, 29),
@@ -356,98 +385,716 @@ void main() {
             email: 'bia@demo.local',
             displayName: 'Bia',
           ),
-        ),
-      );
+        );
 
-      final state = AppState(
-        apiClient: client,
-        initialMode: AppMode.server,
-        initialServerUrl: 'https://toca.local',
-        initialOffline: true,
-      );
+        final cacheStorage = InMemoryCacheStorage();
+        final keyStorage = InMemoryCacheStorage();
+        final cache1 = EncryptedCacheStore(
+          storage: cacheStorage,
+          keyStorage: keyStorage,
+        );
+        final client1 = GranaPaCaApiClient(
+          transport: transport,
+          baseUrl: Uri.parse(serverUrl),
+          initialTokens: sampleTokens(),
+        );
 
-      // Offline cash quick-entry succeeds immediately and queues an outbox mutation.
-      final created = await state.addCashTransaction(
-        description: 'Feira orgânica',
-        amountCents: 3500,
-        date: DateTime(2026, 3, 28),
-        category: SpendingCategory.food,
-        essentiality: Essentiality.essential,
-        tags: const ['feira'],
-      );
-      expect(created.pendingSync, isTrue);
-      expect(created.paymentMethod, PaymentMethod.cash);
-      expect(created.tags, contains('feira'));
-      expect(state.pendingOutboxCount, 1);
-      expect(cashPosted, isFalse);
+        final state1 = AppState(
+          apiClient: client1,
+          encryptedCache: cache1,
+          initialMode: AppMode.server,
+          initialServerUrl: serverUrl,
+          initialOffline: true,
+        );
 
-      // Reconnecting & syncing flushes outbox and clears pendingSync.
-      expect(await state.syncFromServer(), isTrue);
-      expect(cashPosted, isTrue);
-      expect(state.pendingOutboxCount, 0);
-      expect(state.effectiveById(created.id).pendingSync, isFalse);
-    });
+        // Offline cash quick-entry succeeds immediately and persists in encrypted cache.
+        final created = await state1.addCashTransaction(
+          description: 'Feira orgânica',
+          amountCents: 3500,
+          date: DateTime(2026, 3, 28),
+          category: SpendingCategory.food,
+          essentiality: Essentiality.essential,
+          tags: const ['feira'],
+        );
+        expect(created.pendingSync, isTrue);
+        expect(created.paymentMethod, PaymentMethod.cash);
+        expect(created.tags, contains('feira'));
+        expect(state1.pendingOutboxCount, 1);
+        expect(cashPosted, isFalse);
 
-    test('Paçoca calls /api/v1/assistant/chat in server mode and cites exact numbers locally in demo mode', () async {
-      // Demo deterministic Q&A
-      final demo = demoDataset();
-      final reply = answerFinancialQuestion(
-        'Quanto sobrou este mês?',
-        demo,
-        DateTime(2026, 3),
-      );
-      expect(reply.periodLabel, 'Março 2026');
-      expect(reply.text, contains(r'R$ 2.881,82'));
-      expect(reply.text, contains(r'R$ 4.168,18'));
-      expect(reply.citedFigures, isNotEmpty);
+        // Simulate cold restart from the same encrypted cache before reconnect.
+        final cache2 = EncryptedCacheStore(
+          storage: cacheStorage,
+          keyStorage: keyStorage,
+        );
+        final client2 = GranaPaCaApiClient(
+          transport: transport,
+          baseUrl: Uri.parse(serverUrl),
+          initialTokens: sampleTokens(),
+        );
+        final state2 = AppState(
+          apiClient: client2,
+          encryptedCache: cache2,
+          initialMode: AppMode.server,
+          initialServerUrl: serverUrl,
+          initialOffline: true,
+        );
+        expect(await state2.restoreFromEncryptedCache(), isTrue);
+        expect(state2.pendingOutboxCount, 1);
 
-      // Server mode calls /api/v1/assistant/chat
-      var assistantCalled = false;
-      final transport = _FakeHttpTransport((req) async {
-        if (req.uri.path == '/api/v1/assistant/chat' && req.method == 'POST') {
-          assistantCalled = true;
-          return HttpTransportResponse(
-            statusCode: 200,
-            body: jsonEncode({
-              'id': 'srv-reply-1',
-              'answer': 'Resposta do servidor: saldo de R\$ 1.000,00 em Março 2026.',
-              'periodLabel': 'Março 2026',
-              'citedFigures': const [r'Saldo: R$ 1.000,00'],
-            }),
-          );
-        }
-        return const HttpTransportResponse(statusCode: 404, body: '{}');
-      });
+        // Reconnecting & syncing flushes outbox, replaces synthetic localId with
+        // server UUID and never duplicates when delta returns the same UUID.
+        expect(await state2.syncFromServer(), isTrue);
+        expect(cashPosted, isTrue);
+        expect(state2.pendingOutboxCount, 0);
+        final matching = state2.effectiveTransactions
+            .where((t) => t.description == 'Feira orgânica')
+            .toList();
+        expect(matching.length, 1);
+        expect(matching.first.pendingSync, isFalse);
+        expect(state2.transactionUuidFor(matching.first.id), cashUuid);
 
-      final client = GranaPaCaApiClient(
-        transport: transport,
-        baseUrl: Uri.parse('https://toca.local'),
-        initialTokens: AuthTokens(
-          accessToken: 'tok-ai',
-          refreshToken: 'ref-ai',
-          expiresAt: DateTime(2026, 3, 29),
-          sessionId: 's-ai',
-          owner: const OwnerSummary(
-            id: 'o1',
-            householdId: 'h1',
-            email: 'bia@demo.local',
-            displayName: 'Bia',
+        // Validation HTTP 400 must throw and NEVER enqueue into outbox.
+        await expectLater(
+          () => state2.addCashTransaction(
+            description: 'ERRO_400',
+            amountCents: 1200,
+            date: DateTime(2026, 3, 28),
           ),
-        ),
-      );
+          throwsA(isA<ApiException>()),
+        );
+        expect(state2.pendingOutboxCount, 0);
+      },
+    );
 
-      final serverState = AppState(
-        apiClient: client,
-        initialMode: AppMode.server,
-        initialServerUrl: 'https://toca.local',
-      );
-      final serverReply = await serverState.askAssistant(
-        'Quanto sobrou?',
-        month: DateTime(2026, 3),
-      );
-      expect(assistantCalled, isTrue);
-      expect(serverReply.text, contains('Resposta do servidor'));
-    });
+    test(
+      'Paçoca calls /api/v1/assistant/chat with backend #63 schema and cites exact numbers locally in demo mode',
+      () async {
+        // Demo deterministic Q&A
+        final demo = demoDataset();
+        final reply = answerFinancialQuestion(
+          'Quanto sobrou este mês?',
+          demo,
+          DateTime(2026, 3),
+        );
+        expect(reply.periodLabel, 'Março 2026');
+        expect(reply.text, contains(r'R$ 2.881,82'));
+        expect(reply.text, contains(r'R$ 4.168,18'));
+        expect(reply.citedFigures, isNotEmpty);
+
+        // Server mode calls /api/v1/assistant/chat with {message, month}
+        var assistantCalled = false;
+        final transport = _FakeHttpTransport((req) async {
+          if (req.uri.path == '/api/v1/assistant/chat' &&
+              req.method == 'POST') {
+            assistantCalled = true;
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['message'], 'Quanto sobrou?');
+            expect(body['month'], '2026-03');
+            expect(body.containsKey('question'), isFalse);
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'messageId': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                'content':
+                    'Resposta do servidor: saldo de R\$ 1.000,00 em Março 2026.',
+                'periodUsed': '2026-03',
+                'numbersCited': const [
+                  {
+                    'label': 'Saldo',
+                    'amountCents': 100000,
+                    'formatted': r'R$ 1.000,00',
+                  },
+                ],
+                'providerUsed': 'none',
+                'pseudonymized': false,
+                'createdAt': '2026-03-28T15:00:00Z',
+              }),
+            );
+          }
+          return const HttpTransportResponse(statusCode: 404, body: '{}');
+        });
+
+        final client = GranaPaCaApiClient(
+          transport: transport,
+          baseUrl: Uri.parse('https://toca.local'),
+          initialTokens: AuthTokens(
+            accessToken: 'tok-ai',
+            refreshToken: 'ref-ai',
+            expiresAt: DateTime(2026, 3, 29),
+            sessionId: 's-ai',
+            owner: const OwnerSummary(
+              id: 'o1',
+              householdId: 'h1',
+              email: 'bia@demo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        final serverState = AppState(
+          apiClient: client,
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://toca.local',
+        );
+        final serverReply = await serverState.askAssistant(
+          'Quanto sobrou?',
+          month: DateTime(2026, 3),
+        );
+        expect(assistantCalled, isTrue);
+        expect(serverReply.id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+        expect(serverReply.text, contains('Resposta do servidor'));
+        expect(serverReply.periodLabel, '2026-03');
+        expect(serverReply.citedFigures, contains(r'Saldo: R$ 1.000,00'));
+      },
+    );
+
+    test(
+      'aligns Wave 3 server contracts (UUIDs, signed parts, snake_case adjustments, Planning CRUD, RF-21 offline lock, Receipts/Imports/Export)',
+      () async {
+        const txUuid = '11111111-1111-4111-8111-111111111111';
+        const budgetUuid = '22222222-2222-4222-8222-222222222222';
+        const goalUuid = '33333333-3333-4333-8333-333333333333';
+        const alertUuid = '44444444-4444-4444-8444-444444444444';
+        final calledPaths = <String>[];
+
+        final transport = _FakeHttpTransport((req) async {
+          calledPaths.add('${req.method} ${req.uri.path}');
+          if (req.uri.path == '/api/v1/sync/changes') {
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'nextCursor': 'cur-1',
+                'isFullSync': true,
+                'serverTime': '2026-03-28T12:00:00Z',
+                'connections': [
+                  {
+                    'id': 'conn-1',
+                    'institutionName': 'Banco Aurora',
+                    'status': 'connected',
+                  },
+                ],
+                'accounts': [
+                  {
+                    'id': 'acct-1',
+                    'connectionId': 'conn-1',
+                    'name': 'Conta Corrente',
+                    'kind': 'checking',
+                    'openingBalanceCents': 500000,
+                  },
+                ],
+                'transactions': [
+                  {
+                    'id': txUuid,
+                    'accountId': 'acct-1',
+                    'occurredOn': '2026-03-20',
+                    'description': 'Supermercado Bairro',
+                    'amountCents': -10000,
+                    'kind': 'expense',
+                    'category': 'food',
+                    'essentiality': 'essential',
+                  },
+                ],
+              }),
+            );
+          }
+          if (req.method == 'POST' &&
+              req.uri.path == '/api/v1/transactions/$txUuid/adjustments') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['paymentMethod'], 'pix');
+            expect(body['isAtypical'], isTrue);
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'appliedAdjustments': [
+                  {
+                    'id': 'srv-adj-pm',
+                    'transactionId': txUuid,
+                    'fieldName': 'payment_method',
+                    'oldValue': 'debit',
+                    'newValue': 'pix',
+                    'createdAt': '2026-03-28T12:05:00Z',
+                  },
+                  {
+                    'id': 'srv-adj-atyp',
+                    'transactionId': txUuid,
+                    'fieldName': 'is_atypical',
+                    'oldValue': 'false',
+                    'newValue': 'true',
+                    'createdAt': '2026-03-28T12:05:00Z',
+                  },
+                ],
+              }),
+            );
+          }
+          if (req.method == 'PUT' &&
+              req.uri.path == '/api/v1/transactions/$txUuid/tags') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['tags'], ['mercado']);
+            return const HttpTransportResponse(statusCode: 200, body: '{}');
+          }
+          if (req.method == 'PUT' &&
+              req.uri.path == '/api/v1/transactions/$txUuid/splits') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body.containsKey('parts'), isTrue);
+            expect(body.containsKey('splits'), isFalse);
+            final parts = body['parts'] as List<dynamic>;
+            expect(parts.length, 2);
+            expect((parts[0] as Map)['amountCents'], -6000);
+            expect((parts[1] as Map)['amountCents'], -4000);
+            return const HttpTransportResponse(statusCode: 200, body: '{}');
+          }
+          if (req.method == 'POST' &&
+              req.uri.path == '/api/v1/transactions/bulk-adjustments') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['transactionIds'], [txUuid]);
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({'updatedCount': 1, 'adjustmentsInserted': 1}),
+            );
+          }
+          if (req.method == 'PUT' && req.uri.path == '/api/v1/planning/budgets') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['category'], 'food');
+            expect(body['monthLimitCents'], 120000);
+            expect(body['alertThresholdPercent'], 80);
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'id': budgetUuid,
+                'category': 'food',
+                'monthLimitCents': 120000,
+                'alertThresholdPercent': 80,
+                'isActive': true,
+              }),
+            );
+          }
+          if (req.method == 'POST' && req.uri.path == '/api/v1/planning/goals') {
+            return HttpTransportResponse(
+              statusCode: 201,
+              body: jsonEncode({
+                'id': goalUuid,
+                'name': 'Reserva',
+                'targetCents': 500000,
+                'currentCents': 100000,
+              }),
+            );
+          }
+          if (req.method == 'PATCH' &&
+              req.uri.path == '/api/v1/planning/goals/$goalUuid') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['addCents'], 50000);
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'id': goalUuid,
+                'name': 'Reserva',
+                'targetCents': 500000,
+                'currentCents': 150000,
+              }),
+            );
+          }
+          if (req.method == 'POST' &&
+              req.uri.path == '/api/v1/planning/alert-rules') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['expression'], contains('delivery'));
+            expect(body['limitCents'], 30000);
+            expect(body['merchantKeyword'], 'delivery');
+            return HttpTransportResponse(
+              statusCode: 201,
+              body: jsonEncode({
+                'id': alertUuid,
+                'expression': body['expression'],
+                'merchantKeyword': 'delivery',
+                'limitCents': 30000,
+                'isActive': true,
+              }),
+            );
+          }
+          if (req.method == 'DELETE' &&
+              (req.uri.path == '/api/v1/planning/budgets/$budgetUuid' ||
+                  req.uri.path == '/api/v1/planning/goals/$goalUuid' ||
+                  req.uri.path == '/api/v1/planning/alert-rules/$alertUuid')) {
+            return const HttpTransportResponse(statusCode: 204, body: '');
+          }
+          if (req.method == 'PUT' && req.uri.path == '/api/v1/receipts/consent') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['itemAnalysisAccepted'], isTrue);
+            return const HttpTransportResponse(statusCode: 200, body: '{}');
+          }
+          if (req.method == 'POST' &&
+              req.uri.path == '/api/v1/receipts/nfce/parse') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['xml'], contains('<NFe>'));
+            expect(body['transactionId'], txUuid);
+            expect(body['save'], isTrue);
+            return const HttpTransportResponse(statusCode: 200, body: '{"saved":true}');
+          }
+          if (req.method == 'POST' && req.uri.path == '/api/v1/imports/csv') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            expect(body['institutionName'], 'Banco Aurora');
+            expect(body['accountName'], 'Conta Corrente');
+            expect(body['accountKind'], 'checking');
+            return const HttpTransportResponse(
+              statusCode: 200,
+              body: '{"inserted":2}',
+            );
+          }
+          if (req.method == 'GET' &&
+              req.uri.path == '/api/v1/export/transactions.csv') {
+            return const HttpTransportResponse(
+              statusCode: 200,
+              body: 'Data,Descrição\r\n',
+            );
+          }
+          if (req.method == 'GET' &&
+              req.uri.path == '/api/v1/export/backup.json') {
+            return const HttpTransportResponse(
+              statusCode: 200,
+              body: '{"version":1}',
+            );
+          }
+          return const HttpTransportResponse(statusCode: 404, body: '{}');
+        });
+
+        final client = GranaPaCaApiClient(
+          transport: transport,
+          baseUrl: Uri.parse('https://toca.local'),
+          initialTokens: AuthTokens(
+            accessToken: 'tok-c',
+            refreshToken: 'ref-c',
+            expiresAt: DateTime(2026, 3, 29),
+            sessionId: 's-c',
+            owner: const OwnerSummary(
+              id: 'o1',
+              householdId: 'h1',
+              email: 'bia@demo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        final state = AppState(
+          apiClient: client,
+          encryptedCache: EncryptedCacheStore(
+            storage: InMemoryCacheStorage(),
+            keyStorage: InMemoryCacheStorage(),
+          ),
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://toca.local',
+        );
+
+        expect(await state.syncFromServer(), isTrue);
+        final txId = stableTransactionId(txUuid);
+
+        // 1) Adjustments (payment_method + is_atypical + tags)
+        state.adjustTransaction(
+          txId: txId,
+          paymentMethod: PaymentMethod.pix,
+          changePaymentMethod: true,
+          isAtypical: true,
+          changeAtypical: true,
+          tags: const ['mercado'],
+          changeTags: true,
+        );
+        await state.flushPendingMutations();
+        final adjFields = state.adjustmentsFor(txId).map((a) => a.field).toSet();
+        expect(adjFields, contains(AdjustmentField.paymentMethod));
+        expect(adjFields, contains(AdjustmentField.atypical));
+
+        // 2) Splits (signed negative parts)
+        expect(
+          state.replaceSplits(txId, const [
+            TxSplit(description: 'Alimentos', amountCents: 6000),
+            TxSplit(description: 'Limpeza', amountCents: 4000),
+          ]),
+          isTrue,
+        );
+        await state.flushPendingMutations();
+
+        // 3) Bulk adjustments (UUID)
+        expect(
+          state.applyBulkAdjustments(
+            txIds: {txId},
+            category: SpendingCategory.shopping,
+            changeCategory: true,
+          ),
+          1,
+        );
+        await state.flushPendingMutations();
+
+        // 4) Planning CRUD
+        state.upsertBudget(
+          category: SpendingCategory.food,
+          limitCents: 120000,
+        );
+        await state.flushPendingMutations();
+        expect(state.budgets.single.id, budgetUuid);
+
+        state.addGoal(
+          name: 'Reserva',
+          targetCents: 500000,
+          currentCents: 100000,
+        );
+        await state.flushPendingMutations();
+        expect(state.goals.single.id, goalUuid);
+
+        state.contributeToGoal(goalUuid, 50000);
+        await state.flushPendingMutations();
+        expect(state.goals.single.currentCents, 150000);
+
+        state.addSpendingAlertRuleFromText(
+          'me avise quando delivery passar de R\$ 300',
+        );
+        await state.flushPendingMutations();
+        expect(state.spendingAlertRules.single.id, alertUuid);
+
+        state.deleteBudget(budgetUuid);
+        state.deleteGoal(goalUuid);
+        state.deleteSpendingAlertRule(alertUuid);
+        await state.flushPendingMutations();
+        expect(state.budgets, isEmpty);
+        expect(state.goals, isEmpty);
+        expect(state.spendingAlertRules, isEmpty);
+
+        // 5) Receipts consent, NFC-e parse, CSV import & singular exports
+        state.acceptReceiptConsent();
+        await state.flushPendingMutations();
+        await client.submitNfceReceipt(
+          rawInput: '<NFe></NFe>',
+          transactionId: txUuid,
+        );
+        await client.importStatement(
+          format: 'csv',
+          content: '2026-03-20,Teste,-10.00',
+          institutionName: 'Banco Aurora',
+          accountName: 'Conta Corrente',
+        );
+        expect(await client.exportTransactionsCsv(), contains('Data,Descrição'));
+        expect(await client.exportBackupJson(), '{"version":1}');
+
+        expect(
+          calledPaths,
+          containsAll([
+            'POST /api/v1/transactions/$txUuid/adjustments',
+            'PUT /api/v1/transactions/$txUuid/tags',
+            'PUT /api/v1/transactions/$txUuid/splits',
+            'POST /api/v1/transactions/bulk-adjustments',
+            'PUT /api/v1/planning/budgets',
+            'POST /api/v1/planning/goals',
+            'PATCH /api/v1/planning/goals/$goalUuid',
+            'POST /api/v1/planning/alert-rules',
+            'PUT /api/v1/receipts/consent',
+            'POST /api/v1/receipts/nfce/parse',
+            'POST /api/v1/imports/csv',
+            'GET /api/v1/export/transactions.csv',
+            'GET /api/v1/export/backup.json',
+          ]),
+        );
+
+        // 6) RF-21 offline lock blocks Planning mutations
+        final offlineState = AppState(
+          apiClient: client,
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://toca.local',
+          initialOffline: true,
+        );
+        offlineState.upsertBudget(
+          category: SpendingCategory.food,
+          limitCents: 100000,
+        );
+        expect(offlineState.budgets, isEmpty);
+        expect(
+          offlineState.addGoal(name: 'Offline', targetCents: 10000),
+          isNull,
+        );
+        expect(
+          offlineState.addSpendingAlertRuleFromText(
+            'me avise quando delivery passar de R\$ 300',
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      'CSV export neutralizes formula injection on text cells while keeping numeric Valor (R\$) intact',
+      () {
+        final dataset = Dataset(
+          banks: const [Bank('b1', '=CMD|"/C calc"!A0')],
+          accounts: const [
+            Account(
+              id: 'a1',
+              bankId: 'b1',
+              name: '+Conta',
+              kind: AccountKind.checking,
+            ),
+          ],
+          transactions: [
+            Transaction(
+              id: 1,
+              accountId: 'a1',
+              date: DateTime(2026, 3, 25),
+              description: '  =HYPERLINK("https://evil.example")',
+              amountCents: -12050,
+              kind: TxKind.expense,
+              category: SpendingCategory.other,
+              tags: const ['@macro', '-danger'],
+            ),
+          ],
+          today: DateTime(2026, 3, 28),
+        );
+        final effective = resolveEffectiveTransactions(
+          originals: dataset.transactions,
+          rules: const [],
+          adjustments: const [],
+          accountsById: {'a1': dataset.accounts.first},
+        );
+        final csv = buildTransactionsCsv(effective, dataset);
+        final dataLine = csv.trim().split('\r\n')[1];
+        expect(dataLine, contains('"\'  =HYPERLINK(""https://evil.example"")"'));
+        expect(dataLine, contains('"\'=CMD|""/C calc""!A0"'));
+        expect(dataLine, contains("'+Conta"));
+        expect(dataLine, contains("'@macro; -danger"));
+        // Numeric Valor (R$) must NOT get a leading apostrophe
+        expect(dataLine.endsWith('"-120,50"'), isTrue);
+      },
+    );
+
+    test(
+      'BYOK provider switch clears hasApiKey, sends clearApiKey and strips stale Ollama baseUrl',
+      () async {
+        final payloads = <Map<String, dynamic>>[];
+        final transport = _FakeHttpTransport((req) async {
+          if (req.method == 'PUT' && req.uri.path == '/api/v1/assistant/provider') {
+            final body = jsonDecode(req.body!) as Map<String, dynamic>;
+            payloads.add(body);
+            final provider = body['provider'] as String;
+            final clearKey = (body['clearApiKey'] as bool?) ?? false;
+            final hasNewKey = (body['apiKey'] as String?)?.isNotEmpty == true;
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'provider': provider,
+                'model': body['model'] ?? '',
+                'baseUrl': body['baseUrl'],
+                'hasApiKey': provider == 'none' || provider == 'ollama'
+                    ? false
+                    : (hasNewKey || !clearKey),
+              }),
+            );
+          }
+          return const HttpTransportResponse(statusCode: 404, body: '{}');
+        });
+
+        final client = GranaPaCaApiClient(
+          transport: transport,
+          baseUrl: Uri.parse('https://toca.local'),
+          initialTokens: AuthTokens(
+            accessToken: 'tok-byok',
+            refreshToken: 'ref-byok',
+            expiresAt: DateTime(2026, 3, 29),
+            sessionId: 's-byok',
+            owner: const OwnerSummary(
+              id: 'o1',
+              householdId: 'h1',
+              email: 'bia@demo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        final state = AppState(
+          apiClient: client,
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://toca.local',
+        );
+
+        // 1) Configure Ollama with local baseUrl
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(
+            provider: AiProviderKind.ollama,
+            model: 'qwen2.5:7b',
+            endpointUrl: 'http://ollama:11434',
+          ),
+        );
+        expect(payloads.last['baseUrl'], 'http://ollama:11434');
+        expect(state.aiProviderConfig.hasApiKey, isFalse);
+
+        // 2) Switch to OpenAI with key: stale Ollama baseUrl MUST NOT be sent
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(
+            provider: AiProviderKind.openai,
+            model: 'gpt-4o-mini',
+            endpointUrl: 'http://ollama:11434',
+          ),
+          apiKey: 'fake-provider-token-for-unit-test',
+        );
+        expect(payloads.last.containsKey('baseUrl'), isFalse);
+        expect(payloads.last['apiKey'], 'fake-provider-token-for-unit-test');
+        expect(state.aiProviderConfig.hasApiKey, isTrue);
+
+        // 3) Switch to Google without new key: MUST send clearApiKey: true and reset hasApiKey
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(
+            provider: AiProviderKind.google,
+            model: 'gemini-2.5-flash-lite',
+          ),
+        );
+        expect(payloads.last['clearApiKey'], isTrue);
+        expect(state.aiProviderConfig.hasApiKey, isFalse);
+
+        // 4) Switch back to none: MUST clear model, endpointUrl and API key
+        await state.updateAiProviderConfig(
+          const AiProviderConfig(provider: AiProviderKind.none),
+        );
+        expect(payloads.last['clearApiKey'], isTrue);
+        expect(payloads.last['model'], '');
+        expect(state.aiProviderConfig.hasApiKey, isFalse);
+      },
+    );
+
+    test(
+      'receiptItemsToSplits maintains exact RN-24 sum under heavy discounts and parseBrlToCents rejects overflow',
+      () {
+        const heavyItems = [
+          ReceiptItem(description: 'Item A', amountCents: 15000),
+          ReceiptItem(description: 'Item B', amountCents: 12000),
+          ReceiptItem(description: 'Item C', amountCents: 11000),
+          ReceiptItem(description: 'Item D', amountCents: 7000),
+          ReceiptItem(description: 'Item E', amountCents: 5000),
+        ];
+
+        // Heavy discount: sum 50000 -> target 1000
+        final discounted = receiptItemsToSplits(heavyItems, -1000);
+        expect(validateSplitTotal(-1000, discounted), isTrue);
+        expect(discounted.every((s) => s.amountCents > 0), isTrue);
+
+        // Extreme discount: 5 items -> target 6 cents (proportional floors < 1)
+        final tiny = receiptItemsToSplits(heavyItems, -6);
+        expect(validateSplitTotal(-6, tiny), isTrue);
+        expect(tiny.every((s) => s.amountCents >= 1), isTrue);
+
+        // More items than cents: 5 items -> target 3 cents
+        final ultraTiny = receiptItemsToSplits(heavyItems, -3);
+        expect(validateSplitTotal(-3, ultraTiny), isTrue);
+        expect(ultraTiny.length, 3);
+        expect(ultraTiny.every((s) => s.amountCents == 1), isTrue);
+
+        // Large values without JS/Web integer overflow
+        const largeItems = [
+          ReceiptItem(description: 'Equipamento 1', amountCents: 400000000),
+          ReceiptItem(description: 'Equipamento 2', amountCents: 300000000),
+        ];
+        final largeSplits = receiptItemsToSplits(largeItems, -500000000);
+        expect(validateSplitTotal(-500000000, largeSplits), isTrue);
+
+        // parseBrlToCents overflow protection
+        expect(parseBrlToCents('999999999999999999999,99'), isNull);
+        expect(parseBrlToCents('100000000000000000,00'), isNull);
+        expect(parseBrlToCents('1.234.567,89'), 123456789);
+      },
+    );
   });
 
   group('Wave 3 UI Flows: Cash Entry, Filters, Splits, Bulk Edit', () {

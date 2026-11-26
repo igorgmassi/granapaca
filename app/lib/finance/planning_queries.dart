@@ -10,8 +10,12 @@ import 'model.dart';
 import 'queries.dart';
 import 'taxonomy.dart';
 
-/// Parses a BRL or decimal numeric string into exact positive integer cents
-/// without floating-point drift (ADR-013).
+/// Maximum safe integer cent value (`2^53 - 1`) supported identically across
+/// native 64-bit Dart VM and Web/JS runtimes without silent overflow.
+const int maxSafeCents = 9007199254740991;
+
+/// Parses a BRL or decimal numeric string into exact integer cents
+/// without floating-point drift or silent integer overflow (ADR-013).
 /// Supports `"300"`, `"300,50"`, `"1.200,50"`, `"R$ 49,90"`, and `"49.90"`.
 int? parseBrlToCents(String raw) {
   var cleaned = raw
@@ -66,8 +70,8 @@ int? parseBrlToCents(String raw) {
   if (!RegExp(r'^\d+$').hasMatch(intPart)) return null;
   if (fracPart.isNotEmpty && !RegExp(r'^\d+$').hasMatch(fracPart)) return null;
 
-  final reais = int.tryParse(intPart);
-  if (reais == null) return null;
+  final bigReais = BigInt.tryParse(intPart);
+  if (bigReais == null) return null;
 
   final paddedFrac = fracPart.padRight(2, '0');
   final centsDigits = paddedFrac.substring(0, 2);
@@ -76,7 +80,10 @@ int? parseBrlToCents(String raw) {
     cents += 1;
   }
 
-  final total = reais * 100 + cents;
+  final bigTotal = bigReais * BigInt.from(100) + BigInt.from(cents);
+  if (bigTotal > BigInt.from(maxSafeCents)) return null;
+
+  final total = bigTotal.toInt();
   return negative ? -total : total;
 }
 
@@ -803,33 +810,66 @@ List<TxSplit> receiptItemsToSplits(
   }
 
   // If items sum exceeds target (e.g. receipt-level discount), distribute
-  // proportionally using exact integer floor + remainder cents on largest item.
+  // proportionally using BigInt exact arithmetic so the split sum ALWAYS
+  // equals target in exact cents (RN-24) and no part becomes zero/negative.
+  if (target <= 0) return const [];
+
+  // When there are more items than total cents (e.g. 5 items under a discount
+  // leaving R$ 0,03), consolidate to the top `target` largest items at 1 cent
+  // each so every part stays positive and sums to exact `target`.
+  if (result.length > target) {
+    final sorted = [...result]
+      ..sort((a, b) => b.amountCents.compareTo(a.amountCents));
+    return List.unmodifiable([
+      for (var i = 0; i < target; i++) sorted[i].copyWith(amountCents: 1),
+    ]);
+  }
+
+  final bigTarget = BigInt.from(target);
+  final bigSum = BigInt.from(sum);
   final scaled = <TxSplit>[];
   var allocated = 0;
   for (var i = 0; i < result.length; i++) {
     final part = result[i];
-    final proportional = math.max(1, (part.amountCents * target) ~/ sum);
+    final exactFloor = ((BigInt.from(part.amountCents) * bigTarget) ~/ bigSum)
+        .toInt();
+    final proportional = math.max(1, exactFloor);
     allocated += proportional;
     scaled.add(part.copyWith(amountCents: proportional));
   }
-  final diff = target - allocated;
-  if (diff != 0 && scaled.isNotEmpty) {
-    // Apply exact integer remainder to the largest split so total matches 100%.
+
+  var diff = target - allocated;
+  if (diff > 0) {
     var largestIdx = 0;
     for (var i = 1; i < scaled.length; i++) {
       if (scaled[i].amountCents > scaled[largestIdx].amountCents) {
         largestIdx = i;
       }
     }
-    final adjusted = scaled[largestIdx].amountCents + diff;
-    if (adjusted > 0) {
-      scaled[largestIdx] = scaled[largestIdx].copyWith(amountCents: adjusted);
+    scaled[largestIdx] = scaled[largestIdx].copyWith(
+      amountCents: scaled[largestIdx].amountCents + diff,
+    );
+  } else if (diff < 0) {
+    // Reduce largest parts down to at most 1 cent each until exact sum matches.
+    // Because scaled.length <= target, sum(amountCents - 1) >= -diff always.
+    var excess = -diff;
+    final order = List<int>.generate(scaled.length, (i) => i)
+      ..sort((a, b) => scaled[b].amountCents.compareTo(scaled[a].amountCents));
+    for (final idx in order) {
+      if (excess <= 0) break;
+      final available = scaled[idx].amountCents - 1;
+      if (available <= 0) continue;
+      final take = math.min(available, excess);
+      scaled[idx] = scaled[idx].copyWith(
+        amountCents: scaled[idx].amountCents - take,
+      );
+      excess -= take;
     }
   }
   return List.unmodifiable(scaled);
 }
 
-String _csvEscape(String value) {
+String _csvQuote(String value) {
   final needsQuotes =
       value.contains(',') ||
       value.contains('"') ||
@@ -839,7 +879,21 @@ String _csvEscape(String value) {
   return '"${value.replaceAll('"', '""')}"';
 }
 
-/// Builds an RFC 4180 compliant pt-BR CSV export of [transactions].
+/// Neutralizes spreadsheet formula injection (`=`, `+`, `-`, `@`, `\t`, `\r`)
+/// on text columns (including after leading whitespace) before RFC 4180 quoting.
+String _csvEscapeText(String value) {
+  final trimmedLeft = value.trimLeft();
+  final dangerous =
+      value.startsWith('\t') ||
+      value.startsWith('\r') ||
+      (trimmedLeft.isNotEmpty &&
+          const {'=', '+', '-', '@'}.contains(trimmedLeft[0]));
+  return _csvQuote(dangerous ? "'$value" : value);
+}
+
+/// Builds an RFC 4180 compliant pt-BR CSV export of [transactions] with
+/// formula-injection neutralization on text columns while keeping numeric
+/// values intact.
 String buildTransactionsCsv(
   Iterable<EffectiveTransaction> transactions,
   Dataset dataset,
@@ -857,7 +911,7 @@ String buildTransactionsCsv(
         '${tx.amountCents < 0 ? '-' : ''}${abs ~/ 100},'
         '${(abs % 100).toString().padLeft(2, '0')}';
 
-    final row = [
+    final textCells = [
       formatFullDate(tx.date),
       tx.description,
       tx.original.description,
@@ -869,8 +923,8 @@ String buildTransactionsCsv(
       tx.essentiality?.label ?? '',
       tx.isAtypical ? 'Sim' : 'Não',
       tx.tags.join('; '),
-      decimalValue,
-    ].map(_csvEscape).join(',');
+    ].map(_csvEscapeText);
+    final row = [...textCells, _csvQuote(decimalValue)].join(',');
     buffer.write('$row\r\n');
   }
   return buffer.toString();

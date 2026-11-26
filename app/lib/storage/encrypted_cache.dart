@@ -68,6 +68,7 @@ class CachedSnapshot {
     this.adjustments = const [],
     this.alerts = const [],
     this.transactionUuidById = const {},
+    this.pendingOutbox = const [],
   });
 
   final String serverUrl;
@@ -82,6 +83,7 @@ class CachedSnapshot {
   final List<TxAdjustment> adjustments;
   final List<SyncAlertItem> alerts;
   final Map<int, String> transactionUuidById;
+  final List<PendingOutboxMutation> pendingOutbox;
 
   Dataset toDataset() => Dataset(
     banks: banks,
@@ -140,6 +142,10 @@ class CachedSnapshot {
           .map(SyncAlertItem.fromJson)
           .toList(growable: false),
       transactionUuidById: txUuidMap,
+      pendingOutbox: ((json['pendingOutbox'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(outboxMutationFromJson)
+          .toList(growable: false),
     );
   }
 
@@ -158,6 +164,9 @@ class CachedSnapshot {
     'transactionUuidById': {
       for (final e in transactionUuidById.entries) '${e.key}': e.value,
     },
+    'pendingOutbox': [
+      for (final m in pendingOutbox) outboxMutationToJson(m),
+    ],
   };
 }
 

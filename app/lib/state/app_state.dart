@@ -263,8 +263,15 @@ class AppState extends ChangeNotifier {
   List<SyncCardBillItem> get syncedCardBills =>
       List.unmodifiable(_syncedCardBills);
 
-  /// Waits for all queued server-mode mutations (adjustments/rules) to finish.
+  /// Waits for all queued server-mode mutations (adjustments/rules/planning)
+  /// to finish.
   Future<void> flushPendingMutations() => _mutationChain;
+
+  /// Resolves the backend UUID for a local integer transaction ID, if known.
+  String? transactionUuidFor(int txId) => _txIdToUuid[txId];
+
+  static bool _isRetryableOutboxError(ApiException error) =>
+      error.isOffline || error.statusCode == null || error.statusCode! >= 500;
 
   /// Cold-start initialization: initializes app lock hardware checks and
   /// restores the encrypted offline cache for a previously configured server
@@ -832,18 +839,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// RF-44: replays pending offline cash-entry mutations to the server.
+  /// RF-44: replays pending offline cash-entry mutations to the server using
+  /// idempotent `clientMutationId`, replacing synthetic local IDs with the
+  /// canonical server transaction so subsequent delta sync never duplicates it.
   Future<int> flushPendingOutbox() async {
     if (isDemoMode || _outbox.isEmpty || !isAuthenticated) return 0;
     var flushed = 0;
     final remaining = <PendingOutboxMutation>[];
-    final flushedLocalIds = <int>{};
+    final replacedByLocalId = <int, Transaction>{};
+    final droppedLocalIds = <int>{};
 
     for (final mutation in _outbox) {
       if (mutation.type == OutboxMutationType.cashEntry) {
         try {
           final p = mutation.payload;
-          await _apiClient.createCashTransaction(
+          final clientMutationId =
+              (p['clientMutationId'] as String?) ?? mutation.id;
+          final created = await _apiClient.createCashTransaction(
             date: DateTime.parse(p['date'] as String),
             description: p['description'] as String,
             amountCents: (p['amountCents'] as num).toInt(),
@@ -852,15 +864,44 @@ class AppState extends ChangeNotifier {
             tags: ((p['tags'] as List<dynamic>?) ?? const [])
                 .map((e) => e.toString())
                 .toList(growable: false),
+            clientMutationId: clientMutationId,
           );
+          final serverTx = created.transaction;
+          if (created.serverUuid != null) {
+            _txIdToUuid[serverTx.id] = created.serverUuid!;
+          }
+          final resolvedAccountId =
+              serverTx.accountId.isNotEmpty &&
+                  _dataset.accounts.any((a) => a.id == serverTx.accountId)
+              ? serverTx.accountId
+              : cashAccountId;
           flushed++;
-          flushedLocalIds.add(mutation.localTxId);
+          replacedByLocalId[mutation.localTxId] = Transaction(
+            id: serverTx.id,
+            accountId: resolvedAccountId,
+            date: serverTx.date,
+            description: serverTx.description,
+            amountCents: serverTx.amountCents,
+            kind: serverTx.kind,
+            category: serverTx.category,
+            essentiality: serverTx.essentiality,
+            paymentMethod: serverTx.paymentMethod ?? PaymentMethod.cash,
+            tags: serverTx.tags,
+            isAtypical: serverTx.isAtypical,
+            splits: serverTx.splits,
+            isCashEntry: true,
+            pendingSync: false,
+          );
         } on ApiException catch (error) {
-          if (error.isOffline) {
-            _isOffline = true;
+          if (_isRetryableOutboxError(error)) {
+            if (error.isOffline) {
+              _isOffline = true;
+            }
             remaining.add(mutation);
           } else {
-            remaining.add(mutation);
+            // Non-retryable 4xx validation error: drop from outbox and surface.
+            _lastMutationError = error.message;
+            droppedLocalIds.add(mutation.localTxId);
           }
         }
       }
@@ -870,30 +911,29 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(remaining);
 
-    if (flushedLocalIds.isNotEmpty) {
-      final updatedTxs = [
-        for (final t in _dataset.transactions)
-          flushedLocalIds.contains(t.id)
-              ? Transaction(
-                  id: t.id,
-                  accountId: t.accountId,
-                  date: t.date,
-                  description: t.description,
-                  amountCents: t.amountCents,
-                  kind: t.kind,
-                  category: t.category,
-                  essentiality: t.essentiality,
-                  installment: t.installment,
-                  installmentCount: t.installmentCount,
-                  paymentMethod: t.paymentMethod,
-                  tags: t.tags,
-                  isAtypical: t.isAtypical,
-                  splits: t.splits,
-                  isCashEntry: t.isCashEntry,
-                  pendingSync: false,
-                )
-              : t,
-      ];
+    if (replacedByLocalId.isNotEmpty || droppedLocalIds.isNotEmpty) {
+      final serverIdsAdded = <int>{};
+      final updatedTxs = <Transaction>[];
+      for (final t in _dataset.transactions) {
+        if (droppedLocalIds.contains(t.id)) {
+          continue;
+        }
+        final replacement = replacedByLocalId[t.id];
+        if (replacement != null) {
+          if (serverIdsAdded.add(replacement.id)) {
+            updatedTxs.add(replacement);
+          }
+          continue;
+        }
+        if (serverIdsAdded.add(t.id)) {
+          updatedTxs.add(t);
+        }
+      }
+      for (final replacement in replacedByLocalId.values) {
+        if (serverIdsAdded.add(replacement.id)) {
+          updatedTxs.add(replacement);
+        }
+      }
       _dataset = Dataset(
         banks: _dataset.banks,
         accounts: _dataset.accounts,
@@ -901,6 +941,7 @@ class AppState extends ChangeNotifier {
         today: _dataset.today,
       );
       _recompute();
+      await _persistEncryptedCache();
       notifyListeners();
     }
     return flushed;
@@ -978,6 +1019,14 @@ class AppState extends ChangeNotifier {
       _adjustments
         ..clear()
         ..addAll(snapshot.adjustments);
+      _outbox
+        ..clear()
+        ..addAll(snapshot.pendingOutbox);
+      for (final m in _outbox) {
+        if (m.localTxId >= _localTxSeq) {
+          _localTxSeq = m.localTxId + 1;
+        }
+      }
       if (snapshot.alerts.isNotEmpty) {
         _alerts = snapshot.alerts
             .where((a) => !a.isResolved)
@@ -1174,6 +1223,7 @@ class AppState extends ChangeNotifier {
       adjustments: _adjustments,
       alerts: [for (final a in _alerts) a.toSyncItem()],
       transactionUuidById: Map<int, String>.from(_txIdToUuid),
+      pendingOutbox: List<PendingOutboxMutation>.from(_outbox),
     );
     await _encryptedCache.saveSnapshot(snapshot);
   }
@@ -1384,8 +1434,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// RF-44: Quick-entry for physical cash spending. Works instantaneously in
-  /// demo mode AND while offline in server mode by queueing a
-  /// [PendingOutboxMutation] that flushes on the next sync.
+  /// demo mode AND while offline in server mode by queueing a persisted
+  /// [PendingOutboxMutation] with idempotent `clientMutationId` that flushes on
+  /// the next sync. Validation errors (HTTP 4xx) are surfaced and never queued.
   Future<EffectiveTransaction> addCashTransaction({
     required String description,
     required int amountCents,
@@ -1400,53 +1451,88 @@ class AppState extends ChangeNotifier {
         : description.trim();
     final cleanedTags = decodeTags(encodeTags(tags));
     final localId = _localTxSeq++;
+    final mutationSeq = _outboxSeq++;
+    final clientMutationId =
+        'cash-${DateTime.now().microsecondsSinceEpoch}-$mutationSeq';
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final signedAmount = -amountCents.abs();
     var queuedOffline = isServerMode && _isOffline;
+    Transaction? serverCreatedTx;
 
     if (isServerMode && !_isOffline && isAuthenticated) {
       try {
-        await _apiClient.createCashTransaction(
+        final created = await _apiClient.createCashTransaction(
           date: normalizedDate,
           description: cleanedDesc,
           amountCents: amountCents.abs(),
           category: category,
           essentiality: essentiality,
           tags: cleanedTags,
+          clientMutationId: clientMutationId,
+        );
+        final serverTx = created.transaction;
+        if (created.serverUuid != null) {
+          _txIdToUuid[serverTx.id] = created.serverUuid!;
+        }
+        final resolvedAccountId =
+            serverTx.accountId.isNotEmpty &&
+                _dataset.accounts.any((a) => a.id == serverTx.accountId)
+            ? serverTx.accountId
+            : cashAccountId;
+        serverCreatedTx = Transaction(
+          id: serverTx.id,
+          accountId: resolvedAccountId,
+          date: serverTx.date,
+          description: serverTx.description,
+          amountCents: serverTx.amountCents,
+          kind: serverTx.kind,
+          category: serverTx.category,
+          essentiality: serverTx.essentiality,
+          paymentMethod: serverTx.paymentMethod ?? PaymentMethod.cash,
+          tags: serverTx.tags,
+          isAtypical: serverTx.isAtypical,
+          splits: serverTx.splits,
+          isCashEntry: true,
+          pendingSync: false,
         );
       } on ApiException catch (error) {
-        if (error.isOffline) {
-          _isOffline = true;
+        if (_isRetryableOutboxError(error)) {
+          if (error.isOffline) {
+            _isOffline = true;
+          }
           queuedOffline = true;
         } else {
-          queuedOffline = true;
+          rethrow;
         }
       }
     }
 
-    final tx = Transaction(
-      id: localId,
-      accountId: cashAccountId,
-      date: normalizedDate,
-      description: cleanedDesc,
-      amountCents: signedAmount,
-      kind: TxKind.expense,
-      category: category,
-      essentiality: essentiality,
-      paymentMethod: PaymentMethod.cash,
-      tags: cleanedTags,
-      isCashEntry: true,
-      pendingSync: queuedOffline,
-    );
+    final tx =
+        serverCreatedTx ??
+        Transaction(
+          id: localId,
+          accountId: cashAccountId,
+          date: normalizedDate,
+          description: cleanedDesc,
+          amountCents: signedAmount,
+          kind: TxKind.expense,
+          category: category,
+          essentiality: essentiality,
+          paymentMethod: PaymentMethod.cash,
+          tags: cleanedTags,
+          isCashEntry: true,
+          pendingSync: queuedOffline,
+        );
 
     if (queuedOffline) {
       _outbox.add(
         PendingOutboxMutation(
-          id: 'outbox-${_outboxSeq++}',
+          id: 'outbox-$mutationSeq',
           type: OutboxMutationType.cashEntry,
           createdAt: DateTime.now(),
-          localTxId: localId,
+          localTxId: tx.id,
           payload: {
+            'clientMutationId': clientMutationId,
             'date': normalizedDate.toIso8601String(),
             'description': cleanedDesc,
             'amountCents': amountCents.abs(),
@@ -1461,13 +1547,20 @@ class AppState extends ChangeNotifier {
     _dataset = Dataset(
       banks: _dataset.banks,
       accounts: _dataset.accounts,
-      transactions: [..._dataset.transactions, tx],
+      transactions: [
+        for (final existing in _dataset.transactions)
+          if (existing.id != tx.id) existing,
+        tx,
+      ],
       today: _dataset.today,
     );
     _recompute();
     _evaluateSpendingAlertsForMonth(DateTime(date.year, date.month));
+    if (isServerMode) {
+      await _persistEncryptedCache();
+    }
     notifyListeners();
-    return effectiveById(localId);
+    return effectiveById(tx.id);
   }
 
   /// Appends immutable manual adjustments for only the fields that actually
@@ -1571,21 +1664,37 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       if (_shouldPersistToServer) {
         final serverTxId = _txIdToUuid[txId] ?? '$txId';
+        final nonTagAdjustments = created
+            .where((a) => a.field != AdjustmentField.tags)
+            .toList(growable: false);
+        final tagAdjustment = created
+            .where((a) => a.field == AdjustmentField.tags)
+            .firstOrNull;
         final createdIds = {for (final a in created) a.id};
+        final nonTagIds = {for (final a in nonTagAdjustments) a.id};
+        final cleanedTags = tags == null ? null : decodeTags(encodeTags(tags));
+
         _enqueueServerMutation(() async {
           try {
-            final persisted = await _apiClient.applyTransactionAdjustments(
-              transactionId: serverTxId,
-              category: changeCategory ? category : null,
-              essentiality: changeEssentiality ? essentiality : null,
-              kind: changeKind ? kind : null,
-              description: cleanedDesc,
-              reason: trimmedReason,
-            );
-            if (persisted.isNotEmpty) {
-              _adjustments.removeWhere((a) => createdIds.contains(a.id));
-              _adjustments.addAll(persisted);
-              _recompute();
+            if (nonTagAdjustments.isNotEmpty) {
+              final persisted = await _apiClient.applyTransactionAdjustments(
+                transactionId: serverTxId,
+                category: changeCategory ? category : null,
+                essentiality: changeEssentiality ? essentiality : null,
+                kind: changeKind ? kind : null,
+                description: cleanedDesc,
+                paymentMethod: changePaymentMethod ? paymentMethod : null,
+                isAtypical: changeAtypical ? isAtypical : null,
+                reason: trimmedReason,
+              );
+              if (persisted.isNotEmpty) {
+                _adjustments.removeWhere((a) => nonTagIds.contains(a.id));
+                _adjustments.addAll(persisted);
+                _recompute();
+              }
+            }
+            if (tagAdjustment != null && cleanedTags != null) {
+              await _apiClient.updateTransactionTags(serverTxId, cleanedTags);
             }
             await _persistEncryptedCache();
             notifyListeners();
@@ -1605,10 +1714,30 @@ class AppState extends ChangeNotifier {
   bool replaceSplits(int txId, List<TxSplit> splits) {
     if (!canEditTransactions) return false;
     final current = effectiveById(txId);
+    final previousSplits = _splitsByTxId[txId];
     if (splits.isEmpty) {
       _splitsByTxId.remove(txId);
       _recompute();
       notifyListeners();
+      if (_shouldPersistToServer) {
+        final serverTxId = _txIdToUuid[txId] ?? '$txId';
+        _enqueueServerMutation(() async {
+          try {
+            await _apiClient.replaceTransactionSplits(
+              transactionId: serverTxId,
+              transactionAmountCents: current.amountCents,
+              splits: const [],
+            );
+            await _persistEncryptedCache();
+          } on ApiException {
+            if (previousSplits != null) {
+              _splitsByTxId[txId] = previousSplits;
+            }
+            _recompute();
+            rethrow;
+          }
+        });
+      }
       return true;
     }
     if (!validateSplitTotal(current.amountCents, splits)) {
@@ -1627,6 +1756,27 @@ class AppState extends ChangeNotifier {
       DateTime(current.date.year, current.date.month),
     );
     notifyListeners();
+    if (_shouldPersistToServer) {
+      final serverTxId = _txIdToUuid[txId] ?? '$txId';
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.replaceTransactionSplits(
+            transactionId: serverTxId,
+            transactionAmountCents: current.amountCents,
+            splits: normalized,
+          );
+          await _persistEncryptedCache();
+        } on ApiException {
+          if (previousSplits != null) {
+            _splitsByTxId[txId] = previousSplits;
+          } else {
+            _splitsByTxId.remove(txId);
+          }
+          _recompute();
+          rethrow;
+        }
+      });
+    }
     return true;
   }
 
@@ -1650,6 +1800,8 @@ class AppState extends ChangeNotifier {
     final trimmedReason = (reason == null || reason.trim().isEmpty)
         ? 'Correção em lote'
         : reason.trim();
+    final createdIds = <String>{};
+    final affectedTxIds = <int>{};
 
     for (final txId in txIds) {
       final current = effectiveById(txId);
@@ -1657,9 +1809,10 @@ class AppState extends ChangeNotifier {
 
       void addField(AdjustmentField field, String? oldVal, String? newVal) {
         if (oldVal == newVal) return;
+        final id = 'adj-${_adjustmentSeq++}';
         _adjustments.add(
           TxAdjustment(
-            id: 'adj-${_adjustmentSeq++}',
+            id: id,
             txId: txId,
             field: field,
             oldValue: oldVal,
@@ -1668,6 +1821,7 @@ class AppState extends ChangeNotifier {
             timestamp: now,
           ),
         );
+        createdIds.add(id);
         changedThis = true;
       }
 
@@ -1699,13 +1853,38 @@ class AppState extends ChangeNotifier {
           isAtypical ? 'true' : 'false',
         );
       }
-      if (changedThis) updatedCount++;
+      if (changedThis) {
+        updatedCount++;
+        affectedTxIds.add(txId);
+      }
     }
 
     if (updatedCount > 0) {
       _recompute();
       _evaluateSpendingAlertsForMonth(_spendingMonth);
       notifyListeners();
+      if (_shouldPersistToServer) {
+        final serverTxUuids = [
+          for (final id in affectedTxIds) _txIdToUuid[id] ?? '$id',
+        ];
+        _enqueueServerMutation(() async {
+          try {
+            await _apiClient.applyBulkAdjustments(
+              transactionIds: serverTxUuids,
+              category: changeCategory ? category : null,
+              essentiality: changeEssentiality ? essentiality : null,
+              paymentMethod: changePaymentMethod ? paymentMethod : null,
+              isAtypical: changeAtypical ? isAtypical : null,
+              reason: trimmedReason,
+            );
+            await _persistEncryptedCache();
+          } on ApiException {
+            _adjustments.removeWhere((a) => createdIds.contains(a.id));
+            _recompute();
+            rethrow;
+          }
+        });
+      }
     }
     return updatedCount;
   }
@@ -1903,38 +2082,79 @@ class AppState extends ChangeNotifier {
     required int limitCents,
     double alertThreshold = 0.8,
   }) {
-    if (limitCents <= 0) return;
+    if (!canEditTransactions || limitCents <= 0) return;
     final existingIdx = _budgets.indexWhere((b) => b.category == category);
+    final previous = existingIdx >= 0 ? _budgets[existingIdx] : null;
+    final optimistic = previous != null
+        ? previous.copyWith(
+            limitCents: limitCents,
+            alertThreshold: alertThreshold,
+          )
+        : Budget(
+            id: 'budget-${_planningSeq++}',
+            category: category,
+            limitCents: limitCents,
+            alertThreshold: alertThreshold,
+          );
     if (existingIdx >= 0) {
-      _budgets[existingIdx] = _budgets[existingIdx].copyWith(
-        limitCents: limitCents,
-        alertThreshold: alertThreshold,
-      );
+      _budgets[existingIdx] = optimistic;
     } else {
-      _budgets.add(
-        Budget(
-          id: 'budget-${_planningSeq++}',
-          category: category,
-          limitCents: limitCents,
-          alertThreshold: alertThreshold,
-        ),
-      );
+      _budgets.add(optimistic);
     }
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.upsertBudget(optimistic);
+          final idx = _budgets.indexWhere((b) => b.id == optimistic.id);
+          if (idx != -1) {
+            _budgets[idx] = persisted;
+          }
+          notifyListeners();
+        } on ApiException {
+          final idx = _budgets.indexWhere((b) => b.id == optimistic.id);
+          if (previous != null) {
+            if (idx != -1) {
+              _budgets[idx] = previous;
+            } else {
+              _budgets.add(previous);
+            }
+          } else if (idx != -1) {
+            _budgets.removeAt(idx);
+          }
+          rethrow;
+        }
+      });
+    }
   }
 
   void deleteBudget(String budgetId) {
-    final before = _budgets.length;
-    _budgets.removeWhere((b) => b.id == budgetId);
-    if (_budgets.length != before) notifyListeners();
+    if (!canEditTransactions) return;
+    final index = _budgets.indexWhere((b) => b.id == budgetId);
+    if (index == -1) return;
+    final removed = _budgets.removeAt(index);
+    notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.deleteBudget(budgetId);
+        } on ApiException {
+          _budgets.insert(index.clamp(0, _budgets.length), removed);
+          rethrow;
+        }
+      });
+    }
   }
 
-  Goal addGoal({
+  Goal? addGoal({
     required String name,
     required int targetCents,
     int currentCents = 0,
     DateTime? targetDate,
   }) {
+    if (!canEditTransactions) return null;
     final goal = Goal(
       id: 'goal-${_planningSeq++}',
       name: name.trim(),
@@ -1944,28 +2164,82 @@ class AppState extends ChangeNotifier {
     );
     _goals.add(goal);
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.createGoal(goal);
+          final idx = _goals.indexWhere((g) => g.id == goal.id);
+          if (idx != -1) {
+            _goals[idx] = persisted;
+          }
+          notifyListeners();
+        } on ApiException {
+          _goals.removeWhere((g) => g.id == goal.id);
+          rethrow;
+        }
+      });
+    }
     return goal;
   }
 
   void contributeToGoal(String goalId, int amountCents) {
-    if (amountCents <= 0) return;
+    if (!canEditTransactions || amountCents <= 0) return;
     final idx = _goals.indexWhere((g) => g.id == goalId);
     if (idx == -1) return;
-    final g = _goals[idx];
-    _goals[idx] = g.copyWith(currentCents: g.currentCents + amountCents);
+    final previous = _goals[idx];
+    _goals[idx] = previous.copyWith(
+      currentCents: previous.currentCents + amountCents,
+    );
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.contributeGoal(
+            goalId,
+            amountCents,
+          );
+          final currentIdx = _goals.indexWhere((g) => g.id == goalId);
+          if (currentIdx != -1) {
+            _goals[currentIdx] = persisted;
+          }
+          notifyListeners();
+        } on ApiException {
+          final currentIdx = _goals.indexWhere((g) => g.id == goalId);
+          if (currentIdx != -1) {
+            _goals[currentIdx] = previous;
+          }
+          rethrow;
+        }
+      });
+    }
   }
 
   void deleteGoal(String goalId) {
-    final before = _goals.length;
-    _goals.removeWhere((g) => g.id == goalId);
-    if (_goals.length != before) notifyListeners();
+    if (!canEditTransactions) return;
+    final index = _goals.indexWhere((g) => g.id == goalId);
+    if (index == -1) return;
+    final removed = _goals.removeAt(index);
+    notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.deleteGoal(goalId);
+        } on ApiException {
+          _goals.insert(index.clamp(0, _goals.length), removed);
+          rethrow;
+        }
+      });
+    }
   }
 
   /// Parses a natural-language alert expression, registers the rule, and
   /// immediately raises an in-app alert if the active spending month already
   /// exceeds the threshold.
   SpendingAlertRule? addSpendingAlertRuleFromText(String rawExpression) {
+    if (!canEditTransactions) return null;
     final parsed = parseSpendingAlertRule(
       rawExpression,
       id: 'alert-rule-${_planningSeq++}',
@@ -1974,10 +2248,27 @@ class AppState extends ChangeNotifier {
     _spendingAlertRules.add(parsed);
     _evaluateSpendingAlertsForMonth(_spendingMonth);
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.createSpendingAlertRule(parsed);
+          final idx = _spendingAlertRules.indexWhere((r) => r.id == parsed.id);
+          if (idx != -1) {
+            _spendingAlertRules[idx] = persisted;
+          }
+          notifyListeners();
+        } on ApiException {
+          _spendingAlertRules.removeWhere((r) => r.id == parsed.id);
+          rethrow;
+        }
+      });
+    }
     return parsed;
   }
 
   void toggleSpendingAlertRule(String ruleId, bool active) {
+    if (!canEditTransactions) return;
     final idx = _spendingAlertRules.indexWhere((r) => r.id == ruleId);
     if (idx == -1) return;
     _spendingAlertRules[idx] = _spendingAlertRules[idx].copyWith(
@@ -1990,9 +2281,25 @@ class AppState extends ChangeNotifier {
   }
 
   void deleteSpendingAlertRule(String ruleId) {
-    final before = _spendingAlertRules.length;
-    _spendingAlertRules.removeWhere((r) => r.id == ruleId);
-    if (_spendingAlertRules.length != before) notifyListeners();
+    if (!canEditTransactions) return;
+    final index = _spendingAlertRules.indexWhere((r) => r.id == ruleId);
+    if (index == -1) return;
+    final removed = _spendingAlertRules.removeAt(index);
+    notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.deleteSpendingAlertRule(ruleId);
+        } on ApiException {
+          _spendingAlertRules.insert(
+            index.clamp(0, _spendingAlertRules.length),
+            removed,
+          );
+          rethrow;
+        }
+      });
+    }
   }
 
   void _evaluateSpendingAlertsForMonth(DateTime month) {
@@ -2081,23 +2388,53 @@ class AppState extends ChangeNotifier {
   Future<void> updateAiProviderConfig(
     AiProviderConfig config, {
     String? apiKey,
+    bool clearApiKey = false,
   }) async {
-    _aiProviderConfig = config.copyWith(
-      hasApiKey:
-          config.hasApiKey || (apiKey != null && apiKey.trim().isNotEmpty),
+    final previous = _aiProviderConfig;
+    final providerChanged = previous.provider != config.provider;
+    final trimmedKey = apiKey?.trim() ?? '';
+    final hasNewKey = trimmedKey.isNotEmpty;
+    final isLocalOrNone =
+        config.provider == AiProviderKind.none ||
+        config.provider == AiProviderKind.ollama;
+    final shouldClearKey =
+        clearApiKey ||
+        config.provider == AiProviderKind.none ||
+        (providerChanged && !hasNewKey);
+    final sanitizedEndpoint = config.provider == AiProviderKind.ollama
+        ? config.endpointUrl.trim()
+        : '';
+    final sanitizedModel = config.provider == AiProviderKind.none
+        ? ''
+        : config.model.trim();
+    final nextHasApiKey = isLocalOrNone
+        ? false
+        : hasNewKey
+        ? true
+        : (shouldClearKey ? false : previous.hasApiKey);
+
+    var nextConfig = AiProviderConfig(
+      provider: config.provider,
+      model: sanitizedModel,
+      endpointUrl: sanitizedEndpoint,
+      hasApiKey: nextHasApiKey,
     );
+
     if (isServerMode && !_isOffline && isAuthenticated) {
-      await _apiClient.updateAiProviderConfig(
-        _aiProviderConfig,
-        apiKey: apiKey,
+      nextConfig = await _apiClient.updateAiProviderConfig(
+        nextConfig,
+        apiKey: hasNewKey ? trimmedKey : null,
+        clearApiKey: shouldClearKey,
       );
     }
+    _aiProviderConfig = nextConfig;
     notifyListeners();
   }
 
   /// Explicitly confirms a low-confidence Paçoca suggestion and creates a
   /// user classification rule.
   UserRule? confirmAssistantSuggestion(String suggestionId) {
+    if (!canEditTransactions) return null;
     final idx = _assistantSuggestions.indexWhere((s) => s.id == suggestionId);
     if (idx == -1) return null;
     final sugg = _assistantSuggestions[idx];
@@ -2119,32 +2456,111 @@ class AppState extends ChangeNotifier {
     _assistantSuggestions[idx] = sugg.copyWith(resolved: true, accepted: true);
     _recompute();
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.decideAssistantSuggestion(
+            suggestionId: suggestionId,
+            confirm: true,
+          );
+          final persistedRule = await _apiClient.createRule(
+            matchMerchant: sugg.merchantDisplay,
+            name: rule.name,
+            explanation: rule.explanation,
+            category: sugg.suggestedCategory,
+            essentiality: sugg.suggestedEssentiality,
+          );
+          final rIdx = _rules.indexWhere((r) => r.id == rule.id);
+          if (rIdx != -1) {
+            _rules[rIdx] = persistedRule;
+          }
+          _recompute();
+          await _persistEncryptedCache();
+          notifyListeners();
+        } on ApiException {
+          _rules.removeWhere((r) => r.id == rule.id);
+          final sIdx = _assistantSuggestions.indexWhere(
+            (s) => s.id == suggestionId,
+          );
+          if (sIdx != -1) {
+            _assistantSuggestions[sIdx] = sugg;
+          }
+          _recompute();
+          rethrow;
+        }
+      });
+    }
     return rule;
   }
 
   /// Dismisses a low-confidence suggestion without creating any rule.
   void dismissAssistantSuggestion(String suggestionId) {
+    if (!canEditTransactions) return;
     final idx = _assistantSuggestions.indexWhere((s) => s.id == suggestionId);
     if (idx == -1) return;
-    _assistantSuggestions[idx] = _assistantSuggestions[idx].copyWith(
+    final previous = _assistantSuggestions[idx];
+    if (previous.resolved) return;
+    _assistantSuggestions[idx] = previous.copyWith(
       resolved: true,
       accepted: false,
     );
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.decideAssistantSuggestion(
+            suggestionId: suggestionId,
+            confirm: false,
+          );
+        } on ApiException {
+          final sIdx = _assistantSuggestions.indexWhere(
+            (s) => s.id == suggestionId,
+          );
+          if (sIdx != -1) {
+            _assistantSuggestions[sIdx] = previous;
+          }
+          rethrow;
+        }
+      });
+    }
   }
 
   // ---- Receipts Consent & Statement Import ----
 
   void acceptReceiptConsent() {
-    if (_receiptConsentAccepted) return;
+    if (!canEditTransactions || _receiptConsentAccepted) return;
     _receiptConsentAccepted = true;
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.updateReceiptConsent(itemAnalysisAccepted: true);
+        } on ApiException {
+          _receiptConsentAccepted = false;
+          rethrow;
+        }
+      });
+    }
   }
 
   void revokeReceiptConsent() {
-    if (!_receiptConsentAccepted) return;
+    if (!canEditTransactions || !_receiptConsentAccepted) return;
     _receiptConsentAccepted = false;
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.updateReceiptConsent(itemAnalysisAccepted: false);
+        } on ApiException {
+          _receiptConsentAccepted = true;
+          rethrow;
+        }
+      });
+    }
   }
 
   /// Imports parsed statement transactions locally (demo mode preview or

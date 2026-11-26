@@ -554,8 +554,19 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                       key: Key('ai_provider_${kind.name}'),
                       label: Text(kind.label),
                       selected: _selectedProvider == kind,
-                      onSelected: (_) =>
-                          setState(() => _selectedProvider = kind),
+                      onSelected: (_) => setState(() {
+                        final changed = _selectedProvider != kind;
+                        _selectedProvider = kind;
+                        if (changed) {
+                          _apiKeyController.clear();
+                          if (kind != AiProviderKind.ollama) {
+                            _endpointController.clear();
+                          }
+                          if (kind == AiProviderKind.none) {
+                            _modelController.clear();
+                          }
+                        }
+                      }),
                     ),
                 ],
               ),
@@ -588,7 +599,9 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                     controller: _apiKeyController,
                     obscureText: true,
                     decoration: InputDecoration(
-                      labelText: state.aiProviderConfig.hasApiKey
+                      labelText:
+                          _selectedProvider == state.aiProviderConfig.provider &&
+                              state.aiProviderConfig.hasApiKey
                           ? 'Nova chave de API (opcional, já salva)'
                           : 'Chave de API (cifrada no servidor)',
                     ),
@@ -599,15 +612,28 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
               FilledButton.icon(
                 key: const Key('ai_provider_save_button'),
                 onPressed: () async {
+                  final sameProvider =
+                      _selectedProvider == state.aiProviderConfig.provider;
+                  final enteredKey = _apiKeyController.text.trim();
+                  final shouldClearKey =
+                      _selectedProvider == AiProviderKind.none ||
+                      (!sameProvider && enteredKey.isEmpty);
                   try {
                     await state.updateAiProviderConfig(
                       AiProviderConfig(
                         provider: _selectedProvider,
-                        model: _modelController.text.trim(),
-                        endpointUrl: _endpointController.text.trim(),
-                        hasApiKey: state.aiProviderConfig.hasApiKey,
+                        model: _selectedProvider == AiProviderKind.none
+                            ? ''
+                            : _modelController.text.trim(),
+                        endpointUrl: _selectedProvider == AiProviderKind.ollama
+                            ? _endpointController.text.trim()
+                            : '',
+                        hasApiKey: sameProvider &&
+                            state.aiProviderConfig.hasApiKey &&
+                            !shouldClearKey,
                       ),
-                      apiKey: _apiKeyController.text,
+                      apiKey: enteredKey.isEmpty ? null : enteredKey,
+                      clearApiKey: shouldClearKey,
                     );
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
