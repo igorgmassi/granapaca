@@ -6,6 +6,8 @@ import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import '../theme/grana_widgets.dart';
 import 'bank_detail_screen.dart';
+import 'local_account_sheet.dart';
+import 'receipts_export_screen.dart';
 
 /// Bank connections screen showing connection health (`Em dia`, `Atrasada`,
 /// `Com erro`, `Vencida`), consent expiry warnings (`<= 30 days`), preserved
@@ -50,6 +52,18 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
       );
       return;
     }
+    if (state.isLocalDeviceMode) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Modo local: suas contas ficam salvas cifradas só neste aparelho. '
+            'Adicione novas contas ou importe extratos OFX/CSV.',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _syncing = true;
@@ -73,7 +87,7 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   }
 
   Future<void> _handleAlreadyConnected(AppState state) async {
-    if (state.isDemoMode) {
+    if (state.isDemoMode || state.isLocalDeviceMode) {
       await showServerOnlyDialog(context, 'Conectar bancos pelo Meu Pluggy');
       return;
     }
@@ -129,27 +143,38 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Conexões bancárias'),
+        title: Text(
+          state.isLocalDeviceMode
+              ? 'Contas locais e Open Finance'
+              : 'Conexões bancárias',
+        ),
         actions: [
-          IconButton(
-            key: const Key('connections_sync_button'),
-            tooltip: 'Sincronizar agora',
-            onPressed: _syncing ? null : () => _handleRefresh(state),
-            icon: _syncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync_rounded),
-          ),
+          if (state.isLocalDeviceMode)
+            IconButton(
+              tooltip: 'Adicionar conta local',
+              onPressed: () => showAddLocalAccountSheet(context),
+              icon: const Icon(Icons.add_card_outlined),
+            )
+          else
+            IconButton(
+              key: const Key('connections_sync_button'),
+              tooltip: 'Sincronizar agora',
+              onPressed: _syncing ? null : () => _handleRefresh(state),
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync_rounded),
+            ),
         ],
       ),
       body: Column(
         children: [
           if (state.isDemoMode)
             const DemoBanner()
-          else if (state.isOffline)
+          else if (state.isServerMode && state.isOffline)
             OfflineBanner(
               lastSyncedAt: state.lastSyncedAt,
               onRetry: () => _handleRefresh(state),
@@ -242,6 +267,109 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                         const SizedBox(height: GranaSpacing.lg),
                       ],
 
+                      if (state.isLocalDeviceMode) ...[
+                        Card(
+                          key: const Key('connections_local_mode_card'),
+                          color: scheme.primaryContainer.withValues(
+                            alpha: 0.35,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(GranaSpacing.lg),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Contas salvas neste aparelho',
+                                  style: textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'No modo local você não precisa de servidor '
+                                  'nem Open Finance: cadastre seus bancos ou '
+                                  'importe extratos OFX/CSV.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: GranaSpacing.md),
+                                for (final bank in state.originalDataset.banks)
+                                  ListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: CircleAvatar(
+                                      radius: 14,
+                                      backgroundColor: Color(bank.colorValue),
+                                      child: const Icon(
+                                        Icons.account_balance_outlined,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      bank.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '${state.originalDataset.accounts.where((a) => a.bankId == bank.id).length} conta(s) · ${bank.lastSyncedLabel}',
+                                    ),
+                                    trailing: const Icon(
+                                      Icons.chevron_right_rounded,
+                                    ),
+                                    onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => BankDetailScreen(
+                                          initialBankId: bank.id,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(height: GranaSpacing.md),
+                                Wrap(
+                                  spacing: GranaSpacing.sm,
+                                  runSpacing: GranaSpacing.sm,
+                                  children: [
+                                    FilledButton.icon(
+                                      key: const Key(
+                                        'connections_add_local_account_button',
+                                      ),
+                                      onPressed: () =>
+                                          showAddLocalAccountSheet(context),
+                                      icon: const Icon(
+                                        Icons.add_card_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text(
+                                        'Adicionar banco ou cartão',
+                                      ),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: () =>
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute<void>(
+                                              builder: (_) =>
+                                                  const ReceiptsExportScreen(),
+                                            ),
+                                          ),
+                                      icon: const Icon(
+                                        Icons.file_upload_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Importar OFX / CSV'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: GranaSpacing.xl),
+                      ],
+
                       Text(
                         'Bancos conectados',
                         style: textTheme.titleMedium?.copyWith(
@@ -262,11 +390,17 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                       if (connections.isEmpty)
                         Card(
                           color: scheme.surfaceContainer,
-                          child: const Padding(
-                            padding: EdgeInsets.all(GranaSpacing.lg),
+                          child: Padding(
+                            padding: const EdgeInsets.all(GranaSpacing.lg),
                             child: Text(
-                              'Nenhum banco conectado ainda. Siga os 3 passos '
-                              'abaixo para conectar suas contas pelo Meu Pluggy.',
+                              state.isLocalDeviceMode
+                                  ? 'Você está no modo local. Se quiser '
+                                        'sincronização automática via Open '
+                                        'Finance no futuro, basta migrar para '
+                                        'um servidor próprio em Ajustes.'
+                                  : 'Nenhum banco conectado ainda. Siga os 3 '
+                                        'passos abaixo para conectar suas '
+                                        'contas pelo Meu Pluggy.',
                             ),
                           ),
                         )

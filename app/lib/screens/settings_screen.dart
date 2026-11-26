@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
 import 'app_lock_screen.dart';
 import 'connections_screen.dart';
+import 'local_account_sheet.dart';
 import 'onboarding_screen.dart';
 import 'receipts_export_screen.dart';
 import 'review_queue_screen.dart';
@@ -226,13 +227,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Card(
           child: Column(
             children: [
+              if (state.isLocalDeviceMode) ...[
+                ListTile(
+                  key: const Key('settings_local_mode_status'),
+                  leading: Icon(
+                    Icons.smartphone_outlined,
+                    color: GranaTokens.of(context).mata,
+                  ),
+                  title: const Text(
+                    'Modo local · dados cifrados só neste aparelho',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Sem servidor, sem Docker e sem mensalidade. Tudo fica '
+                    'salvo em cache cifrado só no seu aparelho.',
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('settings_add_local_account'),
+                  leading: const Icon(Icons.add_card_outlined),
+                  title: const Text('Adicionar banco, conta ou cartão'),
+                  subtitle: Text(
+                    '${state.originalDataset.accounts.length} conta(s) '
+                    'cadastrada(s) neste aparelho',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => showAddLocalAccountSheet(context),
+                ),
+                const Divider(height: 1),
+              ] else ...[
+                ListTile(
+                  key: const Key('settings_use_local_device'),
+                  leading: Icon(
+                    Icons.smartphone_outlined,
+                    color: scheme.primary,
+                  ),
+                  title: const Text('Usar só neste aparelho (sem servidor)'),
+                  subtitle: const Text(
+                    'Sem Docker nem mensalidade: seus dados ficam cifrados só '
+                    'no celular.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _confirmStartLocalDevice(context, state),
+                ),
+                const Divider(height: 1),
+              ],
               ListTile(
                 key: const Key('settings_connections'),
                 leading: const Icon(Icons.account_balance_outlined),
-                title: const Text('Conexões bancárias'),
+                title: Text(
+                  state.isLocalDeviceMode
+                      ? 'Contas locais e Open Finance'
+                      : 'Conexões bancárias',
+                ),
                 subtitle: Text(
                   state.isDemoMode
                       ? '${state.originalDataset.banks.length} bancos fictícios conectados na demo'
+                      : state.isLocalDeviceMode
+                      ? '${state.originalDataset.banks.length} banco(s)/carteira salvo(s) neste aparelho'
                       : '${state.connections.length} conexão(ões) configurada(s)',
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
@@ -246,15 +299,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 key: const Key('settings_server_config'),
                 leading: const Icon(Icons.dns_outlined),
-                title: const Text('Configurar servidor'),
+                title: Text(
+                  state.isLocalDeviceMode
+                      ? 'Migrar para servidor próprio'
+                      : 'Configurar servidor',
+                ),
                 subtitle: Text(
                   state.isServerMode && state.serverUrl != null
                       ? state.serverUrl!
+                      : state.isLocalDeviceMode
+                      ? 'Opcional: conecte depois para sincronização automática via Open Finance'
                       : 'Disponível apenas na instância própria',
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: state.isDemoMode
                     ? () => _showDemoServerDialog(context)
+                    : state.isLocalDeviceMode
+                    ? () => _showMigrateToServerDialog(context, state)
                     : () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => ServerAuthScreen(
@@ -269,7 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.receipt_long_outlined),
                 title: const Text('Comprovantes, NFC-e e Exportação'),
                 subtitle: const Text(
-                  'Ler NFC-e, exportar CSV/JSON e importar extratos OFX/CSV',
+                  'Ler NFC-e, exportar/restaurar backup JSON e importar extratos OFX/CSV',
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => Navigator.of(context).push(
@@ -364,6 +425,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Card(
           child: Column(
             children: [
+              if (!state.isDemoMode) ...[
+                ListTile(
+                  key: const Key('settings_enter_demo_mode'),
+                  leading: const Icon(Icons.science_outlined),
+                  title: const Text('Explorar a demonstração'),
+                  subtitle: const Text(
+                    'Teste com dados fictícios (seus dados locais cifrados '
+                    'continuam guardados).',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () {
+                    state.enterDemoMode();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Modo demonstração ativado.'),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+              ],
               ListTile(
                 key: const Key('settings_demo_first_access'),
                 leading: const Icon(Icons.route_outlined),
@@ -396,11 +478,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Text(
           state.isDemoMode
               ? 'GranaPaCá · Open source (AGPL-3.0) · Somente leitura · Dados 100% fictícios na demo'
+              : state.isLocalDeviceMode
+              ? 'GranaPaCá · Open source (AGPL-3.0) · Modo local · Dados cifrados só neste aparelho'
               : 'GranaPaCá · Open source (AGPL-3.0) · Somente leitura · Instância própria',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
       ],
+    );
+  }
+
+  Future<void> _confirmStartLocalDevice(
+    BuildContext context,
+    AppState state,
+  ) async {
+    final restored = await state.restoreLocalDeviceFromCache();
+    if (!context.mounted) return;
+    if (restored) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Modo local restaurado · dados cifrados carregados deste aparelho.',
+          ),
+        ),
+      );
+      return;
+    }
+    await state.startLocalDeviceMode();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Modo local ativado · dados cifrados salvos só neste aparelho.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMigrateToServerDialog(
+    BuildContext context,
+    AppState state,
+  ) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          Icons.dns_outlined,
+          color: Theme.of(dialogContext).colorScheme.primary,
+        ),
+        title: const Text('Migrar para servidor próprio'),
+        content: const Text(
+          'Se quiser sincronização automática via Open Finance e acesso em '
+          'vários dispositivos, você pode conectar a sua própria instância do '
+          'GranaPaCá. Dica: gere um Backup JSON antes para guardar uma cópia '
+          'dos seus lançamentos locais.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ReceiptsExportScreen(),
+                ),
+              );
+            },
+            child: const Text('Exportar Backup JSON'),
+          ),
+          FilledButton(
+            key: const Key('dialog_migrate_open_server_auth'),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      ServerAuthScreen(initialServerUrl: state.serverUrl),
+                ),
+              );
+            },
+            child: const Text('Conectar ao meu servidor'),
+          ),
+        ],
+      ),
     );
   }
 

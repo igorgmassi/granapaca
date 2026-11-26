@@ -971,25 +971,164 @@ class GranaPaCaApiClient {
     );
   }
 
-  /// Saves BYOK AI provider configuration on the self-hosted server
+  /// Validates an optional AI provider endpoint URL client-side matching
+  /// backend `#69` (`AssistantService.TryValidateProviderBaseUrl`):
+  /// - Blocks userinfo, metadata/link-local (`169.254.*`, `fe80::*`, `0.0.0.0`,
+  ///   `metadata.google.internal`).
+  /// - Permits `http://` ONLY for `ollama` and `openai_compatible` when
+  ///   targeting loopback or a private/local network host.
+  /// - Requires `https://` for every external/public host and all cloud-only
+  ///   providers (`google`, `groq`, `openrouter`, `openai`, `anthropic`).
+  static Uri validateAiProviderBaseUrl({
+    required AiProviderKind provider,
+    required String rawUrl,
+  }) {
+    final trimmed = rawUrl.trim();
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        !uri.hasScheme ||
+        uri.host.isEmpty ||
+        (uri.scheme != 'https' && uri.scheme != 'http')) {
+      throw const ApiException(
+        code: 'invalid_ai_endpoint',
+        message: 'Informe uma URL válida começando com https:// (ou http:// em rede local).',
+      );
+    }
+    if (uri.userInfo.isNotEmpty) {
+      throw const ApiException(
+        code: 'invalid_ai_endpoint',
+        message: 'O endereço do provedor de IA não pode conter credenciais na URL.',
+      );
+    }
+
+    final host = uri.host.toLowerCase();
+    final isBlockedMetadata =
+        host == '169.254.169.254' ||
+        host.startsWith('169.254.') ||
+        host == '0.0.0.0' ||
+        host.startsWith('0.') ||
+        host == 'metadata.google.internal' ||
+        host == 'metadata.goog' ||
+        host == '::' ||
+        host.startsWith('fe80:') ||
+        host.startsWith('[fe80:');
+    if (isBlockedMetadata) {
+      throw const ApiException(
+        code: 'blocked_ai_endpoint',
+        message: 'Este endereço de rede não é permitido como provedor de IA.',
+      );
+    }
+
+    final isLocalOrPrivate = _isLoopbackOrPrivateHost(host);
+    if (!provider.allowsLocalHttp && isLocalOrPrivate) {
+      throw const ApiException(
+        code: 'blocked_ai_endpoint',
+        message: 'Provedores em nuvem não podem apontar para endereços locais ou privados.',
+      );
+    }
+    if (uri.scheme != 'https') {
+      if (!(provider.allowsLocalHttp && isLocalOrPrivate)) {
+        throw const ApiException(
+          code: 'insecure_ai_endpoint',
+          message:
+              'Conexões externas com provedores de IA exigem HTTPS (https://). '
+              'HTTP sem criptografia só é permitido para Ollama ou endpoint '
+              'compatível rodando em localhost/rede privada.',
+        );
+      }
+    }
+    return uri;
+  }
+
+  static bool _isLoopbackOrPrivateHost(String host) {
+    final normalized = host.startsWith('[') && host.endsWith(']')
+        ? host.substring(1, host.length - 1)
+        : host;
+    if (normalized == 'localhost' ||
+        normalized == '::1' ||
+        normalized == 'host.docker.internal' ||
+        normalized == 'ollama' ||
+        normalized.endsWith('.local') ||
+        normalized.endsWith('.internal') ||
+        normalized.endsWith('.localhost')) {
+      return true;
+    }
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) {
+      return normalized.contains(':');
+    }
+    final ipv4 = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
+        .firstMatch(normalized);
+    if (ipv4 == null) return false;
+    final a = int.parse(ipv4.group(1)!);
+    final b = int.parse(ipv4.group(2)!);
+    final c = int.parse(ipv4.group(3)!);
+    final d = int.parse(ipv4.group(4)!);
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+    if (a == 127 || a == 10) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 192 && b == 168) return true;
+    if (a == 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+
+  /// Fetches the catalog of free/local/BYOK AI provider presets from the server
+  /// (`GET /api/v1/assistant/presets`).
+  Future<List<AiProviderPreset>> fetchAiProviderPresets() async {
+    final response = await _sendAuthorized(
+      method: 'GET',
+      path: '/api/v1/assistant/presets',
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível carregar os provedores de IA.',
+    );
+    final map = _decodeJsonMap(response.body);
+    final items = (map['items'] as List<dynamic>?) ?? const [];
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map(aiProviderPresetFromJson)
+        .toList(growable: false);
+  }
+
+  /// Fetches the active AI provider configuration from the server
+  /// (`GET /api/v1/assistant/provider`).
+  Future<AiProviderConfig> fetchAiProviderConfig() async {
+    final response = await _sendAuthorized(
+      method: 'GET',
+      path: '/api/v1/assistant/provider',
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível carregar a configuração de IA.',
+    );
+    return aiProviderConfigFromApiJson(_decodeJsonMap(response.body));
+  }
+
+  /// Saves AI provider configuration on the self-hosted server
   /// (`PUT /api/v1/assistant/provider`).
   Future<AiProviderConfig> updateAiProviderConfig(
     AiProviderConfig config, {
     String? apiKey,
     bool clearApiKey = false,
   }) async {
-    final isOllama = config.provider == AiProviderKind.ollama;
-    final trimmedBaseUrl = config.endpointUrl.trim();
+    final supportsEndpoint = config.provider.supportsCustomEndpoint;
+    final trimmedBaseUrl = supportsEndpoint ? config.endpointUrl.trim() : '';
+    if (trimmedBaseUrl.isNotEmpty) {
+      validateAiProviderBaseUrl(
+        provider: config.provider,
+        rawUrl: trimmedBaseUrl,
+      );
+    }
     final trimmedApiKey = apiKey?.trim() ?? '';
     final response = await _sendAuthorized(
       method: 'PUT',
       path: '/api/v1/assistant/provider',
       body: {
-        'provider': config.provider.name,
+        'provider': config.provider.apiValue,
         'model': config.provider == AiProviderKind.none
             ? ''
             : config.model.trim(),
-        if (isOllama && trimmedBaseUrl.isNotEmpty) 'baseUrl': trimmedBaseUrl,
+        if (trimmedBaseUrl.isNotEmpty) 'baseUrl': trimmedBaseUrl,
         if (trimmedApiKey.isNotEmpty) 'apiKey': trimmedApiKey,
         if (clearApiKey) 'clearApiKey': true,
       },

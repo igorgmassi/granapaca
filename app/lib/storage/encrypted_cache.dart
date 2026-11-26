@@ -53,7 +53,7 @@ class CachedCardBill {
   };
 }
 
-/// Complete offline snapshot encrypted at rest (RF-21).
+/// Complete offline or local-device snapshot encrypted at rest (RF-21).
 class CachedSnapshot {
   const CachedSnapshot({
     required this.serverUrl,
@@ -69,6 +69,13 @@ class CachedSnapshot {
     this.alerts = const [],
     this.transactionUuidById = const {},
     this.pendingOutbox = const [],
+    this.budgets = const [],
+    this.goals = const [],
+    this.spendingAlertRules = const [],
+    this.receiptConsentAccepted = false,
+    this.splitsByTxId = const {},
+    this.profileAnswersJson = const {},
+    this.aiProviderConfig,
   });
 
   final String serverUrl;
@@ -84,6 +91,13 @@ class CachedSnapshot {
   final List<SyncAlertItem> alerts;
   final Map<int, String> transactionUuidById;
   final List<PendingOutboxMutation> pendingOutbox;
+  final List<Budget> budgets;
+  final List<Goal> goals;
+  final List<SpendingAlertRule> spendingAlertRules;
+  final bool receiptConsentAccepted;
+  final Map<int, List<TxSplit>> splitsByTxId;
+  final Map<String, dynamic> profileAnswersJson;
+  final AiProviderConfig? aiProviderConfig;
 
   Dataset toDataset() => Dataset(
     banks: banks,
@@ -103,6 +117,33 @@ class CachedSnapshot {
         }
       }
     }
+
+    final parsedSplits = <int, List<TxSplit>>{};
+    final rawSplitsMap = json['splitsByTxId'];
+    if (rawSplitsMap is Map) {
+      for (final entry in rawSplitsMap.entries) {
+        final txId = int.tryParse(entry.key.toString());
+        if (txId == null || entry.value is! List) continue;
+        final list = (entry.value as List<dynamic>)
+            .whereType<Map<String, dynamic>>()
+            .map(txSplitFromJson)
+            .toList(growable: false);
+        if (list.isNotEmpty) {
+          parsedSplits[txId] = list;
+        }
+      }
+    }
+
+    final rawProfile = json['profileAnswers'];
+    final profileMap = rawProfile is Map<String, dynamic>
+        ? Map<String, dynamic>.from(rawProfile)
+        : const <String, dynamic>{};
+
+    final rawAiConfig = json['aiProviderConfig'];
+    final aiConfig = rawAiConfig is Map<String, dynamic>
+        ? aiProviderConfigFromJson(rawAiConfig)
+        : null;
+
     return CachedSnapshot(
       serverUrl: (json['serverUrl'] as String?) ?? '',
       lastSyncedAt:
@@ -146,6 +187,24 @@ class CachedSnapshot {
           .whereType<Map<String, dynamic>>()
           .map(outboxMutationFromJson)
           .toList(growable: false),
+      budgets: ((json['budgets'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(budgetFromJson)
+          .toList(growable: false),
+      goals: ((json['goals'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(goalFromJson)
+          .toList(growable: false),
+      spendingAlertRules:
+          ((json['spendingAlertRules'] as List<dynamic>?) ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(spendingAlertRuleFromJson)
+              .toList(growable: false),
+      receiptConsentAccepted:
+          (json['receiptConsentAccepted'] as bool?) ?? false,
+      splitsByTxId: Map.unmodifiable(parsedSplits),
+      profileAnswersJson: Map.unmodifiable(profileMap),
+      aiProviderConfig: aiConfig,
     );
   }
 
@@ -167,6 +226,19 @@ class CachedSnapshot {
     'pendingOutbox': [
       for (final m in pendingOutbox) outboxMutationToJson(m),
     ],
+    'budgets': [for (final b in budgets) budgetToJson(b)],
+    'goals': [for (final g in goals) goalToJson(g)],
+    'spendingAlertRules': [
+      for (final a in spendingAlertRules) spendingAlertRuleToJson(a),
+    ],
+    'receiptConsentAccepted': receiptConsentAccepted,
+    'splitsByTxId': {
+      for (final entry in splitsByTxId.entries)
+        entry.key.toString(): [for (final s in entry.value) txSplitToJson(s)],
+    },
+    'profileAnswers': profileAnswersJson,
+    if (aiProviderConfig != null)
+      'aiProviderConfig': aiProviderConfigToJson(aiProviderConfig!),
   };
 }
 

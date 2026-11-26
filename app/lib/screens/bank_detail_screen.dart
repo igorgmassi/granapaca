@@ -83,7 +83,7 @@ class _BankDetailScreenState extends State<BankDetailScreen> {
                 ),
               ),
             )
-          else if (state.isOffline)
+          else if (state.isServerMode && state.isOffline)
             OfflineBanner(
               lastSyncedAt: state.lastSyncedAt,
               onRetry: state.syncFromServer,

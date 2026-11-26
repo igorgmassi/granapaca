@@ -9,6 +9,7 @@ import 'cash_entry_sheet.dart';
 import 'connections_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
+import 'local_account_sheet.dart';
 import 'onboarding_screen.dart';
 import 'receipts_export_screen.dart';
 import 'review_queue_screen.dart';
@@ -122,9 +123,15 @@ class AppShell extends StatelessWidget {
           ListTile(
             key: const Key('quick_action_cash_entry'),
             leading: const Icon(Icons.payments_outlined),
-            title: const Text('Lançar gasto em dinheiro'),
+            title: Text(
+              state.isLocalDeviceMode
+                  ? 'Lançar gasto ou receita'
+                  : 'Lançar gasto em dinheiro',
+            ),
             subtitle: Text(
-              pendingOutbox > 0
+              state.isLocalDeviceMode
+                  ? 'Dinheiro, Pix, débito, crédito ou boleto em qualquer conta local'
+                  : pendingOutbox > 0
                   ? '$pendingOutbox lançamento(s) na fila offline'
                   : 'Registro rápido em dinheiro físico (funciona offline)',
             ),
@@ -133,6 +140,19 @@ class AppShell extends StatelessWidget {
               showCashEntrySheet(context);
             },
           ),
+          if (state.isLocalDeviceMode)
+            ListTile(
+              key: const Key('quick_action_add_local_account'),
+              leading: const Icon(Icons.add_card_outlined),
+              title: const Text('Adicionar banco, conta ou cartão'),
+              subtitle: const Text(
+                'Cadastre bancos e cartões em 2 toques (salvo cifrado)',
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                showAddLocalAccountSheet(context);
+              },
+            ),
           ListTile(
             key: const Key('quick_action_nfce'),
             leading: const Icon(Icons.qr_code_scanner_rounded),
@@ -194,10 +214,16 @@ class AppShell extends StatelessWidget {
           ListTile(
             key: const Key('quick_action_connections'),
             leading: const Icon(Icons.account_balance_outlined),
-            title: const Text('Conexões bancárias (Meu Pluggy)'),
+            title: Text(
+              state.isLocalDeviceMode
+                  ? 'Contas locais e Open Finance'
+                  : 'Conexões bancárias (Meu Pluggy)',
+            ),
             subtitle: Text(
               state.isDemoMode
                   ? 'Ver status e passo a passo de conexão'
+                  : state.isLocalDeviceMode
+                  ? 'Gerenciar contas locais ou importar extratos'
                   : 'Gerenciar bancos, status e sincronização',
             ),
             onTap: () {
@@ -279,7 +305,7 @@ class AppShell extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (state.isOffline)
+              else if (state.isServerMode && state.isOffline)
                 OfflineBanner(
                   lastSyncedAt: state.lastSyncedAt,
                   onRetry: state.syncFromServer,

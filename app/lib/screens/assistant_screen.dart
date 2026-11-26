@@ -23,8 +23,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
   static const _quickPrompts = [
     (key: 'assistant_quick_leftover', text: 'Quanto sobrou este mês?'),
     (key: 'assistant_quick_top_category', text: 'Qual categoria pesou mais?'),
+    (key: 'assistant_quick_biggest', text: 'Quais foram meus maiores gastos?'),
     (key: 'assistant_quick_503020', text: 'Como está meu 50/30/20?'),
     (key: 'assistant_quick_subscriptions', text: 'Quais assinaturas tenho?'),
+    (key: 'assistant_quick_budgets_goals', text: 'Como estão meus orçamentos e metas?'),
   ];
 
   @override
@@ -84,7 +86,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
     return Column(
       children: [
-        // Top info bar with active period + BYOK config action
+        // Top info bar with active period + AI presets/config action
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(
@@ -120,9 +122,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 onPressed: () => _showProviderConfigSheet(context, state),
                 icon: const Icon(Icons.tune_rounded, size: 18),
                 label: Text(
-                  state.isDemoMode
-                      ? 'Provedor de IA'
-                      : state.aiProviderConfig.provider.label,
+                  state.isServerMode &&
+                          state.aiProviderConfig.provider != AiProviderKind.none
+                      ? state.aiProviderConfig.provider.label
+                      : 'Configurar IA',
                 ),
               ),
             ],
@@ -136,6 +139,43 @@ class _AssistantScreenState extends State<AssistantScreen> {
             controller: _scrollController,
             padding: const EdgeInsets.all(GranaSpacing.lg),
             children: [
+              if (state.isLocalDeviceMode || state.isDemoMode) ...[
+                Card(
+                  key: const Key('assistant_local_free_banner'),
+                  color: tokens.mata.withValues(alpha: 0.12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: GranaSpacing.md,
+                      vertical: GranaSpacing.sm,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.offline_bolt_outlined,
+                          size: 18,
+                          color: tokens.mata,
+                        ),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Paçoca local ativa · Grátis, sem conta e 100% '
+                            'offline. Responde agora mesmo sem precisar pagar '
+                            'nem conectar nenhuma conta de IA.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.md),
+              ],
+
               // Quick question chips
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -396,7 +436,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: (value) => _send(state, value),
                     decoration: const InputDecoration(
-                      hintText: 'Pergunte sobre seus gastos, saldo ou metas...',
+                      hintText:
+                          'Ex.: Quanto gastei com alimentação em fevereiro?',
                       isDense: true,
                     ),
                   ),
@@ -439,10 +480,14 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
     super.initState();
     _selectedProvider = widget.state.aiProviderConfig.provider;
     _modelController = TextEditingController(
-      text: widget.state.aiProviderConfig.model,
+      text: widget.state.aiProviderConfig.model.isEmpty
+          ? _selectedProvider.defaultModel
+          : widget.state.aiProviderConfig.model,
     );
     _endpointController = TextEditingController(
-      text: widget.state.aiProviderConfig.endpointUrl,
+      text: widget.state.aiProviderConfig.endpointUrl.isEmpty
+          ? _selectedProvider.defaultEndpoint
+          : widget.state.aiProviderConfig.endpointUrl,
     );
     _apiKeyController = TextEditingController();
   }
@@ -455,12 +500,25 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
     super.dispose();
   }
 
+  void _selectPreset(AiProviderKind kind) {
+    setState(() {
+      final changed = _selectedProvider != kind;
+      _selectedProvider = kind;
+      _modelController.text = kind.defaultModel;
+      _endpointController.text = kind.defaultEndpoint;
+      if (changed) {
+        _apiKeyController.clear();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final tokens = GranaTokens.of(context);
     final state = widget.state;
+    final isLocalOnlyOrDemo = state.isDemoMode || state.isLocalDeviceMode;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -476,41 +534,49 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Provedor de IA (BYOK)',
+              'Configurar IA da Paçoca',
               style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: GranaSpacing.xs),
             Text(
-              'A Paçoca é estritamente somente leitura: responde perguntas '
-              'sobre seus dados sem nunca movimentar dinheiro ou alterar '
-              'classificações sem confirmação.',
+              'Você nunca precisa pagar por uma conta de IA. A Paçoca local '
+              'já funciona de graça e 100% offline, e é sempre somente leitura '
+              '(nunca movimenta dinheiro nem altera classificações sem você confirmar).',
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: GranaSpacing.md),
-            if (state.isDemoMode) ...[
+            if (isLocalOnlyOrDemo) ...[
               Card(
                 key: const Key('assistant_byok_demo_notice'),
-                color: tokens.milho.withValues(alpha: 0.25),
+                color: tokens.mata.withValues(alpha: 0.14),
                 child: Padding(
                   padding: const EdgeInsets.all(GranaSpacing.md),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.dns_outlined, color: tokens.sobreMilho),
+                      Icon(Icons.offline_bolt_outlined, color: tokens.mata),
                       const SizedBox(width: GranaSpacing.sm),
                       Expanded(
                         child: Text(
-                          'Provedores de IA externos (OpenAI, Anthropic, '
-                          'Google Gemini ou Ollama) só podem ser configurados '
-                          'na sua instância self-hosted. No modo demonstração, '
-                          'a Paçoca responde localmente com cálculos exatos '
-                          'sobre os dados fictícios, sem enviar nada para fora.',
+                          state.isLocalDeviceMode
+                              ? 'A Paçoca local está ativa neste aparelho '
+                                    '(Grátis · sem conta · 100% offline): '
+                                    'responde direto com cálculos exatos sem '
+                                    'enviar nada para fora. Provedores '
+                                    'opcionais abaixo ficam disponíveis se '
+                                    'você migrar para um servidor próprio.'
+                              : 'No modo demonstração, a Paçoca local já '
+                                    'funciona 100% grátis e offline sobre os '
+                                    'dados fictícios, sem enviar nada para '
+                                    'fora. Na sua instância própria, você '
+                                    'também pode escolher um dos planos '
+                                    'gratuitos ou locais abaixo.',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: tokens.sobreMilho,
+                            color: scheme.onSurface,
                           ),
                         ),
                       ),
@@ -519,25 +585,67 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                 ),
               ),
               const SizedBox(height: GranaSpacing.md),
-              for (final kind in AiProviderKind.values)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    kind == AiProviderKind.none
-                        ? Icons.check_circle_rounded
-                        : Icons.lock_outline_rounded,
-                    color: kind == AiProviderKind.none
-                        ? tokens.mata
-                        : scheme.onSurfaceVariant,
-                  ),
-                  title: Text(kind.label),
-                  subtitle: Text(
-                    kind == AiProviderKind.none
-                        ? 'Ativo na demonstração'
-                        : 'Disponível na instância própria',
+              for (final kind in AiProviderKind.values) ...[
+                Card(
+                  key: Key('ai_preset_card_${kind.name}'),
+                  color: kind == AiProviderKind.none
+                      ? scheme.primaryContainer.withValues(alpha: 0.35)
+                      : scheme.surfaceContainerLow,
+                  child: Padding(
+                    padding: const EdgeInsets.all(GranaSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              kind == AiProviderKind.none
+                                  ? Icons.check_circle_rounded
+                                  : kind.isFree
+                                  ? Icons.auto_awesome_outlined
+                                  : Icons.key_outlined,
+                              size: 18,
+                              color: kind == AiProviderKind.none
+                                  ? tokens.mata
+                                  : scheme.primary,
+                            ),
+                            const SizedBox(width: GranaSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                '${kind.label} (${kind.badge})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (kind.defaultModel.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Modelo sugerido: ${kind.defaultModel}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          kind.description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+                const SizedBox(height: GranaSpacing.xs),
+              ],
               const SizedBox(height: GranaSpacing.md),
               FilledButton(
                 key: const Key('assistant_byok_close_button'),
@@ -545,31 +653,109 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                 child: const Text('Entendi'),
               ),
             ] else ...[
-              Wrap(
-                spacing: GranaSpacing.sm,
-                runSpacing: GranaSpacing.sm,
-                children: [
-                  for (final kind in AiProviderKind.values)
-                    ChoiceChip(
-                      key: Key('ai_provider_${kind.name}'),
-                      label: Text(kind.label),
-                      selected: _selectedProvider == kind,
-                      onSelected: (_) => setState(() {
-                        final changed = _selectedProvider != kind;
-                        _selectedProvider = kind;
-                        if (changed) {
-                          _apiKeyController.clear();
-                          if (kind != AiProviderKind.ollama) {
-                            _endpointController.clear();
-                          }
-                          if (kind == AiProviderKind.none) {
-                            _modelController.clear();
-                          }
-                        }
-                      }),
+              for (final kind in AiProviderKind.values) ...[
+                Card(
+                  key: Key('ai_preset_card_${kind.name}'),
+                  color: _selectedProvider == kind
+                      ? scheme.primaryContainer.withValues(alpha: 0.45)
+                      : scheme.surfaceContainerLow,
+                  child: InkWell(
+                    key: Key('ai_provider_${kind.name}'),
+                    borderRadius: BorderRadius.circular(GranaRadius.card),
+                    onTap: () => _selectPreset(kind),
+                    child: Padding(
+                      padding: const EdgeInsets.all(GranaSpacing.md),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            _selectedProvider == kind
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 20,
+                            color: _selectedProvider == kind
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: GranaSpacing.sm),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${kind.label} (${kind.badge})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                if (kind.defaultModel.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Modelo sugerido: ${kind.defaultModel}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.primary,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  kind.description,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                ],
-              ),
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.xs),
+              ],
+              if (_selectedProvider.isExternalCloud) ...[
+                const SizedBox(height: GranaSpacing.sm),
+                Card(
+                  key: const Key('ai_cloud_privacy_notice'),
+                  color: tokens.milho.withValues(alpha: 0.24),
+                  child: Padding(
+                    padding: const EdgeInsets.all(GranaSpacing.md),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.privacy_tip_outlined,
+                          size: 18,
+                          color: tokens.sobreMilho,
+                        ),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Privacidade e política de retenção: antes de '
+                            'enviar qualquer pergunta a provedores externos, '
+                            'sua instância aplica minimização e '
+                            'pseudonimização (sem CPF, números de conta ou '
+                            'credenciais). Atenção: camadas gratuitas '
+                            'externas podem reter ou usar prompts conforme '
+                            'os termos do provedor escolhido — revise a '
+                            'política de retenção antes de ativar.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.sobreMilho,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               if (_selectedProvider != AiProviderKind.none) ...[
                 const SizedBox(height: GranaSpacing.md),
                 TextField(
@@ -577,22 +763,23 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                   controller: _modelController,
                   decoration: InputDecoration(
                     labelText: 'Modelo',
-                    hintText: _selectedProvider == AiProviderKind.ollama
-                        ? 'Ex.: llama3.1:8b'
-                        : 'Ex.: gpt-4o-mini',
+                    hintText: _selectedProvider.defaultModel,
                   ),
                 ),
-                if (_selectedProvider == AiProviderKind.ollama) ...[
+                if (_selectedProvider.supportsCustomEndpoint) ...[
                   const SizedBox(height: GranaSpacing.md),
                   TextField(
                     key: const Key('ai_provider_endpoint_field'),
                     controller: _endpointController,
-                    decoration: const InputDecoration(
-                      labelText: 'Endereço do servidor Ollama',
-                      hintText: 'http://ollama:11434',
+                    decoration: InputDecoration(
+                      labelText: _selectedProvider == AiProviderKind.ollama
+                          ? 'Endereço do servidor Ollama'
+                          : 'Endpoint da API (HTTPS fora da rede local)',
+                      hintText: _selectedProvider.defaultEndpoint,
                     ),
                   ),
-                ] else ...[
+                ],
+                if (_selectedProvider != AiProviderKind.ollama) ...[
                   const SizedBox(height: GranaSpacing.md),
                   TextField(
                     key: const Key('ai_provider_key_field'),
@@ -603,6 +790,8 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                           _selectedProvider == state.aiProviderConfig.provider &&
                               state.aiProviderConfig.hasApiKey
                           ? 'Nova chave de API (opcional, já salva)'
+                          : _selectedProvider == AiProviderKind.openaiCompatible
+                          ? 'Chave de API (opcional para servidor local)'
                           : 'Chave de API (cifrada no servidor)',
                     ),
                   ),
@@ -614,10 +803,16 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                 onPressed: () async {
                   final sameProvider =
                       _selectedProvider == state.aiProviderConfig.provider;
+                  final endpointText = _selectedProvider.supportsCustomEndpoint
+                      ? _endpointController.text.trim()
+                      : '';
+                  final endpointChanged =
+                      endpointText != state.aiProviderConfig.endpointUrl.trim();
                   final enteredKey = _apiKeyController.text.trim();
                   final shouldClearKey =
                       _selectedProvider == AiProviderKind.none ||
-                      (!sameProvider && enteredKey.isEmpty);
+                      ((!sameProvider || endpointChanged) &&
+                          enteredKey.isEmpty);
                   try {
                     await state.updateAiProviderConfig(
                       AiProviderConfig(
@@ -625,10 +820,9 @@ class _AiProviderConfigSheetState extends State<_AiProviderConfigSheet> {
                         model: _selectedProvider == AiProviderKind.none
                             ? ''
                             : _modelController.text.trim(),
-                        endpointUrl: _selectedProvider == AiProviderKind.ollama
-                            ? _endpointController.text.trim()
-                            : '',
+                        endpointUrl: endpointText,
                         hasApiKey: sameProvider &&
+                            !endpointChanged &&
                             state.aiProviderConfig.hasApiKey &&
                             !shouldClearKey,
                       ),

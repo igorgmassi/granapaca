@@ -27,7 +27,7 @@ class ReviewQueueScreen extends StatelessWidget {
         children: [
           if (state.isDemoMode)
             const DemoBanner()
-          else if (state.isOffline)
+          else if (state.isServerMode && state.isOffline)
             OfflineBanner(
               lastSyncedAt: state.lastSyncedAt,
               onRetry: state.syncFromServer,

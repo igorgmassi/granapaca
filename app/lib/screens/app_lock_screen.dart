@@ -26,7 +26,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
   String? _errorMessage;
   bool _biometricBusy = false;
 
+  bool get _isLocalOnlyMode =>
+      widget.controller.isLocalOnlyMode?.call() ?? false;
+
   void _appendDigit(String digit) {
+    if (widget.controller.isInCooldown) return;
     if (_digits.length >= AppLockController.pinLength) return;
     setState(() {
       _digits += digit;
@@ -56,6 +60,17 @@ class _AppLockScreenState extends State<AppLockScreen> {
       return;
     }
 
+    if (widget.controller.isInCooldown) {
+      final secs = widget.controller.remainingCooldown.inSeconds.clamp(1, 3600);
+      setState(() {
+        _digits = '';
+        _errorMessage =
+            'Muitas tentativas incorretas. Aguarde ${secs}s para tentar '
+            'novamente. Seus dados locais permanecem cifrados e protegidos.';
+      });
+      return;
+    }
+
     if (widget.controller.lockedOut) {
       setState(() {
         _digits = '';
@@ -69,11 +84,27 @@ class _AppLockScreenState extends State<AppLockScreen> {
     final remaining = widget.controller.remainingAttempts;
     setState(() {
       _digits = '';
-      _errorMessage =
-          'PIN incorreto. Restam $remaining '
-          '${remaining == 1 ? 'tentativa' : 'tentativas'} antes de encerrar '
-          'a sessão.';
+      _errorMessage = _isLocalOnlyMode
+          ? 'PIN incorreto. Restam $remaining '
+                '${remaining == 1 ? 'tentativa' : 'tentativas'} antes da '
+                'pausa de segurança.'
+          : 'PIN incorreto. Restam $remaining '
+                '${remaining == 1 ? 'tentativa' : 'tentativas'} antes de '
+                'encerrar a sessão.';
     });
+  }
+
+  Future<void> _showDoubleConfirmResetDialog(
+    BuildContext context,
+    AppState state,
+  ) async {
+    final shouldReset = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _LocalVaultResetDialog(),
+    );
+    if (shouldReset == true && mounted) {
+      await state.resetLocalVaultAfterForgottenPin();
+    }
   }
 
   Future<void> _tryBiometric() async {
@@ -214,17 +245,47 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     _PinKeypad(
                       onDigit: _appendDigit,
                       onBackspace: _backspace,
-                      showBiometric: widget.controller.canUseBiometrics,
+                      showBiometric:
+                          widget.controller.canUseBiometrics &&
+                          !widget.controller.isInCooldown,
                       onBiometric: _tryBiometric,
                     ),
 
-                    if (widget.controller.canUseBiometrics) ...[
+                    if (widget.controller.canUseBiometrics &&
+                        !widget.controller.isInCooldown) ...[
                       const SizedBox(height: GranaSpacing.md),
                       TextButton.icon(
                         key: const Key('pin_biometric_button'),
                         onPressed: _biometricBusy ? null : _tryBiometric,
                         icon: const Icon(Icons.fingerprint_rounded),
                         label: const Text('Desbloquear com biometria'),
+                      ),
+                    ],
+
+                    if (_isLocalOnlyMode && widget.controller.lockedOut) ...[
+                      const SizedBox(height: GranaSpacing.lg),
+                      Builder(
+                        builder: (innerContext) {
+                          final scope = innerContext
+                              .dependOnInheritedWidgetOfExactType<AppScope>();
+                          final state = scope?.notifier;
+                          if (state == null) return const SizedBox.shrink();
+                          return TextButton.icon(
+                            key: const Key('local_forgot_pin_reset_button'),
+                            onPressed: () => _showDoubleConfirmResetDialog(
+                              innerContext,
+                              state,
+                            ),
+                            icon: Icon(
+                              Icons.delete_forever_outlined,
+                              color: scheme.error,
+                            ),
+                            label: Text(
+                              'Esqueci o PIN (apagar cofre local)',
+                              style: TextStyle(color: scheme.error),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ],
@@ -234,6 +295,82 @@ class _AppLockScreenState extends State<AppLockScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LocalVaultResetDialog extends StatefulWidget {
+  const _LocalVaultResetDialog();
+
+  @override
+  State<_LocalVaultResetDialog> createState() => _LocalVaultResetDialogState();
+}
+
+class _LocalVaultResetDialogState extends State<_LocalVaultResetDialog> {
+  final TextEditingController _confirmController = TextEditingController();
+  bool _confirmedCheckbox = false;
+
+  @override
+  void dispose() {
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canConfirm =
+        _confirmedCheckbox &&
+        _confirmController.text.trim().toUpperCase() == 'APAGAR';
+    return AlertDialog(
+      title: const Text('Apagar cofre local?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'No modo "Só neste aparelho", não existe cópia em servidor. '
+              'Esta ação apaga permanentemente todos os dados locais '
+              'cifrados e remove o PIN atual. Só continue se você '
+              'realmente esqueceu o PIN ou já tem um backup JSON salvo.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: GranaSpacing.md),
+            CheckboxListTile(
+              key: const Key('local_wipe_confirm_checkbox'),
+              contentPadding: EdgeInsets.zero,
+              value: _confirmedCheckbox,
+              onChanged: (v) =>
+                  setState(() => _confirmedCheckbox = v ?? false),
+              title: const Text(
+                'Entendo que os dados deste aparelho serão apagados '
+                'permanentemente.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: GranaSpacing.sm),
+            TextField(
+              key: const Key('local_wipe_confirm_field'),
+              controller: _confirmController,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Digite APAGAR para confirmar',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const Key('confirm_local_vault_wipe_button'),
+          onPressed: canConfirm ? () => Navigator.of(context).pop(true) : null,
+          child: const Text('Apagar e recomeçar'),
+        ),
+      ],
     );
   }
 }

@@ -1,14 +1,16 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../demo/demo_data.dart';
+import '../finance/model.dart';
 import '../finance/planning_queries.dart';
 import '../finance/queries.dart';
 import '../finance/taxonomy.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
+import 'local_account_sheet.dart';
 
-/// Opens the quick physical-cash entry bottom sheet (RF-44).
-/// Works instantaneously offline by queueing an outbox mutation in server mode.
+/// Opens the quick manual entry sheet (physical cash in demo/server mode per
+/// RF-44, or ANY payment method and local account in [AppMode.localDevice]).
 Future<void> showCashEntrySheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -30,15 +32,42 @@ class CashEntrySheet extends StatefulWidget {
 }
 
 class _CashEntrySheetState extends State<CashEntrySheet> {
+  static const List<PaymentMethod> _localPaymentMethods = [
+    PaymentMethod.cash,
+    PaymentMethod.pix,
+    PaymentMethod.debit,
+    PaymentMethod.credit,
+    PaymentMethod.boleto,
+  ];
+
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
 
+  TxKind _kind = TxKind.expense;
+  String? _selectedAccountId;
+  PaymentMethod _paymentMethod = PaymentMethod.cash;
   SpendingCategory _category = SpendingCategory.food;
   Essentiality _essentiality = Essentiality.essential;
   DateTime? _selectedDate;
   String? _errorMessage;
   bool _saving = false;
+  bool _initialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final state = AppScope.of(context);
+      final accounts = state.originalDataset.accounts;
+      if (accounts.isNotEmpty) {
+        final first = accounts.first;
+        _selectedAccountId = first.id;
+        _paymentMethod = _defaultPaymentFor(first.kind);
+      }
+      _initialized = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -46,6 +75,18 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
     _descriptionController.dispose();
     _tagsController.dispose();
     super.dispose();
+  }
+
+  static PaymentMethod _defaultPaymentFor(AccountKind kind) {
+    switch (kind) {
+      case AccountKind.cash:
+        return PaymentMethod.cash;
+      case AccountKind.creditCard:
+        return PaymentMethod.credit;
+      case AccountKind.checking:
+      case AccountKind.savings:
+        return PaymentMethod.pix;
+    }
   }
 
   Future<void> _submit(AppState state) async {
@@ -59,7 +100,9 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
     final description = _descriptionController.text.trim();
     if (description.isEmpty) {
       setState(() {
-        _errorMessage = 'Informe uma descrição para o gasto em dinheiro.';
+        _errorMessage = state.isLocalDeviceMode
+            ? 'Informe uma descrição para o lançamento.'
+            : 'Informe uma descrição para o gasto em dinheiro.';
       });
       return;
     }
@@ -73,27 +116,60 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
     final date = _selectedDate ?? state.originalDataset.today;
 
     try {
-      final created = await state.addCashTransaction(
-        description: description,
-        amountCents: cents,
-        date: date,
-        category: _category,
-        essentiality: _essentiality,
-        tags: tags,
-      );
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            created.pendingSync
-                ? 'Gasto de ${formatBrl(cents)} salvo na fila offline e '
-                      'será enviado ao servidor quando a conexão voltar.'
-                : 'Gasto em dinheiro de ${formatBrl(cents)} registrado.',
+      if (state.isLocalDeviceMode) {
+        final accounts = state.originalDataset.accounts;
+        final targetAccountId =
+            accounts.any((a) => a.id == _selectedAccountId)
+            ? _selectedAccountId!
+            : (accounts.isNotEmpty
+                  ? accounts.first.id
+                  : AppState.cashAccountId);
+        await state.addManualTransaction(
+          description: description,
+          amountCents: cents,
+          date: date,
+          accountId: targetAccountId,
+          paymentMethod: _paymentMethod,
+          kind: _kind,
+          category: _kind == TxKind.expense ? _category : null,
+          essentiality: _kind == TxKind.expense ? _essentiality : null,
+          tags: tags,
+        );
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '${_kind == TxKind.income ? 'Receita' : 'Gasto'} de '
+              '${formatBrl(cents)} (${_paymentMethod.label}) salvo cifrado '
+              'neste aparelho.',
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        final created = await state.addCashTransaction(
+          description: description,
+          amountCents: cents,
+          date: date,
+          category: _category,
+          essentiality: _essentiality,
+          tags: tags,
+        );
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              created.pendingSync
+                  ? 'Gasto de ${formatBrl(cents)} salvo na fila offline e '
+                        'será enviado ao servidor quando a conexão voltar.'
+                  : 'Gasto em dinheiro de ${formatBrl(cents)} registrado.',
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -109,6 +185,11 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
     final textTheme = Theme.of(context).textTheme;
     final activeDate = _selectedDate ?? state.originalDataset.today;
     final isOfflineServer = state.isServerMode && state.isOffline;
+    final isLocalMode = state.isLocalDeviceMode;
+    final accounts = state.originalDataset.accounts;
+    final effectiveAccountId = accounts.any((a) => a.id == _selectedAccountId)
+        ? _selectedAccountId
+        : (accounts.isNotEmpty ? accounts.first.id : null);
 
     return Column(
       children: [
@@ -139,13 +220,17 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Lançar gasto em dinheiro',
+                      isLocalMode
+                          ? 'Lançar movimentação'
+                          : 'Lançar gasto em dinheiro',
                       style: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     Text(
-                      'Dinheiro físico · Carteira local',
+                      isLocalMode
+                          ? 'Qualquer conta e meio de pagamento · salvo cifrado'
+                          : 'Dinheiro físico · Carteira local',
                       style: TextStyle(
                         fontSize: 12,
                         color: scheme.onSurfaceVariant,
@@ -198,6 +283,27 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
                 ),
                 const SizedBox(height: GranaSpacing.md),
               ],
+              if (isLocalMode) ...[
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: GranaSpacing.sm,
+                  children: [
+                    ChoiceChip(
+                      key: const Key('entry_kind_expense'),
+                      label: const Text('Gasto'),
+                      selected: _kind == TxKind.expense,
+                      onSelected: (_) => setState(() => _kind = TxKind.expense),
+                    ),
+                    ChoiceChip(
+                      key: const Key('entry_kind_income'),
+                      label: const Text('Receita'),
+                      selected: _kind == TxKind.income,
+                      onSelected: (_) => setState(() => _kind = TxKind.income),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: GranaSpacing.md),
+              ],
               TextField(
                 key: const Key('cash_amount_field'),
                 controller: _amountController,
@@ -215,16 +321,91 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
                 key: const Key('cash_description_field'),
                 controller: _descriptionController,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Descrição',
-                  hintText: 'Ex.: Feira livre ou café na padaria',
+                  hintText: isLocalMode
+                      ? 'Ex.: Supermercado, Pix do aluguel ou salário'
+                      : 'Ex.: Feira livre ou café na padaria',
                 ),
               ),
+              if (isLocalMode) ...[
+                const SizedBox(height: GranaSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        key: const Key('entry_account_dropdown'),
+                        initialValue: effectiveAccountId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Conta ou carteira',
+                        ),
+                        items: [
+                          for (final acct in accounts)
+                            DropdownMenuItem(
+                              value: acct.id,
+                              child: Text(
+                                '${state.originalDataset.bank(acct.bankId).name} · ${acct.name}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (val) {
+                          if (val == null) return;
+                          final acct = state.originalDataset.account(val);
+                          setState(() {
+                            _selectedAccountId = val;
+                            _paymentMethod = _defaultPaymentFor(acct.kind);
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: GranaSpacing.xs),
+                    IconButton(
+                      key: const Key('entry_add_account_shortcut'),
+                      tooltip: 'Nova conta',
+                      onPressed: () async {
+                        final added = await showAddLocalAccountSheet(context);
+                        if (added != null && mounted) {
+                          setState(() {
+                            _selectedAccountId = added.id;
+                            _paymentMethod = _defaultPaymentFor(added.kind);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.add_card_outlined),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: GranaSpacing.md),
+                Text(
+                  'Meio de pagamento',
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: GranaSpacing.sm,
+                  children: [
+                    for (final pm in _localPaymentMethods)
+                      ChoiceChip(
+                        key: Key('entry_pm_${pm.name}'),
+                        label: Text(pm.label),
+                        selected: _paymentMethod == pm,
+                        onSelected: (_) => setState(() => _paymentMethod = pm),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: GranaSpacing.md),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.calendar_today_outlined),
-                title: const Text('Data do gasto'),
+                title: Text(
+                  isLocalMode ? 'Data do lançamento' : 'Data do gasto',
+                ),
                 subtitle: Text(formatFullDate(activeDate)),
                 trailing: TextButton(
                   onPressed: () async {
@@ -241,48 +422,50 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
                   child: const Text('Alterar'),
                 ),
               ),
-              const SizedBox(height: GranaSpacing.md),
-              Text(
-                'Categoria',
-                style: textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+              if (!isLocalMode || _kind == TxKind.expense) ...[
+                const SizedBox(height: GranaSpacing.md),
+                Text(
+                  'Categoria',
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: GranaSpacing.sm),
-              Wrap(
-                spacing: GranaSpacing.sm,
-                runSpacing: GranaSpacing.sm,
-                children: [
-                  for (final c in SpendingCategory.values)
-                    ChoiceChip(
-                      key: Key('cash_cat_${c.name}'),
-                      label: Text(c.label),
-                      selected: _category == c,
-                      onSelected: (_) => setState(() => _category = c),
-                    ),
-                ],
-              ),
-              const SizedBox(height: GranaSpacing.lg),
-              Text(
-                'Essencialidade',
-                style: textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: GranaSpacing.sm),
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: GranaSpacing.sm,
+                  children: [
+                    for (final c in SpendingCategory.values)
+                      ChoiceChip(
+                        key: Key('cash_cat_${c.name}'),
+                        label: Text(c.label),
+                        selected: _category == c,
+                        onSelected: (_) => setState(() => _category = c),
+                      ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: GranaSpacing.sm),
-              Wrap(
-                spacing: GranaSpacing.sm,
-                runSpacing: GranaSpacing.sm,
-                children: [
-                  for (final e in Essentiality.values)
-                    ChoiceChip(
-                      key: Key('cash_ess_${e.name}'),
-                      label: Text(e.label),
-                      selected: _essentiality == e,
-                      onSelected: (_) => setState(() => _essentiality = e),
-                    ),
-                ],
-              ),
+                const SizedBox(height: GranaSpacing.lg),
+                Text(
+                  'Essencialidade',
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: GranaSpacing.sm,
+                  children: [
+                    for (final e in Essentiality.values)
+                      ChoiceChip(
+                        key: Key('cash_ess_${e.name}'),
+                        label: Text(e.label),
+                        selected: _essentiality == e,
+                        onSelected: (_) => setState(() => _essentiality = e),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: GranaSpacing.lg),
               TextField(
                 key: const Key('cash_tags_field'),
@@ -308,7 +491,9 @@ class _CashEntrySheetState extends State<CashEntrySheet> {
                 onPressed: _saving ? null : () => _submit(state),
                 icon: const Icon(Icons.check_rounded),
                 label: Text(
-                  isOfflineServer
+                  isLocalMode
+                      ? 'Salvar lançamento'
+                      : isOfflineServer
                       ? 'Salvar na fila offline'
                       : 'Salvar gasto em dinheiro',
                 ),

@@ -100,6 +100,21 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     }
   }
 
+  Future<void> _startLocalDevice(AppState state) async {
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+      _infoMessage = null;
+    });
+    try {
+      await state.startLocalDeviceMode();
+      if (!mounted) return;
+      _finishIntoApp();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   void _exploreDemo(AppState state) {
     state.enterDemoMode();
     if (widget.onExploreDemo != null) {
@@ -303,7 +318,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
   String get _title {
     switch (_step) {
       case _AuthFlowStep.server:
-        return 'Conectar ao servidor';
+        return 'Como deseja usar o GranaPaCá';
       case _AuthFlowStep.ownerSetup:
         return 'Criar conta proprietária';
       case _AuthFlowStep.login:
@@ -325,9 +340,9 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       appBar: AppBar(title: Text(_title)),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(GranaSpacing.lg),
+          padding: const EdgeInsets.all(GranaSpacing.md),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: 540),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -357,7 +372,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: GranaSpacing.md),
+                  const SizedBox(height: GranaSpacing.sm),
                 ],
                 if (_infoMessage != null) ...[
                   Card(
@@ -373,7 +388,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: GranaSpacing.md),
+                  const SizedBox(height: GranaSpacing.sm),
                 ],
                 if (_errorMessage != null) ...[
                   Card(
@@ -402,7 +417,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: GranaSpacing.md),
+                  const SizedBox(height: GranaSpacing.sm),
                 ],
 
                 switch (_step) {
@@ -445,51 +460,191 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     ColorScheme scheme,
     TextTheme textTheme,
   ) {
+    final tokens = GranaTokens.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Endereço da sua instância GranaPaCá',
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: GranaSpacing.sm),
-        Text(
-          'Informe a URL onde o seu servidor está rodando (por exemplo, pela '
-          'sua rede privada Tailscale). O endereço só é salvo depois que '
-          'confirmarmos que o servidor responde corretamente.',
-          style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: GranaSpacing.xl),
-        TextField(
-          key: const Key('server_url_field'),
-          controller: _serverUrlController,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Endereço do servidor',
-            hintText: 'https://financas.minha-rede.ts.net',
-            prefixIcon: Icon(Icons.dns_outlined),
+        // Path 1: Zero-server encrypted local device mode (recommended for beginners)
+        Card(
+          key: const Key('mode_local_device_card'),
+          color: scheme.primaryContainer.withValues(alpha: 0.45),
+          child: Padding(
+            padding: const EdgeInsets.all(GranaSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: GranaSpacing.sm,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.smartphone_outlined,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    Text(
+                      'Usar só neste aparelho',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: tokens.mata.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(GranaRadius.chip),
+                      ),
+                      child: Text(
+                        'Recomendado para começar',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.mata,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Sem servidor, sem Docker e sem mensalidade. Seus dados ficam '
+                  'cifrados só no celular; importe extratos OFX/CSV ou lance '
+                  'gastos na hora.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                FilledButton.icon(
+                  key: const Key('start_local_device_button'),
+                  onPressed: _busy ? null : () => _startLocalDevice(state),
+                  icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                  label: const Text('Começar só neste aparelho'),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: GranaSpacing.lg),
-        FilledButton.icon(
-          key: const Key('server_validate_button'),
-          onPressed: _busy ? null : () => _validateServer(state),
-          icon: _busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.check_circle_outline),
-          label: Text(_busy ? 'Validando servidor...' : 'Validar e continuar'),
+        const SizedBox(height: GranaSpacing.sm),
+
+        // Path 2: Connect to self-hosted server (inline URL field + validate CTA)
+        Card(
+          key: const Key('mode_server_card'),
+          child: Padding(
+            padding: const EdgeInsets.all(GranaSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.dns_outlined,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Conectar ao meu servidor',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Para quem já roda sua instância com sincronização '
+                  'automática via Open Finance.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                TextField(
+                  key: const Key('server_url_field'),
+                  controller: _serverUrlController,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Endereço do servidor',
+                    hintText: 'https://financas.minha-rede.ts.net',
+                    prefixIcon: Icon(Icons.dns_outlined),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                FilledButton.icon(
+                  key: const Key('server_validate_button'),
+                  onPressed: _busy ? null : () => _validateServer(state),
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text(
+                    _busy ? 'Validando servidor...' : 'Validar e continuar',
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        const SizedBox(height: GranaSpacing.md),
-        OutlinedButton.icon(
-          key: const Key('server_explore_demo_button'),
-          onPressed: _busy ? null : () => _exploreDemo(state),
-          icon: const Icon(Icons.science_outlined),
-          label: const Text('Explorar a demo'),
+        const SizedBox(height: GranaSpacing.sm),
+
+        // Path 3: Explore deterministic demo
+        Card(
+          key: const Key('mode_demo_card'),
+          child: Padding(
+            padding: const EdgeInsets.all(GranaSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.science_outlined,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: GranaSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Explorar a demonstração',
+                        style: textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Teste com dados fictícios antes de colocar os seus.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: GranaSpacing.sm),
+                OutlinedButton.icon(
+                  key: const Key('server_explore_demo_button'),
+                  onPressed: _busy ? null : () => _exploreDemo(state),
+                  icon: const Icon(Icons.science_outlined, size: 18),
+                  label: const Text('Explorar a demonstração'),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );

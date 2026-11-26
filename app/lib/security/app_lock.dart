@@ -47,6 +47,7 @@ class AppLockController extends ChangeNotifier {
     this.onBiometricUnlocked,
     this.onLockDisabled,
     this.onLocked,
+    this.isLocalOnlyMode,
     this._inactivityTimeout = defaultInactivityTimeout,
     this._hashIterations = defaultHashIterations,
   }) : _biometricAuthenticator =
@@ -88,6 +89,11 @@ class AppLockController extends ChangeNotifier {
   /// Invoked whenever the controller transitions into the locked state.
   VoidCallback? onLocked;
 
+  /// Returns true when the app is running in zero-server `AppMode.localDevice`
+  /// mode, where 5 failed PIN attempts must apply progressive cooldown instead
+  /// of silently wiping the user's only copy of local financial data.
+  bool Function()? isLocalOnlyMode;
+
   bool _isEnabled = false;
   bool _isLocked = false;
   bool _biometricEnabled = false;
@@ -96,6 +102,8 @@ class AppLockController extends ChangeNotifier {
   Duration _inactivityTimeout;
   String? _pinHash;
   int _failedAttempts = 0;
+  int _lockoutRounds = 0;
+  DateTime? _cooldownUntil;
   DateTime? _backgroundedAt;
 
   bool get isEnabled => _isEnabled;
@@ -108,6 +116,15 @@ class AppLockController extends ChangeNotifier {
   Duration get inactivityTimeout => _inactivityTimeout;
   int get hashIterations => _hashIterations;
   int get failedAttempts => _failedAttempts;
+  int get lockoutRounds => _lockoutRounds;
+  Duration get remainingCooldown {
+    final until = _cooldownUntil;
+    if (until == null) return Duration.zero;
+    final diff = until.difference(_clock());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  bool get isInCooldown => remainingCooldown > Duration.zero;
   int get remainingAttempts =>
       (maxFailedAttempts - _failedAttempts).clamp(0, maxFailedAttempts);
 
@@ -191,6 +208,8 @@ class AppLockController extends ChangeNotifier {
     _isEnabled = true;
     _biometricEnabled = enableBiometric && _biometricAvailable;
     _failedAttempts = 0;
+    _lockoutRounds = 0;
+    _cooldownUntil = null;
     _lockedOut = false;
     _isLocked = false;
     _backgroundedAt = null;
@@ -206,6 +225,8 @@ class AppLockController extends ChangeNotifier {
     _biometricEnabled = false;
     _pinHash = null;
     _failedAttempts = 0;
+    _lockoutRounds = 0;
+    _cooldownUntil = null;
     _lockedOut = false;
     _backgroundedAt = null;
     _persistConfig();
@@ -267,17 +288,29 @@ class AppLockController extends ChangeNotifier {
     }
   }
 
-  /// Attempts to unlock with [pin]. After [maxFailedAttempts] consecutive
-  /// failures, clears the session via [onLockoutSessionCleared] and resets the
-  /// lock so the user must authenticate again from scratch (RF-04).
+  /// Attempts to unlock with [pin].
+  ///
+  /// - In server mode (RF-04): after [maxFailedAttempts] consecutive failures,
+  ///   clears the session & offline cache via [onLockoutSessionCleared] and
+  ///   forces full re-login.
+  /// - In local-only device mode (ADR-030): after [maxFailedAttempts] failures,
+  ///   keeps the app locked with DEK evicted from RAM and enforces a progressive
+  ///   cooldown (30s, 60s, 120s...) without destroying the user's only copy of
+  ///   encrypted local data.
   bool verifyPin(String pin) {
     final stored = _pinHash;
     if (stored == null || !isValidPinFormat(pin)) {
       return false;
     }
+    if (isInCooldown) {
+      notifyListeners();
+      return false;
+    }
 
     if (_matchesHash(pin, stored)) {
       _failedAttempts = 0;
+      _lockoutRounds = 0;
+      _cooldownUntil = null;
       _isLocked = false;
       _lockedOut = false;
       onPinUnlocked?.call(pin);
@@ -287,12 +320,28 @@ class AppLockController extends ChangeNotifier {
 
     _failedAttempts++;
     if (_failedAttempts >= maxFailedAttempts) {
+      final localOnly = isLocalOnlyMode?.call() ?? false;
+      if (localOnly) {
+        _lockedOut = true;
+        _isLocked = true;
+        _failedAttempts = 0;
+        _lockoutRounds++;
+        final exponent = (_lockoutRounds - 1).clamp(0, 4);
+        final cooldownSeconds = 30 * (1 << exponent);
+        _cooldownUntil = _clock().add(Duration(seconds: cooldownSeconds));
+        onLocked?.call();
+        notifyListeners();
+        return false;
+      }
+
       _lockedOut = true;
       _isLocked = false;
       _isEnabled = false;
       _biometricEnabled = false;
       _pinHash = null;
       _failedAttempts = 0;
+      _lockoutRounds = 0;
+      _cooldownUntil = null;
       _backgroundedAt = null;
       _persistConfig();
       onLockoutSessionCleared?.call();
@@ -308,6 +357,10 @@ class AppLockController extends ChangeNotifier {
   /// locked so the user falls back smoothly to PIN entry.
   Future<BiometricAuthResult> tryBiometricUnlock() async {
     if (!_isLocked) return BiometricAuthResult.authenticated;
+    if (isInCooldown) {
+      notifyListeners();
+      return BiometricAuthResult.failed;
+    }
     try {
       _biometricAvailable = await _biometricAuthenticator.isAvailable();
     } catch (_) {
@@ -322,6 +375,8 @@ class AppLockController extends ChangeNotifier {
     );
     if (result == BiometricAuthResult.authenticated) {
       _failedAttempts = 0;
+      _lockoutRounds = 0;
+      _cooldownUntil = null;
       _isLocked = false;
       _lockedOut = false;
       onBiometricUnlocked?.call();

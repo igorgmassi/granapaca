@@ -727,17 +727,169 @@ class PendingOutboxMutation {
   final Map<String, dynamic> payload;
 }
 
-/// BYOK AI provider options for Paçoca assistant (self-hosted server).
+/// AI provider options for Paçoca assistant (zero-cost local default + free
+/// and optional BYOK presets, aligned with backend #69 `AssistantModels.cs`).
 enum AiProviderKind {
-  none('Desativado (somente local)'),
-  openai('OpenAI'),
-  anthropic('Anthropic'),
-  google('Google Gemini'),
-  ollama('Ollama (local / self-hosted)');
+  none(
+    'Paçoca local',
+    apiValue: 'none',
+    badge: 'Grátis · sem conta · 100% offline',
+    defaultModel: '',
+    defaultEndpoint: '',
+    description:
+        'Padrão! Responde sobre saldos, gastos, categorias, estabelecimentos, '
+        'orçamentos, metas e assinaturas direto no aparelho sem enviar nada '
+        'para fora.',
+    isFree: true,
+    isExternalCloud: false,
+  ),
+  google(
+    'Google Gemini Flash',
+    apiValue: 'google',
+    badge: 'Plano gratuito sem cartão',
+    defaultModel: 'gemini-2.5-flash-lite',
+    defaultEndpoint: '',
+    description:
+        'Plano gratuito sem cartão. Antes do envio, os dados passam por '
+        'minimização e pseudonimização (sem CPF, conta ou dados bancários).',
+    isFree: true,
+    isExternalCloud: true,
+  ),
+  groq(
+    'Groq',
+    apiValue: 'groq',
+    badge: 'Plano gratuito · compatível OpenAI',
+    defaultModel: 'llama-3.3-70b-versatile',
+    defaultEndpoint: 'https://api.groq.com/openai/v1/',
+    description:
+        'Super rápido e gratuito para uso pessoal, compatível com API OpenAI. '
+        'Os dados passam por minimização e pseudonimização antes do envio.',
+    isFree: true,
+    isExternalCloud: true,
+  ),
+  openrouter(
+    'OpenRouter',
+    apiValue: 'openrouter',
+    badge: 'Modelos gratuitos :free',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    defaultEndpoint: 'https://openrouter.ai/api/v1/',
+    description:
+        'Modelos abertos com sufixo :free sem mensalidade. Envia apenas resumo '
+        'minimizado e pseudonimizado.',
+    isFree: true,
+    isExternalCloud: true,
+  ),
+  ollama(
+    'Ollama local',
+    apiValue: 'ollama',
+    badge: 'Grátis · 100% privado no seu PC',
+    defaultModel: 'qwen2.5:7b',
+    defaultEndpoint: 'http://host.docker.internal:11434/',
+    description:
+        'Roda modelos como qwen2.5:7b ou llama3.2 no seu computador ou '
+        'servidor doméstico, sem enviar nada para fora.',
+    isFree: true,
+    isExternalCloud: false,
+  ),
+  openaiCompatible(
+    'Compatível com OpenAI',
+    apiValue: 'openai_compatible',
+    badge: 'Grátis (local) ou conforme o provedor',
+    defaultModel: 'local-model',
+    defaultEndpoint: 'http://host.docker.internal:1234/v1/',
+    description:
+        'Conecte LM Studio, llama.cpp, vLLM ou outro servidor compatível com '
+        '/chat/completions. Pseudonimização obrigatória ativa.',
+    isFree: true,
+    isExternalCloud: true,
+  ),
+  openai(
+    'OpenAI',
+    apiValue: 'openai',
+    badge: 'Pago por uso — BYOK',
+    defaultModel: 'gpt-4o-mini',
+    defaultEndpoint: '',
+    description:
+        'Opcional para quem já usa chave paga (BYOK). Os dados passam por '
+        'minimização e pseudonimização antes do envio.',
+    isFree: false,
+    isExternalCloud: true,
+  ),
+  anthropic(
+    'Anthropic',
+    apiValue: 'anthropic',
+    badge: 'Pago por uso — BYOK',
+    defaultModel: 'claude-3-5-haiku-latest',
+    defaultEndpoint: '',
+    description:
+        'Opcional para quem já usa chave paga (BYOK). Os dados passam por '
+        'minimização e pseudonimização antes do envio.',
+    isFree: false,
+    isExternalCloud: true,
+  );
 
-  const AiProviderKind(this.label);
+  const AiProviderKind(
+    this.label, {
+    required this.apiValue,
+    required this.badge,
+    required this.defaultModel,
+    required this.defaultEndpoint,
+    required this.description,
+    required this.isFree,
+    required this.isExternalCloud,
+  });
 
   final String label;
+  final String apiValue;
+  final String badge;
+  final String defaultModel;
+  final String defaultEndpoint;
+  final String description;
+  final bool isFree;
+  final bool isExternalCloud;
+
+  /// Providers that expose a configurable base URL in the UI and API.
+  bool get supportsCustomEndpoint =>
+      this == ollama ||
+      this == openaiCompatible ||
+      this == groq ||
+      this == openrouter;
+
+  /// Providers that may use `http://` ONLY for loopback/private-network hosts.
+  bool get allowsLocalHttp => this == ollama || this == openaiCompatible;
+}
+
+/// Server-provided metadata for a free/local/BYOK AI preset (`GET /api/v1/assistant/presets`).
+class AiProviderPreset {
+  const AiProviderPreset({
+    required this.provider,
+    required this.displayName,
+    required this.description,
+    required this.costTier,
+    required this.costLabel,
+    required this.recommendedModel,
+    this.alternativeModels = const [],
+    this.defaultBaseUrl,
+    this.requiresApiKey = false,
+    this.isLocal = false,
+    this.pseudonymizationActive = true,
+    this.privacyNote = '',
+    this.setupUrl,
+  });
+
+  final AiProviderKind provider;
+  final String displayName;
+  final String description;
+  final String costTier;
+  final String costLabel;
+  final String recommendedModel;
+  final List<String> alternativeModels;
+  final String? defaultBaseUrl;
+  final bool requiresApiKey;
+  final bool isLocal;
+  final bool pseudonymizationActive;
+  final String privacyNote;
+  final String? setupUrl;
 }
 
 class AiProviderConfig {
