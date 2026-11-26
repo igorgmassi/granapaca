@@ -10,9 +10,11 @@ import 'package:granapaca/api/http_transport_base.dart';
 import 'package:granapaca/finance/model.dart';
 import 'package:granapaca/finance/taxonomy.dart';
 import 'package:granapaca/main.dart';
+import 'package:granapaca/screens/alerts_screen.dart';
 import 'package:granapaca/screens/app_lock_screen.dart';
 import 'package:granapaca/screens/app_shell.dart';
 import 'package:granapaca/screens/server_auth_screen.dart';
+import 'package:granapaca/screens/settings_screen.dart';
 import 'package:granapaca/security/app_lock.dart';
 import 'package:granapaca/state/app_state.dart';
 import 'package:granapaca/state/preferences_store.dart';
@@ -890,5 +892,120 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('Backup failure inbox alert (RF-65 / Issue #40)', () {
+    test('maps backup_failed actionTarget settings/backup to AlertTarget.settings', () {
+      for (final rawTarget in const ['settings', '/settings', 'backup']) {
+        final item = SyncAlertItem.fromJson({
+          'id': 'alert-backup-$rawTarget',
+          'kind': 'backup_failed',
+          'severity': 'error',
+          'title': 'O backup cifrado falhou',
+          'message':
+              'Falha na etapa de backup do banco de dados. Confira os logs no host.',
+          'actionTarget': rawTarget,
+          'isRead': false,
+          'createdAt': '2026-03-28T15:00:00Z',
+        });
+        final alert = AppAlert.fromSyncItem(item);
+        expect(alert.target, AlertTarget.settings);
+        expect(alert.title, 'O backup cifrado falhou');
+        expect(alert.isRead, isFalse);
+      }
+    });
+
+    testWidgets(
+      'tapping backup_failed alert in AlertsScreen selects Settings tab (4) and pops',
+      (tester) async {
+        final transport = _RecordingHttpTransport((req) async {
+          if (req.uri.path == '/api/v1/sync/changes') {
+            return HttpTransportResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'nextCursor': 'cur-backup-1',
+                'serverTime': '2026-03-28T15:05:00Z',
+                'isFullSync': true,
+                'fullResyncRequired': false,
+                'connections': const [],
+                'accounts': const [],
+                'transactions': const [],
+                'alerts': [
+                  {
+                    'id': 'alert-backup-1',
+                    'kind': 'backup_failed',
+                    'severity': 'error',
+                    'title': 'O backup cifrado falhou',
+                    'message':
+                        'Falha na etapa de verificação de integridade. Revise infra/BACKUP.md.',
+                    'actionTarget': 'settings',
+                    'isRead': false,
+                    'createdAt': '2026-03-28T15:00:00Z',
+                  },
+                ],
+              }),
+            );
+          }
+          if (req.uri.path == '/api/v1/alerts/alert-backup-1/read') {
+            return const HttpTransportResponse(statusCode: 204, body: '');
+          }
+          return const HttpTransportResponse(statusCode: 404, body: '{}');
+        });
+
+        final client = GranaPaCaApiClient(
+          baseUrl: Uri.parse('https://financas.minha-rede.ts.net'),
+          transport: transport,
+          initialTokens: AuthTokens(
+            accessToken: 'tok-access',
+            refreshToken: 'tok-refresh',
+            expiresAt: DateTime(2030, 1, 1),
+            sessionId: 'sess-1',
+            owner: const OwnerSummary(
+              id: 'owner-1',
+              householdId: 'hh-1',
+              email: 'bia@exemplo.local',
+              displayName: 'Bia',
+            ),
+          ),
+        );
+
+        final state = AppState(
+          apiClient: client,
+          initialMode: AppMode.server,
+          initialServerUrl: 'https://financas.minha-rede.ts.net',
+          preferencesStore: InMemoryPreferencesStore(),
+          encryptedCache: EncryptedCacheStore(storage: InMemoryCacheStorage()),
+        );
+        addTearDown(state.dispose);
+
+        expect(await state.syncFromServer(), isTrue);
+        expect(state.alerts, hasLength(1));
+        expect(state.alerts.single.target, AlertTarget.settings);
+        expect(state.unreadAlertCount, 1);
+
+        await tester.pumpWidget(
+          AppScope(
+            state: state,
+            child: const MaterialApp(home: AppShell()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(state.selectedTab, 0);
+        await tester.tap(find.byKey(const Key('alerts_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AlertsScreen), findsOneWidget);
+        expect(find.text('O backup cifrado falhou'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('alert_tile_alert-backup-1')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AlertsScreen), findsNothing);
+        expect(state.selectedTab, 4);
+        expect(find.byType(SettingsScreen), findsOneWidget);
+        expect(state.unreadAlertCount, 0);
+      },
+    );
   });
 }

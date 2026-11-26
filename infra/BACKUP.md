@@ -120,7 +120,24 @@ systemctl --user list-timers granapaca-backup.timer
 
 ### Alerta em caso de falha
 
-Quando o backup falha, `backup.sh` grava `status=failed` de forma atômica em `BACKUP_STATUS_FILE` (permissão `0644`, contendo apenas `timestamp`, `status` e `step`, sem credenciais nem dados pessoais) e, se `BACKUP_ALERT_WEBHOOK_URL` estiver definido, envia um aviso genérico em JSON. O arquivo fica pronto para monitoramento externo ou futura leitura pela instância para abrir um alerta na caixa de entrada do app (RF-56, RF-65).
+Quando o backup falha, `backup.sh` grava `status=failed` de forma atômica (`mv -f`) em `BACKUP_STATUS_FILE` (permissão `0644`, contendo apenas `timestamp`, `status` e `step`, sem credenciais nem dados pessoais) e, se `BACKUP_ALERT_WEBHOOK_URL` estiver definido, envia um aviso genérico em JSON.
+
+Para que a própria API do GranaPaCá abra um alerta na caixa de entrada do app quando o backup falhar (RF-56, RF-65) e o resolva automaticamente assim que o próximo backup concluir com sucesso (`status=ok`):
+
+1. **Escolha um diretório dedicado no host** para o arquivo de estado (por exemplo `/var/lib/granapaca-backup`) e aponte `BACKUP_STATUS_FILE=/var/lib/granapaca-backup/granapaca-backup.status` no seu `~/.config/granapaca-backup/backup.env`.
+2. **Monte o diretório (não o arquivo isolado) em modo somente leitura** no contêiner `api` via `infra/compose.override.yaml` (fora do Git):
+   ```yaml
+   services:
+     api:
+       volumes:
+         - /var/lib/granapaca-backup:/run/backup-status:ro
+   ```
+   > **Importante:** monte sempre o **diretório**, nunca o arquivo diretamente. Como `backup.sh` substitui o arquivo de forma atômica com `mv -f`, o inode muda a cada execução; montar o diretório garante que o contêiner enxergue todas as atualizações imediatamente.
+3. **Configure o caminho dentro do contêiner em `infra/.env`:**
+   ```dotenv
+   BACKUP_STATUS_FILE=/run/backup-status/granapaca-backup.status
+   ```
+4. **Recrie o serviço da API** (`docker compose up --detach api`). A API verifica o arquivo periodicamente (padrão: a cada 60 segundos), cria um alerta deduplicado (`backup:failed`) na caixa de entrada ao detectar `status=failed` e marca esse alerta como resolvido assim que uma nova execução gravar `status=ok`. Se `BACKUP_STATUS_FILE` ficar vazio ou o arquivo ainda não existir, a API segue normalmente sem emitir avisos.
 
 ## 5. Runbook de restauração em máquina nova (RNF-24)
 

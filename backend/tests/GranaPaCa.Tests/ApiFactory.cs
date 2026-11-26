@@ -34,6 +34,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Database:AllowWeakPasswordForTests", "true");
         builder.UseSetting("Keyring:MasterKey", _ephemeralMasterKey);
         builder.UseSetting("Banking:EnableBackgroundSync", "false");
+        builder.UseSetting("Backup:EnableStatusMonitor", "false");
         builder.UseSetting("Receipts:StoragePath", _receiptsTempDir);
         if (profilesDir is not null)
         {
