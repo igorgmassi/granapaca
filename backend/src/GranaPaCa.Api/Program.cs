@@ -57,6 +57,8 @@ public sealed class Program
         builder.Services.AddPlanningModule();
         builder.Services.AddReceiptsModule(builder.Configuration);
         builder.Services.AddAssistantModule(builder.Configuration);
+        builder.Services.AddSingleton<BackupStatusMonitor>();
+        builder.Services.AddHostedService<BackupStatusMonitorWorker>();
 
         var app = builder.Build();
 

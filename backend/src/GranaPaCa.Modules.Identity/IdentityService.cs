@@ -13,7 +13,7 @@ internal sealed class IdentityService(
     NpgsqlDataSource dataSource,
     IEnvelopeEncryptor envelopeEncryptor,
     SessionService sessionService,
-    IConfiguration configuration) : IIdentityPurgeService
+    IConfiguration configuration) : IIdentityPurgeService, IHouseholdDirectory
 {
     private const string AppName = "GranaPaCa";
     private const string AppVersion = "0.2.0";
@@ -582,6 +582,15 @@ internal sealed class IdentityService(
             new { HouseholdId = householdId },
             transaction: transaction,
             cancellationToken: cancellationToken));
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListHouseholdIdsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var ids = await connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT id FROM identity.household ORDER BY created_at ASC",
+            cancellationToken: cancellationToken));
+        return ids.AsList();
     }
 
     private async Task<bool> VerifySecondFactorAsync(

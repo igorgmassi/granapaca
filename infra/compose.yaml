@@ -16,6 +16,7 @@ services:
       GRANAPACA_MASTER_KEY_FILE: /run/secrets/master_key
       PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
       PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
+      BACKUP_STATUS_FILE: ${BACKUP_STATUS_FILE:-}
       TZ: ${TZ:-America/Sao_Paulo}
     secrets:
       - postgres_password

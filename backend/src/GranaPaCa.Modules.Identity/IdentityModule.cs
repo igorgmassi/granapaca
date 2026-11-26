@@ -27,6 +27,7 @@ public static class IdentityModule
             sp.GetRequiredService<SessionService>(),
             sp.GetService<IConfiguration>() ?? configuration));
         services.AddSingleton<IIdentityPurgeService>(sp => sp.GetRequiredService<IdentityService>());
+        services.AddSingleton<IHouseholdDirectory>(sp => sp.GetRequiredService<IdentityService>());
 
         return services;
     }
