@@ -7,15 +7,15 @@
 Open source, self-hosted personal finance app for Brazil: Open Finance through Pluggy, rule-based and AI categorization, and privacy first.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-![Status: in planning](https://img.shields.io/badge/status-in%20planning-orange)
+![Status: active development](https://img.shields.io/badge/status-active%20development-brightgreen)
 [![secret-scan](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/igorgmassi/granapaca/actions/workflows/secret-scan.yml)
 
-[Português](README.md) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Português](README.md) · [Web demo](https://igorgmassi.github.io/granapaca/) · [Architecture](#architecture) · [Roadmap](#roadmap) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 > [!NOTE]
-> **In planning.** There is no usable release yet. This repository holds the documentation and architecture decisions while Phase 0 (foundation) starts.
+> **Active development — MVP implemented.** The backend (.NET 10 + PostgreSQL 18), the Docker Compose stack with Tailscale and encrypted backup guides, the YAML onboarding profiles catalog ([`profiles/`](profiles/)), and the Flutter app with a [browsable web demo](https://igorgmassi.github.io/granapaca/) are already working in this repository. Post-MVP features are actively being built.
 
 ## What it is
 
@@ -32,20 +32,21 @@ Each person runs their own instance (self-hosted, single-tenant) with their own 
 - **Bank data preserved.** Corrections live in their own layer, with history, and the daily sync never erases a correction.
 - **Secure by default.** There are no default credentials, and the system refuses to start without a master key and a strong password.
 
-## Planned features
+## Features
 
-| Area | What it does | When |
+| Area | What it does | Status |
 |---|---|---|
-| Demo mode | Try it in the browser with 100% synthetic data, no bank connection needed | MVP |
-| Accounts and banks | Connection through Meu Pluggy, consolidated and per-bank statements, status of each connection | MVP |
-| Rule-based categorization | User, profile and system rules, with manual correction, history and undo | MVP |
-| Charts | Donut by category and a ranking of the heaviest categories | MVP |
-| Onboarding guide | Profile by occupation, household and commute that defines what is essential for you | After the MVP |
-| Cash | Quick entry of cash expenses, working offline | After the MVP |
-| AI | Categorizes what rules can't, plus a chat with read-only tools, using your own OpenAI, Anthropic or Google key, or a local Ollama model | After the MVP |
-| Receipts and NFC-e | Photos, PDFs and the invoice QR code, with line items becoming parts of the transaction | After the MVP |
-| Planning and alerts | Budgets, goals, projections, forgotten subscriptions and proactive alerts | After the MVP |
-| Export and import | CSV, XLSX, PDF, full JSON backup and OFX/CSV import | After the MVP |
+| Demo mode | Try it in the browser ([GitHub Pages demo](https://igorgmassi.github.io/granapaca/)) or in the app with 100% synthetic data, no bank connection needed | Available (MVP) |
+| Accounts and banks | Connection through Meu Pluggy, automatic synthetic mode, consolidated and per-bank statements, cards/bills and daily sync | Available (MVP) |
+| Rule-based categorization | Layered deterministic engine (manual corrections, user rules, profile rules and system rules), review queue, history and undo | Available (MVP) |
+| Charts | Donut by category, ranking of the heaviest categories and essentiality breakdown | Available (MVP) |
+| Onboarding guide | YAML catalog ([`profiles/`](profiles/)) by occupation, household and commute generating explained essentiality rules | Available |
+| Security and operations | TOTP 2FA, opaque tokens with rotating refresh, envelope field encryption, encrypted offline cache, in-app alerts inbox and encrypted `restic` backups | Available |
+| Import and export | OFX/CSV file import (available); CSV, XLSX, PDF export and full JSON backup | Partial (post-MVP) |
+| Cash | Quick entry of cash expenses, working offline | Post-MVP |
+| AI | Categorizes what rules can't, plus a chat with read-only tools (OpenAI, Anthropic, Google or local Ollama), always with minimization and pseudonymization | Post-MVP |
+| Receipts and NFC-e | Per-file encrypted local volume storage, deterministic NFC-e XML/QR parser (ES first) and optional AI vision fallback | Post-MVP |
+| Planning and alerts | Budgets, goals, projections, forgotten subscriptions and optional push notifications via `ntfy` | Post-MVP |
 
 ## Architecture
 
@@ -78,26 +79,48 @@ Only the backend talks to Pluggy and to AI providers, so secrets never reach the
 |---|---|
 | App (mobile, desktop and web demo) | Flutter and Dart 3 |
 | Backend | .NET 10 (LTS) and ASP.NET Core, as a modular monolith |
-| Data | PostgreSQL, Dapper and DbUp |
-| AI | Microsoft.Extensions.AI, with OpenAI, Anthropic, Google and Ollama |
+| Data | PostgreSQL 18, Dapper and DbUp |
+| AI | Typed HTTP clients (open path to Microsoft.Extensions.AI), with OpenAI, Anthropic, Google and Ollama |
 | Banking integration | Pluggy (Meu Pluggy) and OFX/CSV import |
-| Infrastructure | Docker Compose (amd64 and arm64), Tailscale and optional Caddy |
-| Quality | GitHub Actions, xUnit, Testcontainers and flutter_test |
+| Infrastructure | Docker Compose (amd64 and arm64), Tailscale, optional Caddy and restic backups |
+| Quality | GitHub Actions, xUnit, Testcontainers, ArchUnitNET and flutter_test |
 
-Every relevant choice is recorded as an ADR in [`docs/adr`](docs/adr) (in Portuguese), and any change to the stack needs a new ADR.
+All 29 architecture decisions are recorded as ADRs in [`docs/adr`](docs/adr) (in Portuguese), and any change to the stack needs a new ADR.
 
 ## Roadmap
 
-1. **Phase 0, Foundation:** repository, CI, security baseline and app and backend skeletons.
-2. **Phase 1, Browsable demo:** Flutter Web with synthetic data, published on GitHub Pages.
-3. **Phase 2, Real data:** Pluggy connection, daily sync and per-bank statements.
-4. **Phase 3, MVP:** rule-based categorization, manual correction with history and the first two charts.
+1. **Phase 0, Foundation (completed):** repository, CI, security baseline, multi-arch Docker Compose and app and backend skeletons.
+2. **Phase 1, Browsable demo (completed):** Flutter Web with synthetic data, published on GitHub Pages.
+3. **Phase 2, Real data (completed):** Pluggy connection (plus synthetic mode), daily sync, OFX/CSV import and per-bank statements.
+4. **Phase 3, MVP (completed):** rule-based categorization and YAML profiles, manual correction with history, review queue, alerts inbox, TOTP 2FA, encrypted offline cache and charts.
 
-After the MVP come the onboarding guide, cash entries, AI, receipts and invoices, planning, alerts and export.
+After the MVP come cash entries, AI with minimization and pseudonymization, receipts and NFC-e invoices, planning (budgets, goals and projections), push via `ntfy` and full export.
 
 ## Running your own instance
 
-There is no installable release yet. When there is, a single `docker compose up` will start the backend and database on your computer or on a VM reached through Tailscale, and the guide will live in [`infra/`](infra/).
+All you need is Docker with Compose v2, on `amd64` or `arm64`:
+
+```bash
+cd infra
+./init-secrets.sh
+cp .env.example .env
+docker compose up --build --detach --wait
+```
+
+Verify that the API and database came up healthy:
+
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/api/v1/server-info
+```
+
+If `PLUGGY_CLIENT_ID` and `PLUGGY_CLIENT_SECRET` are left blank in `infra/.env`, the instance automatically starts in **Synthetic** mode (`"providerMode": "synthetic"`), so you can try the full flow without connecting real bank accounts. By default, the API binds only to `127.0.0.1:8080` and exposes no ports to the internet.
+
+- **Full instance guide:** [`infra/README.md`](infra/README.md) (in Portuguese)
+- **Private remote access (Tailscale) and optional Caddy:** [`infra/TAILSCALE.md`](infra/TAILSCALE.md)
+- **Encrypted daily backups with `restic` and restore runbook:** [`infra/BACKUP.md`](infra/BACKUP.md)
+- **YAML onboarding profiles catalog:** [`profiles/README.md`](profiles/README.md)
+- **Try without installing anything:** [web demo on GitHub Pages](https://igorgmassi.github.io/granapaca/) (100% synthetic data, right in the browser)
 
 Each person creates their own Pluggy account and connects their own banks in Meu Pluggy. That mode is for personal, non-commercial use; check Pluggy's current terms before using it.
 
