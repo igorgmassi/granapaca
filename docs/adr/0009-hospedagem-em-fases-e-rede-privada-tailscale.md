@@ -25,4 +25,4 @@ Padronizar todas as fases de hospedagem sobre o **mesmo `infra/compose.yaml`** (
 
 - Migrar a instância de um computador local para um servidor caseiro ou VM resume-se a copiar `infra/`, manter a `master_key` e restaurar o backup do `restic` (ADR-029).
 - Nenhuma porta pública precisa ser aberta na configuração padrão, e o tráfego na tailnet permanece criptografado ponta a ponta sem intermediário de terminação TLS.
-- Quem optar por domínio público com `compose.caddy.yaml` assume explicitamente o firewall restrito (somente 80/443) e a obrigatoriedade do 2FA TOTP (ADR-024).
+- Quem optar por domínio público com `compose.caddy.yaml` assume explicitamente a manutenção do firewall restrito (somente portas 80/443), somado ao 2FA TOTP que já é obrigatório em qualquer modo de acesso (ADR-024).
