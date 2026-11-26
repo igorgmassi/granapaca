@@ -28,4 +28,4 @@ rules:
     brand: Transporte
     match:
       categories: [transport]
-      keywords: [uber, 99, metro, onibus, bilhete unico]
+      keywords: [uber, "99", metro, onibus, bilhete unico]

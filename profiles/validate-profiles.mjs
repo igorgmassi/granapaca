@@ -69,9 +69,22 @@ function parseScalar(raw, lineNo, filePath) {
   if (trimmed.startsWith("[")) {
     return parseFlowSequence(trimmed, lineNo, filePath);
   }
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "null" || trimmed === "~") return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "true") return true;
+  if (lower === "false") return false;
+  if (lower === "null" || trimmed === "~") return null;
+  if (/^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  if (/^0o[0-7]+$/i.test(trimmed) || /^0x[0-9a-f]+$/i.test(trimmed)) {
+    return Number(lower);
+  }
+  if (/^[-+]?\.inf$/i.test(trimmed)) {
+    return trimmed.startsWith("-") ? -Infinity : Infinity;
+  }
+  if (/^\.nan$/i.test(trimmed)) {
+    return NaN;
+  }
   return trimmed;
 }
 

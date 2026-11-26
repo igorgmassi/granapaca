@@ -19,4 +19,4 @@ rules:
     brand: Transporte
     match:
       categories: [transport]
-      keywords: [uber, 99, taxi, cabify, indrive]
+      keywords: [uber, "99", taxi, cabify, indrive]

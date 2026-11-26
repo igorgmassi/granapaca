@@ -10,7 +10,7 @@ rules:
     brand: Transporte
     match:
       categories: [transport]
-      keywords: [uber, 99, 99app, taxi, cabify, indrive]
+      keywords: [uber, "99", 99app, taxi, cabify, indrive]
 
   - id: ridehail-assinatura-desconto
     name: Assinatura de benefícios em corridas
