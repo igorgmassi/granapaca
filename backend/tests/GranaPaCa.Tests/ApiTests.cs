@@ -26,6 +26,7 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
         "GranaPaCa.Modules.Keyring.Migrations.0001_create_keyring_schema.sql",
         "GranaPaCa.Modules.Planning.Migrations.0001_create_planning_schema.sql",
         "GranaPaCa.Modules.Receipts.Migrations.0001_create_receipts_schema.sql",
+        "GranaPaCa.Modules.Assistant.Migrations.0002_add_free_tier_ai_providers.sql",
     ];
 
     [Fact]
