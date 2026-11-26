@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_models.dart';
@@ -51,10 +53,13 @@ class AppAlert {
   );
 
   static AppAlert fromSyncItem(SyncAlertItem item) {
-    final target = AlertTarget.values.firstWhere(
-      (t) => t.name == item.targetKey,
-      orElse: () => AlertTarget.connections,
-    );
+    final normalizedTarget = item.targetKey.toLowerCase().trim();
+    final target = switch (normalizedTarget) {
+      'spending' || '/spending' || 'gastos' => AlertTarget.spending,
+      'bankaurora' => AlertTarget.bankAurora,
+      _ when normalizedTarget.startsWith('/banks/') => AlertTarget.bankAurora,
+      _ => AlertTarget.connections,
+    };
     return AppAlert(
       id: item.id,
       title: item.title,
@@ -77,39 +82,49 @@ class AppState extends ChangeNotifier {
     EncryptedCacheStore? encryptedCache,
     AppLockController? appLock,
     this._simulateNoConnections = false,
-    AppMode initialMode = AppMode.demo,
+    AppMode? initialMode,
     String? initialServerUrl,
     List<BankConnectionInfo>? initialConnections,
     bool initialOffline = false,
     DateTime? initialLastSyncedAt,
-  }) : _dataset =
-           dataset ??
-           (initialMode == AppMode.server
-               ? Dataset(
-                   banks: const [],
-                   accounts: const [],
-                   transactions: const [],
-                   today: DateTime.now(),
-                 )
-               : demoDataset()),
-       _preferences = preferencesStore ?? createDefaultPreferencesStore(),
+  }) : _preferences = preferencesStore ?? createDefaultPreferencesStore(),
        _apiClient = apiClient ?? GranaPaCaApiClient(),
        _encryptedCache = encryptedCache ?? EncryptedCacheStore(),
        _appLock = appLock ?? AppLockController(),
-       _mode = initialMode,
        _isOffline = initialOffline,
        _lastSyncedAt = initialLastSyncedAt {
     _hideValues = _preferences.readHideValues();
     _themeMode = _preferences.readThemeMode();
     _serverUrl = initialServerUrl ?? _preferences.readServerUrl();
+    _mode =
+        initialMode ??
+        ((_serverUrl != null && _serverUrl!.trim().isNotEmpty)
+            ? AppMode.server
+            : AppMode.demo);
+    _dataset =
+        dataset ??
+        (_mode == AppMode.server
+            ? Dataset(
+                banks: const [],
+                accounts: const [],
+                transactions: const [],
+                today: DateTime.now(),
+              )
+            : demoDataset());
     if (_serverUrl != null) {
       final parsed = Uri.tryParse(_serverUrl!);
       if (parsed != null) {
         _apiClient.setBaseUrl(parsed);
       }
     }
+    _appLock.attachPreferencesStore(_preferences);
     _apiClient.onTokensChanged = _handleTokensChanged;
     _appLock.onLockoutSessionCleared = _handleLockoutSessionCleared;
+    _appLock.onPinConfigured = _handlePinConfigured;
+    _appLock.onPinUnlocked = _handlePinUnlocked;
+    _appLock.onBiometricUnlocked = _handleBiometricUnlocked;
+    _appLock.onLockDisabled = _handleLockDisabled;
+    _appLock.onLocked = _handleAppLocked;
     _appLock.addListener(notifyListeners);
 
     if (initialConnections != null) {
@@ -136,13 +151,13 @@ class AppState extends ChangeNotifier {
       'Você está sem conexão. Corrigir transações exige conexão com o seu '
       'servidor.';
 
-  Dataset _dataset;
+  late Dataset _dataset;
   final PreferencesStore _preferences;
   final GranaPaCaApiClient _apiClient;
   final EncryptedCacheStore _encryptedCache;
   final AppLockController _appLock;
 
-  AppMode _mode;
+  late AppMode _mode;
   String? _serverUrl;
   ServerInfo? _serverInfo;
   AuthTokens? _authTokens;
@@ -152,7 +167,12 @@ class AppState extends ChangeNotifier {
   DateTime? _lastSyncedAt;
   String? _syncCursor;
   bool _isSyncing = false;
+  bool _isRestoringOfflineCache = false;
   String? _sessionClearedNotice;
+  String? _lastMutationError;
+  final Map<int, String> _txIdToUuid = {};
+  List<SyncCardBillItem> _syncedCardBills = const [];
+  Future<void> _mutationChain = Future<void>.value();
 
   late bool _hideValues;
   late ThemeMode _themeMode;
@@ -207,7 +227,28 @@ class AppState extends ChangeNotifier {
   DateTime? get lastSyncedAt => _lastSyncedAt;
   String? get syncCursor => _syncCursor;
   bool get isSyncing => _isSyncing;
+  bool get isRestoringOfflineCache => _isRestoringOfflineCache;
   String? get sessionClearedNotice => _sessionClearedNotice;
+  String? get lastMutationError => _lastMutationError;
+  List<SyncCardBillItem> get syncedCardBills =>
+      List.unmodifiable(_syncedCardBills);
+
+  /// Waits for all queued server-mode mutations (adjustments/rules) to finish.
+  Future<void> flushPendingMutations() => _mutationChain;
+
+  /// Cold-start initialization: initializes app lock hardware checks and
+  /// restores the encrypted offline cache for a previously configured server
+  /// profile when unlocked (RF-04, RF-21).
+  Future<void> initialize() async {
+    await _appLock.initialize();
+    if (_mode == AppMode.server &&
+        !isAuthenticated &&
+        !_isOffline &&
+        !_appLock.isLocked &&
+        _preferences.readHasActiveServerProfile()) {
+      await restoreFromEncryptedCache(markOffline: true);
+    }
+  }
 
   /// Editing transactions is disabled in server mode while offline (RF-21).
   bool get canEditTransactions => !(isServerMode && _isOffline);
@@ -307,14 +348,105 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _handleLockoutSessionCleared() {
+  void _clearServerSessionData() {
     _authTokens = null;
     _apiClient.setTokens(null);
     _activeSessions = const [];
+    _isOffline = false;
+    _syncCursor = null;
+    _lastSyncedAt = null;
+    _serverConnections = [];
+    _syncedCardBills = const [];
+    _rules.clear();
+    _adjustments.clear();
+    _txIdToUuid.clear();
+    _alerts = const [];
+    _dataset = Dataset(
+      banks: const [],
+      accounts: const [],
+      transactions: const [],
+      today: DateTime.now(),
+    );
+    _recompute();
+  }
+
+  void _handleLockoutSessionCleared() {
+    _clearServerSessionData();
+    if (_serverUrl != null && _serverUrl!.trim().isNotEmpty) {
+      _mode = AppMode.server;
+    }
     _sessionClearedNotice =
         'Limite de 5 tentativas incorretas atingido. Por segurança, sua sessão '
-        'foi encerrada e você precisa entrar novamente.';
+        'e o cache offline foram encerrados e você precisa entrar novamente.';
+    unawaited(_encryptedCache.wipeAll());
+    unawaited(_preferences.writeHasActiveServerProfile(false));
     notifyListeners();
+  }
+
+  void _handlePinConfigured(String pin) {
+    unawaited(
+      _encryptedCache.protectWithPin(pin, iterations: _appLock.hashIterations),
+    );
+  }
+
+  void _handlePinUnlocked(String pin) {
+    final shouldRestore =
+        _mode == AppMode.server &&
+        !isAuthenticated &&
+        !_isOffline &&
+        _preferences.readHasActiveServerProfile();
+    if (shouldRestore) {
+      _isRestoringOfflineCache = true;
+    }
+    unawaited(_completePinUnlock(pin, shouldRestore: shouldRestore));
+  }
+
+  Future<void> _completePinUnlock(
+    String pin, {
+    required bool shouldRestore,
+  }) async {
+    try {
+      await _encryptedCache.unlockWithPin(pin);
+      if (shouldRestore && !isAuthenticated && !_isOffline) {
+        await restoreFromEncryptedCache(markOffline: true);
+      }
+    } finally {
+      if (_isRestoringOfflineCache) {
+        _isRestoringOfflineCache = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _handleBiometricUnlocked() {
+    if (_mode == AppMode.server &&
+        !isAuthenticated &&
+        !_isOffline &&
+        _preferences.readHasActiveServerProfile()) {
+      _isRestoringOfflineCache = true;
+      unawaited(_completeBiometricRestore());
+    }
+  }
+
+  Future<void> _completeBiometricRestore() async {
+    try {
+      await restoreFromEncryptedCache(markOffline: true);
+    } finally {
+      if (_isRestoringOfflineCache) {
+        _isRestoringOfflineCache = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _handleLockDisabled() {
+    unawaited(_encryptedCache.removePinProtection());
+  }
+
+  void _handleAppLocked() {
+    if (!_appLock.biometricEnabled) {
+      _encryptedCache.lockInMemory();
+    }
   }
 
   void clearSessionClearedNotice() {
@@ -344,8 +476,10 @@ class AppState extends ChangeNotifier {
       _syncCursor = null;
       _lastSyncedAt = null;
       _serverConnections = [];
+      _syncedCardBills = const [];
       _rules.clear();
       _adjustments.clear();
+      _txIdToUuid.clear();
       _alerts = const [];
       _dataset = Dataset(
         banks: const [],
@@ -372,13 +506,16 @@ class AppState extends ChangeNotifier {
     _isOffline = false;
     _dataset = demoDataset();
     _serverConnections = _demoConnectionsFromDataset(_dataset);
+    _syncedCardBills = const [];
     _alerts = _defaultDemoAlerts();
     _rules.clear();
     _adjustments.clear();
+    _txIdToUuid.clear();
     _selectedMonth = DateTime(_dataset.today.year, _dataset.today.month);
     _spendingMonth = _selectedMonth;
     final (from, to) = monthRange(_selectedMonth);
     _historyFilter = TxFilter(from: from, to: to);
+    unawaited(_preferences.writeHasActiveServerProfile(false));
     _recompute();
     notifyListeners();
   }
@@ -429,6 +566,7 @@ class AppState extends ChangeNotifier {
       _authTokens = result.tokens;
       _mode = AppMode.server;
       _isOffline = false;
+      await _preferences.writeHasActiveServerProfile(true);
       notifyListeners();
     }
     return result;
@@ -445,6 +583,7 @@ class AppState extends ChangeNotifier {
     _authTokens = result.tokens;
     _mode = AppMode.server;
     _isOffline = false;
+    await _preferences.writeHasActiveServerProfile(true);
     notifyListeners();
     return result;
   }
@@ -466,11 +605,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// RF-03: signs out of the current session and wipes local tokens.
+  /// RF-03: signs out of the current session, clears in-memory financial data,
+  /// and wipes the encrypted offline cache.
   Future<void> logout() async {
     await _apiClient.logout();
-    _authTokens = null;
-    _activeSessions = const [];
+    _clearServerSessionData();
+    await _encryptedCache.wipeAll();
+    await _preferences.writeHasActiveServerProfile(false);
     notifyListeners();
   }
 
@@ -521,9 +662,24 @@ class AppState extends ChangeNotifier {
       if (triggerBankSync) {
         await _apiClient.syncConnections();
       }
-      final delta = await _apiClient.fetchSyncChanges(cursor: _syncCursor);
+      SyncChangesResponse delta;
+      try {
+        delta = await _apiClient.fetchSyncChanges(cursor: _syncCursor);
+      } on ApiException catch (error) {
+        if (error.fullResyncRequired && _syncCursor != null) {
+          _syncCursor = null;
+          delta = await _apiClient.fetchSyncChanges(cursor: null);
+        } else {
+          rethrow;
+        }
+      }
+      if (delta.fullResyncRequired && _syncCursor != null) {
+        _syncCursor = null;
+        delta = await _apiClient.fetchSyncChanges(cursor: null);
+      }
       _applySyncDelta(delta);
       _isOffline = false;
+      await _preferences.writeHasActiveServerProfile(true);
       await _persistEncryptedCache();
       return true;
     } on ApiException catch (error) {
@@ -554,6 +710,9 @@ class AppState extends ChangeNotifier {
       _lastSyncedAt = snapshot.lastSyncedAt;
       _syncCursor = snapshot.syncCursor;
       _serverConnections = List<BankConnectionInfo>.from(snapshot.connections);
+      _txIdToUuid
+        ..clear()
+        ..addAll(snapshot.transactionUuidById);
       _rules
         ..clear()
         ..addAll(snapshot.rules);
@@ -562,13 +721,19 @@ class AppState extends ChangeNotifier {
         ..addAll(snapshot.adjustments);
       if (snapshot.alerts.isNotEmpty) {
         _alerts = snapshot.alerts
+            .where((a) => !a.isResolved)
             .map(AppAlert.fromSyncItem)
             .toList(growable: false);
       }
       if (markOffline) {
         _isOffline = true;
       }
-      _selectedMonth = DateTime(_dataset.today.year, _dataset.today.month);
+      if (_dataset.transactions.isNotEmpty) {
+        final latestDate = _latestTransactionDate(_dataset.transactions);
+        _selectedMonth = DateTime(latestDate.year, latestDate.month);
+      } else {
+        _selectedMonth = DateTime(_dataset.today.year, _dataset.today.month);
+      }
       _spendingMonth = _selectedMonth;
       final (from, to) = monthRange(_selectedMonth);
       _historyFilter = TxFilter(from: from, to: to);
@@ -576,29 +741,53 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return true;
     } on CacheIntegrityException {
+      if (await _encryptedCache.hasPinWrappedKey() &&
+          !_encryptedCache.hasUnlockedKeyInMemory) {
+        return false;
+      }
       await _encryptedCache.wipe();
       return false;
     }
   }
 
+  DateTime _latestTransactionDate(List<Transaction> transactions) {
+    var latest = transactions.first.date;
+    for (final tx in transactions) {
+      if (tx.date.isAfter(latest)) {
+        latest = tx.date;
+      }
+    }
+    return latest;
+  }
+
   void _applySyncDelta(SyncChangesResponse delta) {
     final mergedBanks = <String, Bank>{
-      for (final b in _dataset.banks) b.id: b,
+      if (!delta.isFullSync)
+        for (final b in _dataset.banks) b.id: b,
       for (final b in delta.banks) b.id: b,
     };
     final mergedAccounts = <String, Account>{
-      for (final a in _dataset.accounts) a.id: a,
+      if (!delta.isFullSync)
+        for (final a in _dataset.accounts) a.id: a,
       for (final a in delta.accounts) a.id: a,
     };
     final mergedTxs = <int, Transaction>{
-      for (final t in _dataset.transactions) t.id: t,
+      if (!delta.isFullSync)
+        for (final t in _dataset.transactions) t.id: t,
       for (final t in delta.transactions) t.id: t,
     };
+    if (delta.isFullSync) {
+      _txIdToUuid.clear();
+    }
+    _txIdToUuid.addAll(delta.transactionUuidById);
     for (final removedId in delta.removedTransactionIds) {
       mergedTxs.remove(removedId);
+      _txIdToUuid.remove(removedId);
     }
 
-    if (delta.connections.isNotEmpty) {
+    if (delta.isFullSync) {
+      _serverConnections = List<BankConnectionInfo>.from(delta.connections);
+    } else if (delta.connections.isNotEmpty) {
       final mergedConns = <String, BankConnectionInfo>{
         for (final c in _serverConnections) c.id: c,
         for (final c in delta.connections) c.id: c,
@@ -606,7 +795,21 @@ class AppState extends ChangeNotifier {
       _serverConnections = mergedConns.values.toList();
     }
 
-    if (delta.rules.isNotEmpty) {
+    if (delta.isFullSync) {
+      _syncedCardBills = List<SyncCardBillItem>.from(delta.cardBills);
+    } else if (delta.cardBills.isNotEmpty) {
+      final mergedBills = <String, SyncCardBillItem>{
+        for (final b in _syncedCardBills) b.id: b,
+        for (final b in delta.cardBills) b.id: b,
+      };
+      _syncedCardBills = mergedBills.values.toList(growable: false);
+    }
+
+    if (delta.isFullSync) {
+      _rules
+        ..clear()
+        ..addAll(delta.rules);
+    } else if (delta.rules.isNotEmpty) {
       final mergedRules = <String, UserRule>{
         for (final r in _rules) r.id: r,
         for (final r in delta.rules) r.id: r,
@@ -616,10 +819,37 @@ class AppState extends ChangeNotifier {
         ..addAll(mergedRules.values);
     }
 
-    if (delta.alerts.isNotEmpty) {
+    if (delta.isFullSync) {
+      _adjustments
+        ..clear()
+        ..addAll(delta.adjustments);
+    } else if (delta.adjustments.isNotEmpty) {
+      final mergedAdjs = <String, TxAdjustment>{
+        for (final a in _adjustments) a.id: a,
+        for (final a in delta.adjustments) a.id: a,
+      };
+      _adjustments
+        ..clear()
+        ..addAll(mergedAdjs.values);
+    }
+
+    if (delta.isFullSync) {
       _alerts = delta.alerts
+          .where((a) => !a.isResolved)
           .map(AppAlert.fromSyncItem)
           .toList(growable: false);
+    } else if (delta.alerts.isNotEmpty) {
+      final mergedAlerts = <String, AppAlert>{
+        for (final a in _alerts) a.id: a,
+      };
+      for (final item in delta.alerts) {
+        if (item.isResolved) {
+          mergedAlerts.remove(item.id);
+        } else {
+          mergedAlerts[item.id] = AppAlert.fromSyncItem(item);
+        }
+      }
+      _alerts = mergedAlerts.values.toList(growable: false);
     }
 
     _lastSyncedAt = delta.syncedAt;
@@ -640,7 +870,7 @@ class AppState extends ChangeNotifier {
     );
 
     if (_dataset.transactions.isNotEmpty) {
-      final latestDate = _dataset.transactions.first.date;
+      final latestDate = _latestTransactionDate(_dataset.transactions);
       _selectedMonth = DateTime(latestDate.year, latestDate.month);
       _spendingMonth = _selectedMonth;
       final (from, to) = monthRange(_selectedMonth);
@@ -684,6 +914,7 @@ class AppState extends ChangeNotifier {
       rules: _rules,
       adjustments: _adjustments,
       alerts: [for (final a in _alerts) a.toSyncItem()],
+      transactionUuidById: Map<int, String>.from(_txIdToUuid),
     );
     await _encryptedCache.saveSnapshot(snapshot);
   }
@@ -838,9 +1069,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get _shouldPersistToServer =>
+      isServerMode && isAuthenticated && !_isOffline;
+
+  void _enqueueServerMutation(Future<void> Function() task) {
+    _mutationChain = _mutationChain.then((_) async {
+      try {
+        _lastMutationError = null;
+        await task();
+      } on ApiException catch (error) {
+        _lastMutationError = error.message;
+        if (error.isOffline) {
+          _isOffline = true;
+        }
+        notifyListeners();
+      }
+    });
+  }
+
   /// Appends immutable manual adjustments for only the fields that actually
   /// changed, keeping category and essentiality strictly independent (RF-24).
   /// Refuses mutations cleanly when in offline server mode (RF-21).
+  /// When in authenticated online server mode, persists via
+  /// `POST /api/v1/transactions/{id}/adjustments` and reconciles server IDs.
   List<TxAdjustment> adjustTransaction({
     required int txId,
     SpendingCategory? category,
@@ -878,9 +1129,11 @@ class AppState extends ChangeNotifier {
       created.add(adj);
     }
 
+    String? cleanedDesc;
     if (changeDescription && description != null) {
       final cleaned = description.trim();
       if (cleaned.isNotEmpty) {
+        cleanedDesc = cleaned;
         addField(AdjustmentField.description, current.description, cleaned);
       }
     }
@@ -905,11 +1158,40 @@ class AppState extends ChangeNotifier {
     if (created.isNotEmpty) {
       _recompute();
       notifyListeners();
+      if (_shouldPersistToServer) {
+        final serverTxId = _txIdToUuid[txId] ?? '$txId';
+        final createdIds = {for (final a in created) a.id};
+        _enqueueServerMutation(() async {
+          try {
+            final persisted = await _apiClient.applyTransactionAdjustments(
+              transactionId: serverTxId,
+              category: changeCategory ? category : null,
+              essentiality: changeEssentiality ? essentiality : null,
+              kind: changeKind ? kind : null,
+              description: cleanedDesc,
+              reason: trimmedReason,
+            );
+            if (persisted.isNotEmpty) {
+              _adjustments.removeWhere((a) => createdIds.contains(a.id));
+              _adjustments.addAll(persisted);
+              _recompute();
+            }
+            await _persistEncryptedCache();
+            notifyListeners();
+          } on ApiException {
+            _adjustments.removeWhere((a) => createdIds.contains(a.id));
+            _recompute();
+            rethrow;
+          }
+        });
+      }
     }
     return created;
   }
 
   /// Appends an undo record pointing to [adjustmentId] (ADR-012, RF-25).
+  /// When in authenticated online server mode, persists via
+  /// `POST /api/v1/transactions/{id}/adjustments/{adjustmentId}/undo`.
   void undoAdjustment(String adjustmentId) {
     if (!canEditTransactions) return;
     final index = _adjustments.indexWhere((a) => a.id == adjustmentId);
@@ -917,23 +1199,46 @@ class AppState extends ChangeNotifier {
     final target = _adjustments[index];
     if (target.isUndo || undoneIds.contains(target.id)) return;
 
-    _adjustments.add(
-      TxAdjustment(
-        id: 'adj-${_adjustmentSeq++}',
-        txId: target.txId,
-        field: target.field,
-        oldValue: target.newValue,
-        newValue: target.oldValue,
-        reason: 'Ajuste desfeito',
-        timestamp: DateTime.now(),
-        undoesId: target.id,
-      ),
+    final optimistic = TxAdjustment(
+      id: 'adj-${_adjustmentSeq++}',
+      txId: target.txId,
+      field: target.field,
+      oldValue: target.newValue,
+      newValue: target.oldValue,
+      reason: 'Ajuste desfeito',
+      timestamp: DateTime.now(),
+      undoesId: target.id,
     );
+    _adjustments.add(optimistic);
     _recompute();
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      final serverTxId = _txIdToUuid[target.txId] ?? '${target.txId}';
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.undoTransactionAdjustment(
+            transactionId: serverTxId,
+            adjustmentId: adjustmentId,
+          );
+          if (persisted != null) {
+            _adjustments.removeWhere((a) => a.id == optimistic.id);
+            _adjustments.add(persisted);
+            _recompute();
+          }
+          await _persistEncryptedCache();
+          notifyListeners();
+        } on ApiException {
+          _adjustments.removeWhere((a) => a.id == optimistic.id);
+          _recompute();
+          rethrow;
+        }
+      });
+    }
   }
 
-  /// Creates a user rule from a transaction correction (RF-26).
+  /// Creates a user rule from a transaction correction (RF-26, RF-31).
+  /// When in authenticated online server mode, persists via `POST /api/v1/rules`.
   UserRule? createUserRuleFromTransaction({
     required int txId,
     SpendingCategory? category,
@@ -948,13 +1253,14 @@ class AppState extends ChangeNotifier {
       if (essentiality != null) 'essencialidade ${essentiality.label}',
       if (kind != null) 'tipo ${kind.label}',
     ];
+    final explanation =
+        'Regra criada por você para aplicar ${parts.join(' e ')} em '
+        'transações de "${tx.original.description}".';
     final rule = UserRule(
       id: 'user-rule-${_ruleSeq++}',
       merchantKey: key,
       name: tx.original.description,
-      explanation:
-          'Regra criada por você para aplicar ${parts.join(' e ')} em '
-          'transações de "${tx.original.description}".',
+      explanation: explanation,
       category: category,
       essentiality: essentiality,
       kind: kind,
@@ -964,6 +1270,33 @@ class AppState extends ChangeNotifier {
     _rules.add(rule);
     _recompute();
     notifyListeners();
+
+    if (_shouldPersistToServer && (category != null || essentiality != null)) {
+      _enqueueServerMutation(() async {
+        try {
+          final persisted = await _apiClient.createRule(
+            matchMerchant: tx.original.description,
+            name: rule.name,
+            explanation: explanation,
+            category: category,
+            essentiality: essentiality,
+          );
+          final idx = _rules.indexWhere((r) => r.id == rule.id);
+          if (idx != -1) {
+            _rules[idx] = persisted;
+          } else {
+            _rules.add(persisted);
+          }
+          _recompute();
+          await _persistEncryptedCache();
+          notifyListeners();
+        } on ApiException {
+          _rules.removeWhere((r) => r.id == rule.id);
+          _recompute();
+          rethrow;
+        }
+      });
+    }
     return rule;
   }
 
@@ -971,18 +1304,56 @@ class AppState extends ChangeNotifier {
     if (!canEditTransactions) return;
     final index = _rules.indexWhere((r) => r.id == ruleId);
     if (index == -1) return;
-    _rules[index] = _rules[index].copyWith(isActive: active);
+    final previous = _rules[index];
+    _rules[index] = previous.copyWith(isActive: active);
     _recompute();
     notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          final updated = await _apiClient.updateRuleActive(
+            ruleId: ruleId,
+            isActive: active,
+          );
+          final idx = _rules.indexWhere((r) => r.id == ruleId);
+          if (idx != -1) {
+            _rules[idx] = updated;
+          }
+          _recompute();
+          await _persistEncryptedCache();
+          notifyListeners();
+        } on ApiException {
+          final idx = _rules.indexWhere((r) => r.id == ruleId);
+          if (idx != -1) {
+            _rules[idx] = previous;
+          }
+          _recompute();
+          rethrow;
+        }
+      });
+    }
   }
 
   void deleteRule(String ruleId) {
     if (!canEditTransactions) return;
-    final before = _rules.length;
-    _rules.removeWhere((r) => r.id == ruleId);
-    if (_rules.length != before) {
-      _recompute();
-      notifyListeners();
+    final index = _rules.indexWhere((r) => r.id == ruleId);
+    if (index == -1) return;
+    final removed = _rules.removeAt(index);
+    _recompute();
+    notifyListeners();
+
+    if (_shouldPersistToServer) {
+      _enqueueServerMutation(() async {
+        try {
+          await _apiClient.deleteRule(ruleId);
+          await _persistEncryptedCache();
+        } on ApiException {
+          _rules.insert(index.clamp(0, _rules.length), removed);
+          _recompute();
+          rethrow;
+        }
+      });
     }
   }
 

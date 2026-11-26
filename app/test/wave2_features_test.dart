@@ -604,13 +604,13 @@ void main() {
         await tester.tap(loginBtn);
         await tester.pumpAndSettle();
 
-        // Step 4A: Mandatory TOTP setup
+        // Step 4A: Mandatory TOTP setup (QR Code + Base32 key)
         expect(find.text('Ative o autenticador (2FA obrigatório)'), findsOneWidget);
+        expect(find.byKey(const Key('totp_qr_code')), findsOneWidget);
         expect(find.text('JBSWY3DPEHPK3PXP'), findsOneWidget);
-        await tester.enterText(
-          find.byKey(const Key('totp_confirm_code_field')),
-          '654321',
-        );
+        final totpCodeField = find.byKey(const Key('totp_confirm_code_field'));
+        await _scrollTo(tester, totpCodeField);
+        await tester.enterText(totpCodeField, '654321');
         final confirmBtn = find.byKey(const Key('totp_confirm_button'));
         await _scrollTo(tester, confirmBtn);
         await tester.tap(confirmBtn);

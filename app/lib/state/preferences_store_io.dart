@@ -15,6 +15,8 @@ class FilePreferencesStore implements PreferencesStore {
   bool _hideValues = false;
   ThemeMode _themeMode = ThemeMode.system;
   String? _serverUrl;
+  AppLockConfig? _appLockConfig;
+  bool _hasActiveServerProfile = false;
 
   void _load() {
     try {
@@ -36,6 +38,14 @@ class FilePreferencesStore implements PreferencesStore {
       if (url is String && url.trim().isNotEmpty) {
         _serverUrl = url.trim();
       }
+      final lockJson = decoded['appLockConfig'];
+      if (lockJson is Map<String, dynamic>) {
+        _appLockConfig = AppLockConfig.fromJson(lockJson);
+      }
+      final activeServer = decoded['hasActiveServerProfile'];
+      if (activeServer is bool) {
+        _hasActiveServerProfile = activeServer;
+      }
     } catch (_) {
       // Ignore corrupt or unreadable local preference files safely.
     }
@@ -49,6 +59,8 @@ class FilePreferencesStore implements PreferencesStore {
           'hideValues': _hideValues,
           'themeMode': _themeMode.name,
           'serverUrl': _serverUrl,
+          'appLockConfig': _appLockConfig?.toJson(),
+          'hasActiveServerProfile': _hasActiveServerProfile,
         }),
       );
     } catch (_) {
@@ -80,6 +92,24 @@ class FilePreferencesStore implements PreferencesStore {
   @override
   Future<void> writeServerUrl(String? url) async {
     _serverUrl = (url == null || url.trim().isEmpty) ? null : url.trim();
+    await _save();
+  }
+
+  @override
+  AppLockConfig? readAppLockConfig() => _appLockConfig;
+
+  @override
+  Future<void> writeAppLockConfig(AppLockConfig? config) async {
+    _appLockConfig = config;
+    await _save();
+  }
+
+  @override
+  bool readHasActiveServerProfile() => _hasActiveServerProfile;
+
+  @override
+  Future<void> writeHasActiveServerProfile(bool value) async {
+    _hasActiveServerProfile = value;
     await _save();
   }
 }

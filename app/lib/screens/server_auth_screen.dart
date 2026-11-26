@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../api/api_models.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
+import '../widgets/totp_qr_code.dart';
 import 'app_shell.dart';
 
 enum _AuthFlowStep { server, ownerSetup, login, totpSetup, recoveryCodes }
@@ -758,6 +759,19 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text(
+                    'Escaneie o QR Code no seu autenticador',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: GranaSpacing.sm),
+                  Center(
+                    child: TotpQrCodeView(
+                      key: const Key('totp_qr_code'),
+                      data: setup.otpauthUri,
+                      size: 168,
+                    ),
+                  ),
+                  const SizedBox(height: GranaSpacing.md),
                   const Text(
                     'Chave manual (Base32)',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),

@@ -27,7 +27,7 @@ class HomeScreen extends StatelessWidget {
       return;
     }
     try {
-      final synced = await state.syncFromServer(triggerBankSync: true);
+      final synced = await state.syncFromServer(triggerBankSync: false);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

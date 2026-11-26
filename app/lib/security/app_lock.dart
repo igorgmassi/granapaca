@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../state/preferences_store_base.dart';
 import '../storage/pure_crypto.dart';
 
 /// Outcome of an OS biometric unlock prompt.
@@ -37,13 +39,23 @@ class UnavailableBiometricAuthenticator implements BiometricAuthenticator {
 class AppLockController extends ChangeNotifier {
   AppLockController({
     BiometricAuthenticator? biometricAuthenticator,
+    this._preferencesStore,
     DateTime Function()? clock,
     this.onLockoutSessionCleared,
+    this.onPinConfigured,
+    this.onPinUnlocked,
+    this.onBiometricUnlocked,
+    this.onLockDisabled,
+    this.onLocked,
     this._inactivityTimeout = defaultInactivityTimeout,
     this._hashIterations = defaultHashIterations,
   }) : _biometricAuthenticator =
            biometricAuthenticator ?? const UnavailableBiometricAuthenticator(),
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now {
+    if (_preferencesStore != null) {
+      _loadFromPreferences(_preferencesStore!);
+    }
+  }
 
   static const int pinLength = 6;
   static const int maxFailedAttempts = 5;
@@ -51,12 +63,30 @@ class AppLockController extends ChangeNotifier {
   static const int defaultHashIterations = 5000;
 
   final BiometricAuthenticator _biometricAuthenticator;
+  PreferencesStore? _preferencesStore;
   final DateTime Function() _clock;
   final int _hashIterations;
 
   /// Invoked immediately after [maxFailedAttempts] consecutive wrong PINs so
   /// [AppState] clears the session and forces full re-login (RF-04).
   VoidCallback? onLockoutSessionCleared;
+
+  /// Invoked when the user sets a new PIN so the encrypted cache can wrap its
+  /// DEK with a PBKDF2-derived KEK.
+  void Function(String pin)? onPinConfigured;
+
+  /// Invoked when the user unlocks with a valid PIN so the encrypted cache can
+  /// unwrap its DEK and restore offline data.
+  void Function(String pin)? onPinUnlocked;
+
+  /// Invoked after successful OS biometric unlock.
+  VoidCallback? onBiometricUnlocked;
+
+  /// Invoked when app lock is disabled.
+  VoidCallback? onLockDisabled;
+
+  /// Invoked whenever the controller transitions into the locked state.
+  VoidCallback? onLocked;
 
   bool _isEnabled = false;
   bool _isLocked = false;
@@ -76,6 +106,7 @@ class AppLockController extends ChangeNotifier {
   bool get canUseBiometrics => _biometricEnabled && _biometricAvailable;
   bool get lockedOut => _lockedOut;
   Duration get inactivityTimeout => _inactivityTimeout;
+  int get hashIterations => _hashIterations;
   int get failedAttempts => _failedAttempts;
   int get remainingAttempts =>
       (maxFailedAttempts - _failedAttempts).clamp(0, maxFailedAttempts);
@@ -83,6 +114,52 @@ class AppLockController extends ChangeNotifier {
   /// Exposed for security audits/tests verifying that only `salt:hash` is ever
   /// held in memory or persisted — never the plaintext PIN.
   String? get storedPinHash => _pinHash;
+
+  /// Attaches a [PreferencesStore] after construction (if not already bound)
+  /// and restores any persisted lock configuration on cold start.
+  void attachPreferencesStore(PreferencesStore store) {
+    if (_preferencesStore != null) return;
+    _preferencesStore = store;
+    if (!_isEnabled && !hasPin) {
+      _loadFromPreferences(store);
+    }
+  }
+
+  void _loadFromPreferences(PreferencesStore store) {
+    final saved = store.readAppLockConfig();
+    if (saved == null ||
+        !saved.isEnabled ||
+        saved.pinHash == null ||
+        saved.pinHash!.isEmpty) {
+      return;
+    }
+    _isEnabled = true;
+    _pinHash = saved.pinHash;
+    _biometricEnabled = saved.biometricEnabled;
+    if (saved.inactivityTimeoutSeconds > 0) {
+      _inactivityTimeout = Duration(seconds: saved.inactivityTimeoutSeconds);
+    }
+    _isLocked = true;
+  }
+
+  void _persistConfig() {
+    final store = _preferencesStore;
+    if (store == null) return;
+    if (_isEnabled && hasPin) {
+      unawaited(
+        store.writeAppLockConfig(
+          AppLockConfig(
+            isEnabled: true,
+            pinHash: _pinHash,
+            biometricEnabled: _biometricEnabled,
+            inactivityTimeoutSeconds: _inactivityTimeout.inSeconds,
+          ),
+        ),
+      );
+    } else {
+      unawaited(store.writeAppLockConfig(null));
+    }
+  }
 
   /// Checks biometric hardware capability and locks on cold start if enabled.
   Future<void> initialize() async {
@@ -117,6 +194,8 @@ class AppLockController extends ChangeNotifier {
     _lockedOut = false;
     _isLocked = false;
     _backgroundedAt = null;
+    _persistConfig();
+    onPinConfigured?.call(pin);
     notifyListeners();
   }
 
@@ -129,12 +208,15 @@ class AppLockController extends ChangeNotifier {
     _failedAttempts = 0;
     _lockedOut = false;
     _backgroundedAt = null;
+    _persistConfig();
+    onLockDisabled?.call();
     notifyListeners();
   }
 
   void setInactivityTimeout(Duration timeout) {
     if (timeout <= Duration.zero) return;
     _inactivityTimeout = timeout;
+    _persistConfig();
     notifyListeners();
   }
 
@@ -145,6 +227,7 @@ class AppLockController extends ChangeNotifier {
       _biometricAvailable = false;
     }
     _biometricEnabled = enabled && _biometricAvailable;
+    _persistConfig();
     notifyListeners();
   }
 
@@ -152,6 +235,7 @@ class AppLockController extends ChangeNotifier {
     if (!_isEnabled || !hasPin) return;
     _isLocked = true;
     _lockedOut = false;
+    onLocked?.call();
     notifyListeners();
   }
 
@@ -174,6 +258,7 @@ class AppLockController extends ChangeNotifier {
         _backgroundedAt = null;
         if (since != null && _clock().difference(since) >= _inactivityTimeout) {
           _isLocked = true;
+          onLocked?.call();
           notifyListeners();
         }
       case AppLifecycleState.inactive:
@@ -195,6 +280,7 @@ class AppLockController extends ChangeNotifier {
       _failedAttempts = 0;
       _isLocked = false;
       _lockedOut = false;
+      onPinUnlocked?.call(pin);
       notifyListeners();
       return true;
     }
@@ -208,6 +294,7 @@ class AppLockController extends ChangeNotifier {
       _pinHash = null;
       _failedAttempts = 0;
       _backgroundedAt = null;
+      _persistConfig();
       onLockoutSessionCleared?.call();
       notifyListeners();
       return false;
@@ -237,6 +324,7 @@ class AppLockController extends ChangeNotifier {
       _failedAttempts = 0;
       _isLocked = false;
       _lockedOut = false;
+      onBiometricUnlocked?.call();
       notifyListeners();
     }
     return result;

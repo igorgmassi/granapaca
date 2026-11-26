@@ -10,6 +10,7 @@ class ApiException implements Exception {
     this.statusCode,
     this.isOffline = false,
     this.isUnauthorized = false,
+    this.fullResyncRequired = false,
   });
 
   final String code;
@@ -17,6 +18,7 @@ class ApiException implements Exception {
   final int? statusCode;
   final bool isOffline;
   final bool isUnauthorized;
+  final bool fullResyncRequired;
 
   @override
   String toString() => 'ApiException($code): $message';
@@ -385,6 +387,7 @@ class SyncAlertItem {
     required this.dateLabel,
     required this.targetKey,
     this.isRead = false,
+    this.isResolved = false,
   });
 
   final String id;
@@ -393,15 +396,28 @@ class SyncAlertItem {
   final String dateLabel;
   final String targetKey;
   final bool isRead;
+  final bool isResolved;
 
-  factory SyncAlertItem.fromJson(Map<String, dynamic> json) => SyncAlertItem(
-    id: (json['id'] ?? '').toString(),
-    title: (json['title'] as String?) ?? '',
-    body: (json['body'] as String?) ?? '',
-    dateLabel: (json['dateLabel'] as String?) ?? '',
-    targetKey: (json['target'] as String?) ?? 'connections',
-    isRead: (json['isRead'] as bool?) ?? false,
-  );
+  factory SyncAlertItem.fromJson(Map<String, dynamic> json) {
+    final rawDateLabel = (json['dateLabel'] as String?)?.trim() ?? '';
+    final createdAt = DateTime.tryParse((json['createdAt'] as String?) ?? '');
+    final resolvedDateLabel = rawDateLabel.isNotEmpty
+        ? rawDateLabel
+        : (createdAt != null ? formatSyncDayTime(createdAt) : '');
+    return SyncAlertItem(
+      id: (json['id'] ?? '').toString(),
+      title: (json['title'] as String?) ?? '',
+      body: (json['message'] as String?) ?? (json['body'] as String?) ?? '',
+      dateLabel: resolvedDateLabel,
+      targetKey:
+          (json['actionTarget'] as String?) ??
+          (json['target'] as String?) ??
+          'connections',
+      isRead: (json['isRead'] as bool?) ?? false,
+      isResolved:
+          json['resolvedAt'] != null || (json['isResolved'] as bool?) == true,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -410,7 +426,57 @@ class SyncAlertItem {
     'dateLabel': dateLabel,
     'target': targetKey,
     'isRead': isRead,
+    'isResolved': isResolved,
   };
+}
+
+/// Synced credit card bill summary from `GET /api/v1/sync/changes`.
+class SyncCardBillItem {
+  const SyncCardBillItem({
+    required this.id,
+    required this.accountId,
+    required this.year,
+    required this.month,
+    required this.closingDate,
+    required this.dueDate,
+    required this.totalCents,
+    required this.isOpen,
+  });
+
+  final String id;
+  final String accountId;
+  final int year;
+  final int month;
+  final DateTime closingDate;
+  final DateTime dueDate;
+  final int totalCents;
+  final bool isOpen;
+
+  factory SyncCardBillItem.fromJson(Map<String, dynamic> json) {
+    final period = DateTime.tryParse((json['periodMonth'] as String?) ?? '');
+    final closing =
+        DateTime.tryParse(
+          (json['closingOn'] as String?) ??
+              (json['closingDate'] as String?) ??
+              '',
+        ) ??
+        DateTime(period?.year ?? 2026, period?.month ?? 1, 28);
+    final due =
+        DateTime.tryParse(
+          (json['dueOn'] as String?) ?? (json['dueDate'] as String?) ?? '',
+        ) ??
+        DateTime(closing.year, closing.month + 1, 10);
+    return SyncCardBillItem(
+      id: (json['id'] ?? '').toString(),
+      accountId: (json['accountId'] ?? '').toString(),
+      year: (json['year'] as num?)?.toInt() ?? period?.year ?? closing.year,
+      month: (json['month'] as num?)?.toInt() ?? period?.month ?? closing.month,
+      closingDate: closing,
+      dueDate: due,
+      totalCents: (json['totalCents'] as num?)?.toInt() ?? 0,
+      isOpen: (json['isOpen'] as bool?) ?? false,
+    );
+  }
 }
 
 /// Incremental delta payload from `GET /api/v1/sync/changes?cursor=...` (RF-21).
@@ -426,22 +492,36 @@ class SyncChangesResponse {
     required this.connections,
     required this.rules,
     required this.alerts,
+    this.isFullSync = false,
+    this.fullResyncRequired = false,
+    this.adjustments = const [],
+    this.cardBills = const [],
+    this.transactionUuidById = const {},
   });
 
   final String? nextCursor;
   final bool hasMore;
   final DateTime syncedAt;
+  final bool isFullSync;
+  final bool fullResyncRequired;
   final List<Bank> banks;
   final List<Account> accounts;
   final List<Transaction> transactions;
   final List<int> removedTransactionIds;
   final List<BankConnectionInfo> connections;
   final List<UserRule> rules;
+  final List<TxAdjustment> adjustments;
+  final List<SyncCardBillItem> cardBills;
   final List<SyncAlertItem> alerts;
+  final Map<int, String> transactionUuidById;
 
   factory SyncChangesResponse.fromJson(Map<String, dynamic> json) {
     final syncedAt =
-        DateTime.tryParse((json['syncedAt'] as String?) ?? '') ??
+        DateTime.tryParse(
+          (json['serverTime'] as String?) ??
+              (json['syncedAt'] as String?) ??
+              '',
+        ) ??
         DateTime.now();
 
     final connections = ((json['connections'] as List<dynamic>?) ?? const [])
@@ -464,20 +544,39 @@ class SyncChangesResponse {
         .map(accountFromJson)
         .toList(growable: false);
 
-    final transactions = ((json['transactions'] as List<dynamic>?) ?? const [])
+    final rawTxs = ((json['transactions'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
-        .map(transactionFromJson)
         .toList(growable: false);
+    final txUuidMap = <int, String>{};
+    final transactions = <Transaction>[];
+    for (final raw in rawTxs) {
+      final tx = transactionFromJson(raw);
+      transactions.add(tx);
+      final rawId = raw['id']?.toString();
+      if (rawId != null && rawId.isNotEmpty) {
+        txUuidMap[tx.id] = rawId;
+      }
+    }
 
     final removedIds =
         ((json['removedTransactionIds'] as List<dynamic>?) ?? const [])
-            .map((e) => e is num ? e.toInt() : int.tryParse(e.toString()) ?? -1)
-            .where((id) => id >= 0)
+            .where((e) => e != null && e.toString().trim().isNotEmpty)
+            .map(stableTransactionId)
             .toList(growable: false);
 
     final rules = ((json['rules'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(userRuleFromJson)
+        .toList(growable: false);
+
+    final adjustments = ((json['adjustments'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(adjustmentFromJson)
+        .toList(growable: false);
+
+    final cardBills = ((json['cardBills'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SyncCardBillItem.fromJson)
         .toList(growable: false);
 
     final alerts = ((json['alerts'] as List<dynamic>?) ?? const [])
@@ -489,14 +588,19 @@ class SyncChangesResponse {
       nextCursor:
           (json['nextCursor'] as String?) ?? (json['cursor'] as String?),
       hasMore: (json['hasMore'] as bool?) ?? false,
+      isFullSync: (json['isFullSync'] as bool?) ?? false,
+      fullResyncRequired: (json['fullResyncRequired'] as bool?) ?? false,
       syncedAt: syncedAt,
       banks: banks,
       accounts: accounts,
-      transactions: transactions,
+      transactions: List.unmodifiable(transactions),
       removedTransactionIds: removedIds,
       connections: connections,
       rules: rules,
+      adjustments: adjustments,
+      cardBills: cardBills,
       alerts: alerts,
+      transactionUuidById: Map.unmodifiable(txUuidMap),
     );
   }
 }
@@ -635,6 +739,8 @@ TxKind parseTxKind(String? raw) {
     case 'own_transfer':
     case 'owntransfer':
       return TxKind.ownTransfer;
+    case 'card_payment':
+    case 'cardpayment':
     case 'bill_payment':
     case 'billpayment':
       return TxKind.billPayment;
@@ -644,6 +750,7 @@ TxKind parseTxKind(String? raw) {
       return TxKind.investment;
     case 'redemption':
       return TxKind.redemption;
+    case 'withdrawal':
     case 'cash_withdrawal':
     case 'cashwithdrawal':
       return TxKind.cashWithdrawal;
@@ -651,6 +758,19 @@ TxKind parseTxKind(String? raw) {
       return TxKind.expense;
   }
 }
+
+/// Converts [TxKind] to the canonical snake_case string accepted by the
+/// backend API (`BankingHelpers.TransactionKinds`, ADR-014).
+String txKindToApiString(TxKind kind) => switch (kind) {
+  TxKind.expense => 'expense',
+  TxKind.income => 'income',
+  TxKind.ownTransfer => 'own_transfer',
+  TxKind.billPayment => 'card_payment',
+  TxKind.refund => 'refund',
+  TxKind.investment => 'investment',
+  TxKind.redemption => 'redemption',
+  TxKind.cashWithdrawal => 'withdrawal',
+};
 
 SpendingCategory? parseSpendingCategory(String? raw) {
   if (raw == null || raw.trim().isEmpty || raw.toLowerCase() == 'uncategorized') {
@@ -672,7 +792,9 @@ Essentiality? parseEssentiality(String? raw) {
   return null;
 }
 
-int _stableTxId(dynamic rawId) {
+/// Deterministically maps numeric or UUID transaction IDs into stable positive
+/// 31-bit integer IDs so additions, adjustments, and removals stay aligned.
+int stableTransactionId(dynamic rawId) {
   if (rawId is num) return rawId.toInt();
   final text = rawId?.toString() ?? '';
   final parsed = int.tryParse(text);
@@ -690,7 +812,7 @@ Transaction transactionFromJson(Map<String, dynamic> json) {
   final rawDate = (json['date'] ?? json['occurredOn'] ?? '').toString();
   final parsedDate = DateTime.tryParse(rawDate) ?? DateTime.now();
   return Transaction(
-    id: _stableTxId(json['id']),
+    id: stableTransactionId(json['id']),
     accountId: (json['accountId'] ?? '').toString(),
     date: DateTime(parsedDate.year, parsedDate.month, parsedDate.day),
     description:
@@ -758,23 +880,38 @@ Map<String, dynamic> userRuleToJson(UserRule rule) => {
   'layer': rule.layer.name,
 };
 
-TxAdjustment adjustmentFromJson(Map<String, dynamic> json) {
-  final fieldName = (json['field'] as String?) ?? 'category';
+String? _normalizeAdjustmentValue(AdjustmentField field, String? raw) {
+  if (raw == null) return null;
+  if (field == AdjustmentField.kind) {
+    return parseTxKind(raw).name;
+  }
+  return raw;
+}
+
+TxAdjustment adjustmentFromJson(Map<String, dynamic> json, {int? fallbackTxId}) {
+  final fieldName =
+      (json['fieldName'] as String?) ?? (json['field'] as String?) ?? 'category';
   final field = AdjustmentField.values.firstWhere(
     (f) => f.name == fieldName,
     orElse: () => AdjustmentField.category,
   );
+  final rawTx = json['transactionId'] ?? json['txId'];
+  final txId = rawTx != null ? stableTransactionId(rawTx) : (fallbackTxId ?? 0);
   return TxAdjustment(
     id: (json['id'] ?? '').toString(),
-    txId: (json['txId'] as num?)?.toInt() ?? 0,
+    txId: txId,
     field: field,
-    oldValue: json['oldValue'] as String?,
-    newValue: json['newValue'] as String?,
+    oldValue: _normalizeAdjustmentValue(field, json['oldValue'] as String?),
+    newValue: _normalizeAdjustmentValue(field, json['newValue'] as String?),
     reason: json['reason'] as String?,
     timestamp:
-        DateTime.tryParse((json['timestamp'] as String?) ?? '') ??
+        DateTime.tryParse(
+          (json['createdAt'] as String?) ??
+              (json['timestamp'] as String?) ??
+              '',
+        ) ??
         DateTime.now(),
-    undoesId: json['undoesId'] as String?,
+    undoesId: json['undoesId']?.toString(),
   );
 }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'api/api_models.dart';
@@ -28,7 +30,7 @@ class GranaPaCaApp extends StatefulWidget {
     this.simulateNoConnections = false,
     this.startInOnboarding = false,
     this.startInServerAuth = false,
-    this.initialMode = AppMode.demo,
+    this.initialMode,
     this.initialServerUrl,
     this.initialConnections,
     this.initialOffline = false,
@@ -43,7 +45,7 @@ class GranaPaCaApp extends StatefulWidget {
   final bool simulateNoConnections;
   final bool startInOnboarding;
   final bool startInServerAuth;
-  final AppMode initialMode;
+  final AppMode? initialMode;
   final String? initialServerUrl;
   final List<BankConnectionInfo>? initialConnections;
   final bool initialOffline;
@@ -74,7 +76,7 @@ class _GranaPaCaAppState extends State<GranaPaCaApp>
       initialOffline: widget.initialOffline,
       initialLastSyncedAt: widget.initialLastSyncedAt,
     );
-    _state.appLock.initialize();
+    unawaited(_state.initialize());
   }
 
   @override
@@ -92,6 +94,9 @@ class _GranaPaCaAppState extends State<GranaPaCaApp>
   Widget _resolveHome() {
     if (_state.appLock.isLocked) {
       return AppLockScreen(controller: _state.appLock);
+    }
+    if (_state.isRestoringOfflineCache) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (widget.startInServerAuth ||
         (_state.isServerMode &&

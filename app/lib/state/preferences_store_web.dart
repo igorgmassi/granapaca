@@ -22,6 +22,8 @@ class WebPreferencesStore implements PreferencesStore {
   bool _hideValues = false;
   ThemeMode _themeMode = ThemeMode.system;
   String? _serverUrl;
+  AppLockConfig? _appLockConfig;
+  bool _hasActiveServerProfile = false;
 
   void _load() {
     try {
@@ -44,6 +46,14 @@ class WebPreferencesStore implements PreferencesStore {
       if (url is String && url.trim().isNotEmpty) {
         _serverUrl = url.trim();
       }
+      final lockJson = decoded['appLockConfig'];
+      if (lockJson is Map<String, dynamic>) {
+        _appLockConfig = AppLockConfig.fromJson(lockJson);
+      }
+      final activeServer = decoded['hasActiveServerProfile'];
+      if (activeServer is bool) {
+        _hasActiveServerProfile = activeServer;
+      }
     } catch (_) {
       // Ignore storage read failures in private mode or non-browser runtimes.
     }
@@ -57,6 +67,8 @@ class WebPreferencesStore implements PreferencesStore {
           'hideValues': _hideValues,
           'themeMode': _themeMode.name,
           'serverUrl': _serverUrl,
+          'appLockConfig': _appLockConfig?.toJson(),
+          'hasActiveServerProfile': _hasActiveServerProfile,
         }),
       );
     } catch (_) {
@@ -88,6 +100,24 @@ class WebPreferencesStore implements PreferencesStore {
   @override
   Future<void> writeServerUrl(String? url) async {
     _serverUrl = (url == null || url.trim().isEmpty) ? null : url.trim();
+    _save();
+  }
+
+  @override
+  AppLockConfig? readAppLockConfig() => _appLockConfig;
+
+  @override
+  Future<void> writeAppLockConfig(AppLockConfig? config) async {
+    _appLockConfig = config;
+    _save();
+  }
+
+  @override
+  bool readHasActiveServerProfile() => _hasActiveServerProfile;
+
+  @override
+  Future<void> writeHasActiveServerProfile(bool value) async {
+    _hasActiveServerProfile = value;
     _save();
   }
 }

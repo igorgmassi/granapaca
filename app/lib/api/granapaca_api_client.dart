@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../finance/model.dart';
+import '../finance/taxonomy.dart';
 import 'api_models.dart';
 import 'http_transport.dart';
 
@@ -36,7 +38,18 @@ class GranaPaCaApiClient {
     onTokensChanged?.call(tokens);
   }
 
+  static bool _isLoopbackHost(String host) {
+    final normalized = host.toLowerCase().trim();
+    return normalized == 'localhost' ||
+        normalized == '127.0.0.1' ||
+        normalized == '::1' ||
+        normalized == '[::1]';
+  }
+
   /// Validates and normalizes a user-provided server URL (RF-01).
+  ///
+  /// Enforces HTTPS for all remote hosts; plain HTTP is allowed exclusively
+  /// for local loopback addresses (`localhost`, `127.0.0.1`, `::1`).
   static Uri normalizeServerUrl(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) {
@@ -52,8 +65,16 @@ class GranaPaCaApiClient {
       throw const ApiException(
         code: 'invalid_url',
         message:
-            'Use um endereço completo começando com https:// ou http:// '
+            'Use um endereço completo começando com https:// '
             '(por exemplo, https://financas.minha-rede.ts.net).',
+      );
+    }
+    if (parsed.scheme == 'http' && !_isLoopbackHost(parsed.host)) {
+      throw const ApiException(
+        code: 'insecure_http_not_allowed',
+        message:
+            'Use https:// para conectar a servidores fora deste aparelho. '
+            'http:// só é permitido para localhost, 127.0.0.1 ou ::1.',
       );
     }
     final normalizedPath = parsed.path.endsWith('/')
@@ -413,6 +434,128 @@ class GranaPaCaApiClient {
     return SyncChangesResponse.fromJson(_decodeJsonMap(response.body));
   }
 
+  /// RF-24 & RF-31: persists manual transaction adjustments on the backend
+  /// (`POST /api/v1/transactions/{id}/adjustments`).
+  Future<List<TxAdjustment>> applyTransactionAdjustments({
+    required String transactionId,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+    TxKind? kind,
+    String? description,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{
+      if (category != null) 'category': category.name,
+      if (essentiality != null) 'essentiality': essentiality.name,
+      if (kind != null) 'kind': txKindToApiString(kind),
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    };
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/transactions/$transactionId/adjustments',
+      body: body,
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível salvar a correção no servidor.',
+    );
+    final map = _decodeJsonMap(response.body);
+    final fallbackTxId = stableTransactionId(transactionId);
+    final applied = (map['appliedAdjustments'] as List<dynamic>?) ?? const [];
+    return applied
+        .whereType<Map<String, dynamic>>()
+        .map((j) => adjustmentFromJson(j, fallbackTxId: fallbackTxId))
+        .toList(growable: false);
+  }
+
+  /// RF-25: appends an undo record on the backend
+  /// (`POST /api/v1/transactions/{id}/adjustments/{adjustmentId}/undo`).
+  Future<TxAdjustment?> undoTransactionAdjustment({
+    required String transactionId,
+    required String adjustmentId,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/transactions/$transactionId/adjustments/$adjustmentId/undo',
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível desfazer o ajuste no servidor.',
+    );
+    final map = _decodeJsonMap(response.body);
+    final raw = map['adjustment'];
+    if (raw is Map<String, dynamic>) {
+      return adjustmentFromJson(
+        raw,
+        fallbackTxId: stableTransactionId(transactionId),
+      );
+    }
+    return null;
+  }
+
+  /// RF-26 & RF-31: creates a user classification rule on the backend
+  /// (`POST /api/v1/rules`).
+  Future<UserRule> createRule({
+    required String matchMerchant,
+    required String name,
+    required String explanation,
+    SpendingCategory? category,
+    Essentiality? essentiality,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'POST',
+      path: '/api/v1/rules',
+      body: {
+        'name': name,
+        'explanation': explanation,
+        'matchMerchant': matchMerchant,
+        if (category != null) 'category': category.name,
+        if (essentiality != null) 'essentiality': essentiality.name,
+      },
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível salvar a regra no servidor.',
+    );
+    return userRuleFromJson(_decodeJsonMap(response.body));
+  }
+
+  /// RF-27: activates or deactivates a classification rule on the backend
+  /// (`PATCH /api/v1/rules/{id}`).
+  Future<UserRule> updateRuleActive({
+    required String ruleId,
+    required bool isActive,
+  }) async {
+    final response = await _sendAuthorized(
+      method: 'PATCH',
+      path: '/api/v1/rules/$ruleId',
+      body: {'isActive': isActive},
+    );
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível atualizar a regra no servidor.',
+    );
+    return userRuleFromJson(_decodeJsonMap(response.body));
+  }
+
+  /// RF-27: removes a classification rule on the backend
+  /// (`DELETE /api/v1/rules/{id}`).
+  Future<void> deleteRule(String ruleId) async {
+    final response = await _sendAuthorized(
+      method: 'DELETE',
+      path: '/api/v1/rules/$ruleId',
+    );
+    if (response.statusCode == 204 || response.statusCode == 200) {
+      return;
+    }
+    _throwIfError(
+      response,
+      defaultMessage: 'Não foi possível remover a regra no servidor.',
+    );
+  }
+
   Future<HttpTransportResponse> _sendAuthorized({
     required String method,
     required String path,
@@ -531,18 +674,41 @@ class GranaPaCaApiClient {
 
     String code = 'http_${response.statusCode}';
     String message = defaultMessage;
+    bool fullResyncRequired = false;
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) {
+        // Supports both RFC 9457 ProblemDetails ({title, detail, type, code,
+        // fullResyncRequired}) and legacy {error, message} payloads.
+        final problemCode = decoded['code'];
         final serverCode = decoded['error'];
+        final problemType = decoded['type'];
+        final problemDetail = decoded['detail'];
+        final problemTitle = decoded['title'];
         final serverMsg = decoded['message'];
-        if (serverCode is String && serverCode.isNotEmpty) {
+
+        if (problemCode is String && problemCode.trim().isNotEmpty) {
+          code = problemCode.trim();
+        } else if (serverCode is String && serverCode.isNotEmpty) {
           code = serverCode;
+        } else if (problemType is String &&
+            problemType.trim().isNotEmpty &&
+            problemType != 'about:blank') {
+          code = problemType.trim();
         }
-        if (serverMsg is String && serverMsg.trim().isNotEmpty) {
+
+        if (problemDetail is String && problemDetail.trim().isNotEmpty) {
+          message = problemDetail.trim();
+        } else if (serverMsg is String && serverMsg.trim().isNotEmpty) {
           message = serverMsg.trim();
+        } else if (problemTitle is String && problemTitle.trim().isNotEmpty) {
+          message = problemTitle.trim();
         } else if (serverCode is String && serverCode.contains(' ')) {
           message = serverCode;
+        }
+
+        if (decoded['fullResyncRequired'] == true) {
+          fullResyncRequired = true;
         }
       }
     } catch (_) {
@@ -554,6 +720,7 @@ class GranaPaCaApiClient {
       message: message,
       statusCode: response.statusCode,
       isUnauthorized: response.statusCode == 401,
+      fullResyncRequired: fullResyncRequired,
     );
   }
 
