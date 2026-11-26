@@ -21,3 +21,17 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  - package-ecosystem: docker-compose
+    directory: /infra
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
