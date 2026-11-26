@@ -113,20 +113,30 @@ void main() {
         await tester.tap(marchBill);
         await tester.pumpAndSettle();
 
-        await _scrollTo(tester, find.text('Notebook Loja Byte').first);
-        expect(find.text('Notebook Loja Byte'), findsWidgets);
-        expect(find.text('Parcela 5 de 10'), findsWidgets);
+        final billItem = find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.text('Notebook Loja Byte'),
+        );
+        await _scrollTo(tester, billItem);
+        expect(billItem, findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.text('Parcela 5 de 10'),
+          ),
+          findsOneWidget,
+        );
 
         // Edit the purchase directly from the bill sheet and verify the bill
         // modal updates reactively when returning.
-        await tester.tap(
-          find.descendant(
-            of: find.byType(BottomSheet),
-            matching: find.text('Notebook Loja Byte'),
-          ),
-        );
+        await tester.tap(billItem);
         await tester.pumpAndSettle();
-        final detailScrollable = find.byType(Scrollable).last;
+        final detailScrollable = find
+            .descendant(
+              of: find.byType(ListView).last,
+              matching: find.byType(Scrollable),
+            )
+            .first;
         final descField = find.byKey(const Key('tx_description_field'));
         await _scrollTo(tester, descField, scrollable: detailScrollable);
         await tester.enterText(descField, 'Notebook Trabalho');
@@ -345,7 +355,12 @@ void main() {
         await tester.tap(find.text('Padaria Pão de Ontem').first);
         await tester.pumpAndSettle();
 
-        final sheetScrollable = find.byType(Scrollable).last;
+        final sheetScrollable = find
+            .descendant(
+              of: find.byType(ListView).last,
+              matching: find.byType(Scrollable),
+            )
+            .first;
 
         // Immutable bank record shown.
         expect(find.text('Dados originais do banco'), findsOneWidget);
@@ -443,7 +458,12 @@ void main() {
         await tester.tap(find.text('Padaria Pão de Ontem').first);
         await tester.pumpAndSettle();
 
-        final sheetScrollable = find.byType(Scrollable).last;
+        final sheetScrollable = find
+            .descendant(
+              of: find.byType(ListView).last,
+              matching: find.byType(Scrollable),
+            )
+            .first;
 
         // First category adjustment: Alimentação -> Lazer (adj-1)
         final lazerChip = find.byKey(const Key('cat_choice_leisure'));
@@ -703,7 +723,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Guide closed and existing rule count remained 1.
-        expect(find.text('Privacidade e aparência'), findsOneWidget);
+        expect(find.text('Etapa 4 de 4'), findsNothing);
+        expect(guideTile, findsOneWidget);
         expect(find.text('1 regra(s) ativa(s)'), findsOneWidget);
       },
     );
