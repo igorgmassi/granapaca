@@ -37,13 +37,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Tag pushes always publish and sign; manual dispatches default to a dry-run build.
+      # Every push (tag or manual dispatch with push=true) publishes with SBOM/provenance and signs via Cosign; manual dispatches default to a dry-run build.
       - name: Determine publish and signing mode
         id: mode
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_PUSH: ${{ inputs.push }}
-          REF_NAME: ${{ github.ref }}
           REGISTRY_HOST: ${{ env.REGISTRY }}
           REPO_OWNER: ${{ github.repository_owner }}
           IMAGE_BASENAME: ${{ env.IMAGE_NAME }}
@@ -54,11 +53,8 @@ jobs:
             should_push="false"
           fi
 
-          if [ "$should_push" = "true" ] && [[ "$REF_NAME" == refs/tags/v* ]]; then
-            should_sign="true"
-          else
-            should_sign="false"
-          fi
+          # Never publish an unsigned image: sign every pushed digest with Cosign keyless OIDC.
+          should_sign="$should_push"
 
           image_ref="$(printf '%s/%s/%s' "$REGISTRY_HOST" "$REPO_OWNER" "$IMAGE_BASENAME" | tr '[:upper:]' '[:lower:]')"
           {
@@ -107,8 +103,8 @@ jobs:
           push: ${{ steps.mode.outputs.should_push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          sbom: true
-          provenance: true
+          sbom: ${{ steps.mode.outputs.should_push == 'true' }}
+          provenance: ${{ steps.mode.outputs.should_push == 'true' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
