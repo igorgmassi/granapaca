@@ -470,20 +470,18 @@ internal sealed class IdentityService(
             issued.Owner));
     }
 
-    public async Task<bool> VerifyOwnerCredentialsAsync(
+    public async Task<OwnerCredentialVerificationStatus> VerifyOwnerCredentialsAsync(
         Guid ownerId,
         Guid householdId,
         string password,
         string totpCode,
+        string clientIp,
         CancellationToken cancellationToken = default)
     {
-        if (ownerId == Guid.Empty ||
-            householdId == Guid.Empty ||
-            string.IsNullOrEmpty(password) ||
-            string.IsNullOrWhiteSpace(totpCode))
+        if (ownerId == Guid.Empty || householdId == Guid.Empty)
         {
             PasswordHasher.VerifyDummy(password);
-            return false;
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -503,22 +501,36 @@ internal sealed class IdentityService(
             new { OwnerId = ownerId, HouseholdId = householdId },
             cancellationToken: cancellationToken));
 
-        if (owner is null)
+        var normalizedClientIp = string.IsNullOrWhiteSpace(clientIp) ? "local" : clientIp.Trim();
+        var clientKey = owner is not null
+            ? BuildClientKey(normalizedClientIp, owner.Email)
+            : BuildClientKey(normalizedClientIp, ownerId.ToString("D"));
+
+        if (await IsRateLimitedAsync(connection, clientKey, cancellationToken))
+        {
+            return OwnerCredentialVerificationStatus.RateLimited;
+        }
+
+        if (owner is null || string.IsNullOrEmpty(password) || string.IsNullOrWhiteSpace(totpCode))
         {
             PasswordHasher.VerifyDummy(password);
-            return false;
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
         }
 
         if (!PasswordHasher.Verify(password, owner.PasswordHash))
         {
-            return false;
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
         }
 
         if (!owner.TotpEnabled || owner.TotpSecretEnc is null)
         {
-            return false;
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
         }
 
+        bool validCode;
         var decryptedSecret = await envelopeEncryptor.DecryptAsync(
             owner.TotpSecretEnc,
             OwnerTable,
@@ -527,12 +539,21 @@ internal sealed class IdentityService(
             cancellationToken);
         try
         {
-            return TotpService.VerifyCode(decryptedSecret, totpCode);
+            validCode = TotpService.VerifyCode(decryptedSecret, totpCode);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(decryptedSecret);
         }
+
+        if (!validCode)
+        {
+            await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: false, cancellationToken);
+            return OwnerCredentialVerificationStatus.InvalidCredentials;
+        }
+
+        await RecordAuthAttemptAsync(connection, transaction: null, clientKey, succeeded: true, cancellationToken);
+        return OwnerCredentialVerificationStatus.Valid;
     }
 
     public async Task PurgeHouseholdAsync(

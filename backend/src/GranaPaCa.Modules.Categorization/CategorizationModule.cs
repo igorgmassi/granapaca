@@ -22,6 +22,7 @@ public static class CategorizationModule
 
         services.AddSingleton<ProfileCatalog>();
         services.AddSingleton<ICategorizationEngine, CategorizationEngine>();
+        services.AddSingleton<ICategorizationDeltaReader, CategorizationDeltaReader>();
         services.AddSingleton<ICategorizationPurgeService, CategorizationPurgeService>();
         return services;
     }
@@ -555,7 +556,8 @@ public static class CategorizationModule
                     category = @Category,
                     essentiality = @Essentiality,
                     brand = @Brand,
-                    priority = @Priority
+                    priority = @Priority,
+                    updated_at = now()
                 WHERE id = @Id
                   AND household_id = @HouseholdId
                 """,

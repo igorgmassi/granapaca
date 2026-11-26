@@ -231,6 +231,32 @@ internal sealed class EnvelopeEncryptor(
             new { HouseholdId = householdId },
             cancellationToken: cancellationToken));
 
+        EvictHouseholdKeysFromCache(householdId);
+    }
+
+    public async Task DestroyHouseholdKeysAsync(
+        Guid householdId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        if (householdId == Guid.Empty)
+        {
+            throw new ArgumentException("Household ID must not be empty.", nameof(householdId));
+        }
+
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM keyring.data_key WHERE household_id = @HouseholdId",
+            new { HouseholdId = householdId },
+            transaction: transaction,
+            cancellationToken: cancellationToken));
+    }
+
+    public void EvictHouseholdKeysFromCache(Guid householdId)
+    {
         foreach (var entry in _activeDekByScope)
         {
             if (entry.Key.HouseholdId == householdId)

@@ -43,6 +43,7 @@ public sealed class Program
                 OpaqueBearerAuthenticationHandler.SchemeName,
                 _ => { });
         builder.Services.AddAuthorization();
+        builder.Services.AddProblemDetails();
         builder.Services.AddOpenApi();
 
         builder.Services.AddKeyringModule(builder.Configuration);

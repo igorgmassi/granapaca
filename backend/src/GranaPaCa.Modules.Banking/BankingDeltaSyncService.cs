@@ -2,13 +2,18 @@ using System.Data;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Dapper;
+using GranaPaCa.Modules.Alerts.Contracts;
+using GranaPaCa.Modules.Categorization.Contracts;
 using Npgsql;
 
 namespace GranaPaCa.Modules.Banking;
 
-internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSource)
+internal sealed partial class BankingDeltaSyncService(
+    NpgsqlDataSource dataSource,
+    ICategorizationDeltaReader categorizationDeltaReader,
+    IAlertsDeltaReader alertsDeltaReader)
 {
-    public async Task<(bool Ok, string? Error, SyncChangesResponse? Data)> GetChangesAsync(
+    public async Task<(bool Ok, string? ErrorCode, string? Error, SyncChangesResponse? Data)> GetChangesAsync(
         Guid householdId,
         string? rawCursor,
         CancellationToken cancellationToken)
@@ -20,7 +25,11 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
         {
             if (!TryParseCursor(rawCursor, out var dto))
             {
-                return (false, "Cursor de sincronização inválido; informe um timestamp ISO-8601 em UTC.", null);
+                return (
+                    false,
+                    "invalid_cursor",
+                    "Cursor de sincronização inválido; informe um timestamp ISO-8601 em UTC.",
+                    null);
             }
 
             parsedCursor = dto;
@@ -37,10 +46,39 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
             transaction: transaction,
             cancellationToken: cancellationToken));
 
-        var serverTime = (await connection.ExecuteScalarAsync<DateTimeOffset>(new CommandDefinition(
-            "SELECT now()",
+        var watermark = await connection.QuerySingleAsync<WatermarkRow>(new CommandDefinition(
+            """
+            SELECT
+                now() AS ServerTime,
+                (
+                    SELECT min(xact_start)
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND backend_type = 'client backend'
+                      AND state <> 'idle'
+                      AND xact_start IS NOT NULL
+                      AND pid <> pg_backend_pid()
+                ) AS OldestActiveXactStart
+            """,
             transaction: transaction,
-            cancellationToken: cancellationToken))).ToUniversalTime();
+            cancellationToken: cancellationToken));
+
+        var serverTime = watermark.ServerTime.ToUniversalTime();
+        if (parsedCursor.HasValue && parsedCursor.Value > serverTime)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return (
+                false,
+                "cursor_in_future",
+                "Cursor de sincronização está no futuro; execute uma ressincronização completa sem cursor.",
+                null);
+        }
+
+        var oldestActiveXact = watermark.OldestActiveXactStart?.ToUniversalTime();
+        var hasConcurrentActiveTx = oldestActiveXact.HasValue && oldestActiveXact.Value <= serverTime;
+        var safeWatermark = hasConcurrentActiveTx
+            ? oldestActiveXact!.Value.AddMicroseconds(-1)
+            : serverTime;
 
         var parameters = new DynamicParameters();
         parameters.Add("HouseholdId", householdId);
@@ -51,6 +89,27 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
 
         var connectionsSql = parsedCursor.HasValue
             ? """
+              WITH connection_state AS (
+                  SELECT
+                      id,
+                      provider,
+                      external_item_id,
+                      institution_name,
+                      brand_color,
+                      status,
+                      last_synced_at,
+                      consent_expires_at,
+                      last_error_code,
+                      consecutive_failures,
+                      GREATEST(
+                          created_at,
+                          updated_at,
+                          COALESCE(last_synced_at, created_at),
+                          COALESCE(first_failure_at, created_at)
+                      ) AS updated_at
+                  FROM banking.connection
+                  WHERE household_id = @HouseholdId
+              )
               SELECT
                   id AS Id,
                   provider AS Provider,
@@ -62,11 +121,10 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
                   consent_expires_at AS ConsentExpiresAt,
                   last_error_code AS LastErrorCode,
                   consecutive_failures AS ConsecutiveFailures,
-                  GREATEST(created_at, COALESCE(last_synced_at, created_at), COALESCE(first_failure_at, created_at)) AS UpdatedAt
-              FROM banking.connection
-              WHERE household_id = @HouseholdId
-                AND GREATEST(created_at, COALESCE(last_synced_at, created_at), COALESCE(first_failure_at, created_at)) > @Cursor
-              ORDER BY UpdatedAt ASC, id ASC
+                  updated_at AS UpdatedAt
+              FROM connection_state
+              WHERE updated_at > @Cursor
+              ORDER BY updated_at ASC, id ASC
               """
             : """
               SELECT
@@ -80,7 +138,12 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
                   consent_expires_at AS ConsentExpiresAt,
                   last_error_code AS LastErrorCode,
                   consecutive_failures AS ConsecutiveFailures,
-                  GREATEST(created_at, COALESCE(last_synced_at, created_at), COALESCE(first_failure_at, created_at)) AS UpdatedAt
+                  GREATEST(
+                      created_at,
+                      updated_at,
+                      COALESCE(last_synced_at, created_at),
+                      COALESCE(first_failure_at, created_at)
+                  ) AS UpdatedAt
               FROM banking.connection
               WHERE household_id = @HouseholdId
               ORDER BY UpdatedAt ASC, id ASC
@@ -105,7 +168,7 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
                       a.currency,
                       a.opening_balance_cents,
                       COALESCE(snap.balance_cents, a.opening_balance_cents) AS balance_cents,
-                      GREATEST(a.created_at, COALESCE(snap.captured_at, a.created_at)) AS updated_at
+                      GREATEST(a.created_at, a.updated_at, COALESCE(snap.captured_at, a.created_at)) AS updated_at
                   FROM banking.account a
                   LEFT JOIN LATERAL (
                       SELECT bs.balance_cents, bs.captured_at
@@ -143,7 +206,7 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
                       a.currency,
                       a.opening_balance_cents,
                       COALESCE(snap.balance_cents, a.opening_balance_cents) AS balance_cents,
-                      GREATEST(a.created_at, COALESCE(snap.captured_at, a.created_at)) AS updated_at
+                      GREATEST(a.created_at, a.updated_at, COALESCE(snap.captured_at, a.created_at)) AS updated_at
                   FROM banking.account a
                   LEFT JOIN LATERAL (
                       SELECT bs.balance_cents, bs.captured_at
@@ -368,75 +431,112 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
             transaction: transaction,
             cancellationToken: cancellationToken))).ToList();
 
+        var rules = await categorizationDeltaReader.GetRuleChangesAsync(
+            householdId,
+            parsedCursor,
+            connection,
+            transaction,
+            cancellationToken);
+
+        var alerts = await alertsDeltaReader.GetAlertChangesAsync(
+            householdId,
+            parsedCursor,
+            connection,
+            transaction,
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
-        var maxTimestamp = serverTime;
-        if (parsedCursor.HasValue && parsedCursor.Value > maxTimestamp)
+        // Hold nextCursor at or below the oldest concurrent active transaction so uncommitted writes
+        // whose now() timestamp precedes this snapshot are never skipped on the next delta poll.
+        var nextCursorTimestamp = safeWatermark;
+        if (!hasConcurrentActiveTx)
         {
-            maxTimestamp = parsedCursor.Value;
-        }
-
-        foreach (var item in connections)
-        {
-            if (item.UpdatedAt > maxTimestamp)
+            foreach (var item in connections)
             {
-                maxTimestamp = item.UpdatedAt;
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
+            }
+
+            foreach (var item in accounts)
+            {
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
+            }
+
+            foreach (var item in cardBills)
+            {
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
+            }
+
+            foreach (var item in transactions)
+            {
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
+            }
+
+            foreach (var item in removedRows)
+            {
+                if (item.IngestedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.IngestedAt;
+                }
+            }
+
+            foreach (var item in adjustments)
+            {
+                if (item.CreatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.CreatedAt;
+                }
+            }
+
+            foreach (var item in rules)
+            {
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
+            }
+
+            foreach (var item in alerts)
+            {
+                if (item.UpdatedAt > nextCursorTimestamp)
+                {
+                    nextCursorTimestamp = item.UpdatedAt;
+                }
             }
         }
-
-        foreach (var item in accounts)
+        else if (parsedCursor.HasValue && parsedCursor.Value > nextCursorTimestamp)
         {
-            if (item.UpdatedAt > maxTimestamp)
-            {
-                maxTimestamp = item.UpdatedAt;
-            }
-        }
-
-        foreach (var item in cardBills)
-        {
-            if (item.UpdatedAt > maxTimestamp)
-            {
-                maxTimestamp = item.UpdatedAt;
-            }
-        }
-
-        foreach (var item in transactions)
-        {
-            if (item.UpdatedAt > maxTimestamp)
-            {
-                maxTimestamp = item.UpdatedAt;
-            }
-        }
-
-        foreach (var item in removedRows)
-        {
-            if (item.IngestedAt > maxTimestamp)
-            {
-                maxTimestamp = item.IngestedAt;
-            }
-        }
-
-        foreach (var item in adjustments)
-        {
-            if (item.CreatedAt > maxTimestamp)
-            {
-                maxTimestamp = item.CreatedAt;
-            }
+            nextCursorTimestamp = parsedCursor.Value;
         }
 
         var response = new SyncChangesResponse(
             normalizedInputCursor,
-            FormatCursor(maxTimestamp),
+            FormatCursor(nextCursorTimestamp),
             serverTime,
             isFullSync,
+            FullResyncRequired: false,
             connections,
             accounts,
             cardBills,
             transactions,
             removedRows.Select(r => r.TransactionId).ToList(),
-            adjustments);
+            adjustments,
+            rules,
+            alerts);
 
-        return (true, null, response);
+        return (true, null, null, response);
     }
 
     private static bool TryParseCursor(string rawCursor, out DateTimeOffset utcCursor)
@@ -464,8 +564,10 @@ internal sealed partial class BankingDeltaSyncService(NpgsqlDataSource dataSourc
     private static string FormatCursor(DateTimeOffset utcTimestamp) =>
         utcTimestamp.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture);
 
-    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$")]
+    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex IsoUtcCursorRegex();
+
+    private sealed record WatermarkRow(DateTimeOffset ServerTime, DateTimeOffset? OldestActiveXactStart);
 
     private sealed record RemovedTransactionRow(Guid TransactionId, DateTimeOffset IngestedAt);
 }
@@ -552,9 +654,12 @@ internal sealed record SyncChangesResponse(
     string NextCursor,
     DateTimeOffset ServerTime,
     bool IsFullSync,
+    bool FullResyncRequired,
     IReadOnlyList<SyncConnectionDto> Connections,
     IReadOnlyList<SyncAccountDto> Accounts,
     IReadOnlyList<SyncCardBillDto> CardBills,
     IReadOnlyList<SyncTransactionDto> Transactions,
     IReadOnlyList<Guid> RemovedTransactionIds,
-    IReadOnlyList<SyncAdjustmentDto> Adjustments);
+    IReadOnlyList<SyncAdjustmentDto> Adjustments,
+    IReadOnlyList<SyncRuleDto> Rules,
+    IReadOnlyList<SyncAlertDto> Alerts);

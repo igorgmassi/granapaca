@@ -366,9 +366,24 @@ public static class BankingModule
                 return Results.Unauthorized();
             }
 
-            var (ok, error, data) = await deltaSync.GetChangesAsync(householdId, cursor, cancellationToken);
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            var (ok, errorCode, error, data) = await deltaSync.GetChangesAsync(householdId, cursor, cancellationToken);
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Cursor de sincronização inválido",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = errorCode ?? "invalid_cursor",
+                        ["fullResyncRequired"] = true,
+                    });
+        })
+        .WithName("GetSyncChanges")
+        .WithTags("Sync")
+        .Produces<SyncChangesResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPost("/imports/ofx", async (
             ImportStatementRequest? request,
@@ -387,8 +402,19 @@ public static class BankingModule
                 request,
                 cancellationToken);
 
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Erro ao importar extrato OFX",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_ofx" });
+        })
+        .WithName("ImportOfxStatement")
+        .WithTags("Imports")
+        .Produces<ImportResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         api.MapPost("/imports/csv", async (
             ImportStatementRequest? request,
@@ -407,8 +433,19 @@ public static class BankingModule
                 request,
                 cancellationToken);
 
-            return ok ? Results.Ok(data) : Results.BadRequest(new { error });
-        });
+            return ok
+                ? Results.Ok(data)
+                : Results.Problem(
+                    title: "Erro ao importar extrato CSV",
+                    detail: error,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_csv" });
+        })
+        .WithName("ImportCsvStatement")
+        .WithTags("Imports")
+        .Produces<ImportResponse>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }

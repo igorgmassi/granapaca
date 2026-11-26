@@ -76,7 +76,7 @@ internal static partial class OfxStatementParser
             return (false, "Arquivo OFX inválido: tag <OFX> não encontrada.", null);
         }
 
-        var body = XmlCommentRegex().Replace(cleaned[ofxStart..], string.Empty);
+        var body = StripXmlComments(cleaned[ofxStart..]);
 
         var curdef = GetLeafTag(body, "CURDEF");
         if (!string.IsNullOrWhiteSpace(curdef) &&
@@ -216,33 +216,107 @@ internal static partial class OfxStatementParser
         };
     }
 
-    private static List<string> ExtractTransactionBlocks(string body)
+    private static string StripXmlComments(string source)
     {
-        var matches = ClosedStmtTrnRegex().Matches(body);
-        if (matches.Count > 0)
+        var firstComment = source.IndexOf("<!--", StringComparison.Ordinal);
+        if (firstComment < 0)
         {
-            var result = new List<string>(matches.Count);
-            foreach (Match match in matches)
-            {
-                result.Add(match.Groups[1].Value);
-            }
-
-            return result;
+            return source;
         }
 
-        // Fallback for SGML dialects that omit </STMTTRN>.
+        var sb = new StringBuilder(source.Length);
+        var pos = 0;
+
+        while (pos < source.Length)
+        {
+            var start = source.IndexOf("<!--", pos, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                sb.Append(source, pos, source.Length - pos);
+                break;
+            }
+
+            var end = source.IndexOf("-->", start + 4, StringComparison.Ordinal);
+            if (end < 0)
+            {
+                // Unclosed comment: preserve remainder and exit in O(N) without quadratic rescans.
+                sb.Append(source, pos, source.Length - pos);
+                break;
+            }
+
+            if (start > pos)
+            {
+                sb.Append(source, pos, start - pos);
+            }
+
+            pos = end + 3;
+        }
+
+        return sb.ToString();
+    }
+
+    private static List<string> ExtractTransactionBlocks(string body)
+    {
+        const string openTag = "<STMTTRN>";
+        const string closeTag = "</STMTTRN>";
+
+        if (body.Contains(closeTag, StringComparison.OrdinalIgnoreCase))
+        {
+            var closedBlocks = new List<string>();
+            var pos = 0;
+
+            while (pos < body.Length)
+            {
+                var openIndex = body.IndexOf(openTag, pos, StringComparison.OrdinalIgnoreCase);
+                if (openIndex < 0)
+                {
+                    break;
+                }
+
+                var contentStart = openIndex + openTag.Length;
+                var closeIndex = body.IndexOf(closeTag, contentStart, StringComparison.OrdinalIgnoreCase);
+                if (closeIndex < 0)
+                {
+                    break;
+                }
+
+                closedBlocks.Add(body[contentStart..closeIndex]);
+                pos = closeIndex + closeTag.Length;
+            }
+
+            if (closedBlocks.Count > 0)
+            {
+                return closedBlocks;
+            }
+        }
+
+        // Fallback for SGML dialects that omit </STMTTRN> (linear O(N) scan).
         var tranList = GetBlock(body, "BANKTRANLIST") ?? body;
-        var openMatches = OpenStmtTrnRegex().Matches(tranList);
-        if (openMatches.Count == 0)
+        var openPositions = new List<int>();
+        var scanPos = 0;
+
+        while (scanPos < tranList.Length)
+        {
+            var idx = tranList.IndexOf(openTag, scanPos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+            {
+                break;
+            }
+
+            openPositions.Add(idx);
+            scanPos = idx + openTag.Length;
+        }
+
+        if (openPositions.Count == 0)
         {
             return [];
         }
 
-        var blocks = new List<string>(openMatches.Count);
-        for (var i = 0; i < openMatches.Count; i++)
+        var blocks = new List<string>(openPositions.Count);
+        for (var i = 0; i < openPositions.Count; i++)
         {
-            var start = openMatches[i].Index + openMatches[i].Length;
-            var end = i + 1 < openMatches.Count ? openMatches[i + 1].Index : tranList.Length;
+            var start = openPositions[i] + openTag.Length;
+            var end = i + 1 < openPositions.Count ? openPositions[i + 1] : tranList.Length;
             blocks.Add(tranList[start..end]);
         }
 
@@ -266,14 +340,18 @@ internal static partial class OfxStatementParser
 
     private static string? GetLeafTag(string block, string tagName)
     {
-        var pattern = $@"<{Regex.Escape(tagName)}>\s*([^<]*)";
-        var match = Regex.Match(block, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        if (!match.Success)
+        var openTag = $"<{tagName}>";
+        var start = block.IndexOf(openTag, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
         {
             return null;
         }
 
-        var decoded = WebUtility.HtmlDecode(match.Groups[1].Value);
+        var contentStart = start + openTag.Length;
+        var nextTag = block.IndexOf('<', contentStart);
+        var rawValue = nextTag < 0 ? block[contentStart..] : block[contentStart..nextTag];
+
+        var decoded = WebUtility.HtmlDecode(rawValue);
         var collapsed = CollapseWhitespaceRegex().Replace(decoded, " ").Trim();
         return collapsed.Length == 0 ? null : collapsed;
     }
@@ -460,20 +538,16 @@ internal static partial class OfxStatementParser
             error = $"valor '{raw}' contém fração de centavo (ADR-013).";
             return false;
         }
+        catch (OverflowException)
+        {
+            error = $"valor '{raw}' excede o limite suportado.";
+            return false;
+        }
     }
 
-    [GeneratedRegex(@"<!--.*?-->", RegexOptions.Singleline)]
-    private static partial Regex XmlCommentRegex();
-
-    [GeneratedRegex(@"<STMTTRN>(.*?)</STMTTRN>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex ClosedStmtTrnRegex();
-
-    [GeneratedRegex(@"<STMTTRN>", RegexOptions.IgnoreCase)]
-    private static partial Regex OpenStmtTrnRegex();
-
-    [GeneratedRegex(@"\s+")]
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex CollapseWhitespaceRegex();
 
-    [GeneratedRegex(@"^(\d{4})(\d{2})(\d{2})(?:(\d{2})(\d{2})(\d{2})(?:\.\d+)?)?(?:\[([+-]?\d+(?:[:.]\d+)?)(?::[^\]]*)?\])?$")]
+    [GeneratedRegex(@"^(\d{4})(\d{2})(\d{2})(?:(\d{2})(\d{2})(\d{2})(?:\.\d+)?)?(?:\[([+-]?\d+(?:[:.]\d+)?)(?::[^\]]*)?\])?$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex OfxDateRegex();
 }

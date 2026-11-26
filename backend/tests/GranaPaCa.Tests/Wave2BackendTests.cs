@@ -25,9 +25,24 @@ public sealed class Wave2BackendTests : IAsyncLifetime
 
         var (client, _, _, _) = await CreateAuthenticatedClientAsync();
 
-        // Invalid cursor values are rejected with 400 Bad Request.
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/sync/changes?cursor=invalido", Ct)).StatusCode);
+        // Invalid cursor values are rejected with 400 Bad Request ProblemDetails.
+        var badCursorResp = await client.GetAsync("/api/v1/sync/changes?cursor=invalido", Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, badCursorResp.StatusCode);
+        Assert.Equal("application/problem+json", badCursorResp.Content.Headers.ContentType?.MediaType);
+        var badCursorBody = await badCursorResp.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.True(badCursorBody.GetProperty("fullResyncRequired").GetBoolean());
+
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/sync/changes?cursor=2026-03-15", Ct)).StatusCode);
+
+        // Future cursor is rejected with 400 Bad Request and fullResyncRequired instead of being echoed forward.
+        var futureCursor = DateTimeOffset.UtcNow.AddMinutes(10).ToString(
+            "yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'",
+            System.Globalization.CultureInfo.InvariantCulture);
+        var futureCursorResp = await client.GetAsync($"/api/v1/sync/changes?cursor={Uri.EscapeDataString(futureCursor)}", Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, futureCursorResp.StatusCode);
+        Assert.Equal("application/problem+json", futureCursorResp.Content.Headers.ContentType?.MediaType);
+        var futureCursorBody = await futureCursorResp.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.True(futureCursorBody.GetProperty("fullResyncRequired").GetBoolean());
 
         // Populate household via synthetic sync.
         var syncResp = await client.PostAsync("/api/v1/connections/sync", null, Ct);
@@ -39,12 +54,15 @@ public sealed class Wave2BackendTests : IAsyncLifetime
         var fullJson = await fullResp.Content.ReadFromJsonAsync<JsonElement>(Ct);
 
         Assert.True(fullJson.GetProperty("isFullSync").GetBoolean());
+        Assert.False(fullJson.GetProperty("fullResyncRequired").GetBoolean());
         Assert.Equal(JsonValueKind.Null, fullJson.GetProperty("cursor").ValueKind);
         var cursor1 = fullJson.GetProperty("nextCursor").GetString();
         Assert.False(string.IsNullOrWhiteSpace(cursor1));
         Assert.Equal(2, fullJson.GetProperty("connections").GetArrayLength());
         Assert.True(fullJson.GetProperty("accounts").GetArrayLength() >= 3);
         Assert.True(fullJson.GetProperty("cardBills").GetArrayLength() >= 3);
+        Assert.Equal(JsonValueKind.Array, fullJson.GetProperty("rules").ValueKind);
+        Assert.Equal(JsonValueKind.Array, fullJson.GetProperty("alerts").ValueKind);
         var initialTxCount = fullJson.GetProperty("transactions").GetArrayLength();
         Assert.True(initialTxCount >= 70);
         Assert.Equal(0, fullJson.GetProperty("removedTransactionIds").GetArrayLength());
@@ -604,6 +622,345 @@ public sealed class Wave2BackendTests : IAsyncLifetime
         {
             Assert.True(paths.TryGetProperty(path, out _), $"Expected OpenAPI path '{path}' to be documented.");
         }
+
+        // Verify newly added endpoints declare explicit response and ProblemDetails schemas (ADR-018).
+        var syncResponses = paths.GetProperty("/api/v1/sync/changes").GetProperty("get").GetProperty("responses");
+        Assert.True(syncResponses.TryGetProperty("200", out _));
+        Assert.True(syncResponses.TryGetProperty("400", out _));
+
+        var ofxResponses = paths.GetProperty("/api/v1/imports/ofx").GetProperty("post").GetProperty("responses");
+        Assert.True(ofxResponses.TryGetProperty("200", out _));
+        Assert.True(ofxResponses.TryGetProperty("400", out _));
+
+        var csvResponses = paths.GetProperty("/api/v1/imports/csv").GetProperty("post").GetProperty("responses");
+        Assert.True(csvResponses.TryGetProperty("200", out _));
+        Assert.True(csvResponses.TryGetProperty("400", out _));
+
+        var purgeResponses = paths.GetProperty("/api/v1/account/purge").GetProperty("post").GetProperty("responses");
+        Assert.True(purgeResponses.TryGetProperty("204", out _));
+        Assert.True(purgeResponses.TryGetProperty("400", out _));
+        Assert.True(purgeResponses.TryGetProperty("401", out _));
+        Assert.True(purgeResponses.TryGetProperty("429", out _));
+    }
+
+    [Fact]
+    public async Task Ofx_unclosed_sgml_and_unclosed_comments_parse_in_linear_time_without_redos()
+    {
+        var (client, _, _, _) = await CreateAuthenticatedClientAsync();
+
+        // Build an adversarial OFX 1.x SGML payload with hundreds of unclosed comments and unclosed <STMTTRN> blocks.
+        var sb = new StringBuilder();
+        sb.AppendLine("OFXHEADER:100");
+        sb.AppendLine("DATA:OFXSGML");
+        sb.AppendLine("VERSION:102");
+        sb.AppendLine();
+        sb.AppendLine("<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL");
+        for (var i = 0; i < 400; i++)
+        {
+            sb.Append("<!-- unclosed comment ");
+        }
+        sb.AppendLine();
+        sb.AppendLine("<BANKTRANLIST>");
+        for (var i = 1; i <= 250; i++)
+        {
+            sb.AppendLine("<STMTTRN>");
+            sb.AppendLine("<TRNTYPE>DEBIT");
+            sb.AppendLine("<DTPOSTED>20260318");
+            sb.AppendLine($"<TRNAMT>-{i}.00");
+            sb.AppendLine($"<FITID>SGML-LINEAR-{i:D4}");
+            sb.AppendLine($"<MEMO>Lançamento SGML {i}");
+        }
+        sb.AppendLine("</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var resp = await client.PostAsJsonAsync("/api/v1/imports/ofx", new
+        {
+            institutionName = "Banco Linear Demo",
+            accountName = "Conta Linear",
+            content = sb.ToString(),
+        }, Ct);
+        sw.Stop();
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"Expected linear-time OFX parse, took {sw.Elapsed}.");
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal(250, json.GetProperty("inserted").GetInt32());
+    }
+
+    [Fact]
+    public async Task Csv_brazilian_thousands_malformed_numbers_and_overflow_in_csv_and_ofx_are_handled_safely()
+    {
+        var (client, _, _, _) = await CreateAuthenticatedClientAsync();
+
+        // 1. Valid Brazilian thousands without decimals (-1.000, -1.500, -1.000.000) must not lose 1000x magnitude.
+        const string thousandsCsv =
+            "Data;Descrição;Valor\n" +
+            "15/03/2026;Aluguel Mil;-1.000\n" +
+            "16/03/2026;Aluguel Mil e Quinhentos;-1.500\n" +
+            "17/03/2026;Imóvel Milhão;-1.000.000\n";
+
+        var okResp = await client.PostAsJsonAsync("/api/v1/imports/csv", new
+        {
+            institutionName = "Banco Milhar Demo",
+            accountName = "Conta Milhar",
+            accountKind = "checking",
+            content = thousandsCsv,
+        }, Ct);
+        Assert.Equal(HttpStatusCode.OK, okResp.StatusCode);
+
+        var txs = (await client.GetFromJsonAsync<JsonElement>("/api/v1/transactions?pageSize=20", Ct))
+            .GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(-100_000L, txs.Single(t => t.GetProperty("description").GetString() == "Aluguel Mil").GetProperty("amountCents").GetInt64());
+        Assert.Equal(-150_000L, txs.Single(t => t.GetProperty("description").GetString() == "Aluguel Mil e Quinhentos").GetProperty("amountCents").GetInt64());
+        Assert.Equal(-100_000_000L, txs.Single(t => t.GetProperty("description").GetString() == "Imóvel Milhão").GetProperty("amountCents").GetInt64());
+
+        // 2. Malformed separator combinations and overflow must return 400 ProblemDetails (never 200 or 500).
+        string[] invalidCsvAmounts =
+        [
+            "1.23.45",
+            "1,23,45",
+            "1.2,34",
+            "1,2.34",
+            "0.125",
+            "99999999999999999999.00",
+        ];
+
+        foreach (var badAmount in invalidCsvAmounts)
+        {
+            var resp = await client.PostAsJsonAsync("/api/v1/imports/csv", new
+            {
+                institutionName = "Banco Inválido Demo",
+                accountName = "Conta Inválida",
+                content = $"Data;Descrição;Valor\n15/03/2026;Teste Inválido;{badAmount}\n",
+            }, Ct);
+            Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+            Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+        }
+
+        // 3. Overflowing OFX amount returns 400 ProblemDetails (not 500).
+        const string overflowOfx = """
+            OFXHEADER:100
+            DATA:OFXSGML
+            VERSION:102
+
+            <OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL<BANKTRANLIST>
+            <STMTTRN>
+            <TRNTYPE>DEBIT
+            <DTPOSTED>20260318
+            <TRNAMT>-99999999999999999999.00
+            <FITID>OVERFLOW-001
+            <MEMO>Valor gigante
+            </STMTTRN>
+            </BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+            """;
+
+        var ofxOverflowResp = await client.PostAsJsonAsync("/api/v1/imports/ofx", new { content = overflowOfx }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, ofxOverflowResp.StatusCode);
+        Assert.Equal("application/problem+json", ofxOverflowResp.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Delta_sync_surfaces_consecutive_failures_account_updates_rules_alerts_and_concurrent_writes()
+    {
+        var (client, householdId, _, _) = await CreateAuthenticatedClientAsync();
+
+        // Seed initial connection + accounts + transactions via synthetic sync.
+        (await client.PostAsync("/api/v1/connections/sync", null, Ct)).EnsureSuccessStatusCode();
+
+        var initial = await client.GetFromJsonAsync<JsonElement>("/api/v1/sync/changes", Ct);
+        var cursor = initial.GetProperty("nextCursor").GetString()!;
+        var firstConnectionId = initial.GetProperty("connections")[0].GetProperty("id").GetGuid();
+
+        // 1. Consecutive failure (2nd failure without changing first_failure_at) must appear in delta sync.
+        var dataSource = _api.Services.GetRequiredService<NpgsqlDataSource>();
+        await using (var conn = await dataSource.OpenConnectionAsync(Ct))
+        {
+            await using var fail1 = conn.CreateCommand();
+            fail1.CommandText = """
+                UPDATE banking.connection
+                SET status = 'error',
+                    last_error_code = 'provider_timeout',
+                    consecutive_failures = 1,
+                    first_failure_at = now(),
+                    updated_at = now()
+                WHERE id = @Id
+                """;
+            fail1.Parameters.AddWithValue("Id", firstConnectionId);
+            await fail1.ExecuteNonQueryAsync(Ct);
+        }
+
+        var deltaAfterFail1 = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+        Assert.Single(deltaAfterFail1.GetProperty("connections").EnumerateArray());
+        Assert.Equal(1, deltaAfterFail1.GetProperty("connections")[0].GetProperty("consecutiveFailures").GetInt32());
+        cursor = deltaAfterFail1.GetProperty("nextCursor").GetString()!;
+
+        // Simulate 2nd consecutive failure: first_failure_at stays untouched, updated_at advances.
+        await using (var conn = await dataSource.OpenConnectionAsync(Ct))
+        {
+            await using var fail2 = conn.CreateCommand();
+            fail2.CommandText = """
+                UPDATE banking.connection
+                SET status = 'error',
+                    last_error_code = 'http_503',
+                    consecutive_failures = consecutive_failures + 1,
+                    first_failure_at = COALESCE(first_failure_at, now()),
+                    updated_at = now()
+                WHERE id = @Id
+                """;
+            fail2.Parameters.AddWithValue("Id", firstConnectionId);
+            await fail2.ExecuteNonQueryAsync(Ct);
+        }
+
+        var deltaAfterFail2 = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+        var failedConnDelta = deltaAfterFail2.GetProperty("connections").EnumerateArray().ToList();
+        Assert.Single(failedConnDelta);
+        Assert.Equal(2, failedConnDelta[0].GetProperty("consecutiveFailures").GetInt32());
+        Assert.Equal("http_503", failedConnDelta[0].GetProperty("lastErrorCode").GetString());
+        cursor = deltaAfterFail2.GetProperty("nextCursor").GetString()!;
+
+        // 2. Account metadata update without balance snapshot (e.g. OFX/CSV account name change) must surface in delta.
+        const string baseOfx = """
+            OFXHEADER:100
+            DATA:OFXSGML
+            VERSION:102
+
+            <OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL
+            <BANKACCTFROM><BANKID>0777<ACCTID>55551234<ACCTTYPE>CHECKING</BANKACCTFROM>
+            <BANKTRANLIST>
+            <STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260318<TRNAMT>-15.00<FITID>META-001<MEMO>Café Demo</STMTTRN>
+            </BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>
+            """;
+
+        (await client.PostAsJsonAsync("/api/v1/imports/ofx", new
+        {
+            institutionName = "Banco Meta Demo",
+            accountName = "Conta Nome Antigo",
+            content = baseOfx,
+        }, Ct)).EnsureSuccessStatusCode();
+
+        var deltaAfterFirstImport = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+        cursor = deltaAfterFirstImport.GetProperty("nextCursor").GetString()!;
+
+        (await client.PostAsJsonAsync("/api/v1/imports/ofx", new
+        {
+            institutionName = "Banco Meta Demo",
+            accountName = "Conta Nome Atualizado",
+            content = baseOfx,
+        }, Ct)).EnsureSuccessStatusCode();
+
+        var deltaAfterRename = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+        var updatedAccounts = deltaAfterRename.GetProperty("accounts").EnumerateArray().ToList();
+        Assert.Single(updatedAccounts);
+        Assert.Equal("Conta Nome Atualizado", updatedAccounts[0].GetProperty("name").GetString());
+        cursor = deltaAfterRename.GetProperty("nextCursor").GetString()!;
+
+        // 3. New rule and new alert appear in delta sync (ADR-007).
+        (await client.PostAsJsonAsync("/api/v1/rules", new
+        {
+            name = "Regra Delta Demo",
+            matchPattern = "cafe demo",
+            category = "food",
+            essentiality = "flexible",
+        }, Ct)).EnsureSuccessStatusCode();
+
+        var alertPublisher = _api.Services.GetRequiredService<IAlertPublisher>();
+        await alertPublisher.RaiseAsync(new AlertRequest(
+            householdId,
+            "delta-sync-alert-test",
+            "info_test",
+            "info",
+            "Alerta Delta",
+            "Deve aparecer no sync incremental."), Ct);
+
+        var deltaRulesAlerts = await client.GetFromJsonAsync<JsonElement>(
+            $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+        Assert.Single(deltaRulesAlerts.GetProperty("rules").EnumerateArray());
+        Assert.Single(deltaRulesAlerts.GetProperty("alerts").EnumerateArray());
+        cursor = deltaRulesAlerts.GetProperty("nextCursor").GetString()!;
+
+        // 4. Concurrent open write transaction must not be skipped by nextCursor watermark.
+        var alertKeyConcurrent = "concurrent-tx-alert";
+        await using (var writerConn = await dataSource.OpenConnectionAsync(Ct))
+        await using (var writerTx = await writerConn.BeginTransactionAsync(Ct))
+        {
+            // Force transaction start (xact_start) BEFORE /sync/changes runs.
+            await using (var startCmd = writerConn.CreateCommand())
+            {
+                startCmd.Transaction = writerTx;
+                startCmd.CommandText = "SELECT 1";
+                await startCmd.ExecuteScalarAsync(Ct);
+            }
+
+            // Reader polls while writer transaction is open and uncommitted.
+            var concurrentPoll = await client.GetFromJsonAsync<JsonElement>(
+                $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(cursor)}", Ct);
+            var safeCursor = concurrentPoll.GetProperty("nextCursor").GetString()!;
+
+            // Now writer inserts with now() (which equals writerTx's xact_start < reader's now()) and commits.
+            await using (var insertCmd = writerConn.CreateCommand())
+            {
+                insertCmd.Transaction = writerTx;
+                insertCmd.CommandText = """
+                    INSERT INTO alerts.alert (
+                        id, household_id, dedup_key, kind, severity, title, message, created_at
+                    )
+                    VALUES (
+                        @Id, @HouseholdId, @DedupKey, 'info_test', 'info', 'Alerta Concorrente', 'Commit tardio', now()
+                    )
+                    """;
+                insertCmd.Parameters.AddWithValue("Id", Guid.CreateVersion7());
+                insertCmd.Parameters.AddWithValue("HouseholdId", householdId);
+                insertCmd.Parameters.AddWithValue("DedupKey", alertKeyConcurrent);
+                await insertCmd.ExecuteNonQueryAsync(Ct);
+            }
+
+            await writerTx.CommitAsync(Ct);
+
+            // Next poll using safeCursor MUST observe the concurrent write instead of losing it!
+            var followUpPoll = await client.GetFromJsonAsync<JsonElement>(
+                $"/api/v1/sync/changes?cursor={Uri.EscapeDataString(safeCursor)}", Ct);
+            var concurrentAlerts = followUpPoll.GetProperty("alerts").EnumerateArray().ToList();
+            Assert.Contains(concurrentAlerts, a => a.GetProperty("dedupKey").GetString() == alertKeyConcurrent);
+        }
+    }
+
+    [Fact]
+    public async Task Account_purge_enforces_rate_limit_after_repeated_invalid_credentials()
+    {
+        var (client, _, password, manualKey) = await CreateAuthenticatedClientAsync();
+
+        // 5 failed attempts hit the rate-limit window (MaxFailedAttemptsWindow = 5).
+        for (var i = 0; i < 5; i++)
+        {
+            var attempt = await client.PostAsJsonAsync("/api/v1/account/purge", new
+            {
+                password = "SenhaIncorreta!2026#Test",
+                totpCode = "000000",
+                confirmationText = "APAGAR TUDO",
+            }, Ct);
+            Assert.Equal(HttpStatusCode.Unauthorized, attempt.StatusCode);
+            Assert.Equal("application/problem+json", attempt.Content.Headers.ContentType?.MediaType);
+        }
+
+        // 6th attempt is blocked with 429 Too Many Requests even with valid credentials.
+        var blocked = await client.PostAsJsonAsync("/api/v1/account/purge", new
+        {
+            password,
+            totpCode = KeyringAndIdentityTests.ComputeTotp(manualKey),
+            confirmationText = "APAGAR TUDO",
+        }, Ct);
+        Assert.Equal(HttpStatusCode.TooManyRequests, blocked.StatusCode);
+        Assert.Equal("application/problem+json", blocked.Content.Headers.ContentType?.MediaType);
+        var blockedJson = await blocked.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal("rate_limited", blockedJson.GetProperty("code").GetString());
+
+        // Account remains intact because purge was rate-limited.
+        var info = await _api.CreateClient().GetFromJsonAsync<JsonElement>("/api/v1/server-info", Ct);
+        Assert.True(info.GetProperty("ownerConfigured").GetBoolean());
     }
 
     private async Task<(HttpClient Client, Guid HouseholdId, string Password, string ManualKey)> CreateAuthenticatedClientAsync()

@@ -309,7 +309,8 @@ internal sealed class BankingSyncService(
                 ON CONFLICT (household_id, provider, external_item_id) DO UPDATE
                 SET institution_name = EXCLUDED.institution_name,
                     status = 'up_to_date',
-                    last_synced_at = now()
+                    last_synced_at = now(),
+                    updated_at = now()
                 RETURNING id
                 """,
                 new
@@ -367,10 +368,8 @@ internal sealed class BankingSyncService(
         var skippedDuplicates = ingest.SkippedDuplicates + inFileDuplicates;
 
         logger.LogInformation(
-            "File statement imported: format={Format} connectionId={ConnectionId} accountId={AccountId} inserted={Inserted} skippedDuplicates={SkippedDuplicates} transfersLinked={TransfersLinked} uncategorized={Uncategorized}",
+            "File statement imported: format={Format} inserted={Inserted} skippedDuplicates={SkippedDuplicates} transfersLinked={TransfersLinked} uncategorized={Uncategorized}",
             format,
-            connectionId,
-            ingest.AccountId,
             ingest.Inserted,
             skippedDuplicates,
             transfersLinked,
@@ -496,7 +495,8 @@ internal sealed class BankingSyncService(
             SET status = 'error',
                 last_error_code = @ErrorCode,
                 consecutive_failures = consecutive_failures + 1,
-                first_failure_at = COALESCE(first_failure_at, now())
+                first_failure_at = COALESCE(first_failure_at, now()),
+                updated_at = now()
             WHERE id = @ConnectionId
             """,
             new { ConnectionId = connectionId, ErrorCode = errorCode },
@@ -527,7 +527,8 @@ internal sealed class BankingSyncService(
                     last_synced_at = now(),
                     last_error_code = NULL,
                     consecutive_failures = 0,
-                    first_failure_at = NULL
+                    first_failure_at = NULL,
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -551,7 +552,8 @@ internal sealed class BankingSyncService(
                     consent_expires_at = @ConsentExpiresAt,
                     last_error_code = @LastErrorCode,
                     consecutive_failures = consecutive_failures + 1,
-                    first_failure_at = COALESCE(first_failure_at, now())
+                    first_failure_at = COALESCE(first_failure_at, now()),
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -575,7 +577,8 @@ internal sealed class BankingSyncService(
                     status = @Status,
                     consent_expires_at = @ConsentExpiresAt,
                     last_synced_at = now(),
-                    last_error_code = @LastErrorCode
+                    last_error_code = @LastErrorCode,
+                    updated_at = now()
                 WHERE id = @ConnectionId
                 """,
                 new
@@ -630,7 +633,15 @@ internal sealed class BankingSyncService(
             SET name = EXCLUDED.name,
                 kind = EXCLUDED.kind,
                 last_four_digits = COALESCE(EXCLUDED.last_four_digits, banking.account.last_four_digits),
-                opening_balance_cents = EXCLUDED.opening_balance_cents
+                opening_balance_cents = EXCLUDED.opening_balance_cents,
+                updated_at = CASE
+                    WHEN banking.account.name IS DISTINCT FROM EXCLUDED.name
+                      OR banking.account.kind IS DISTINCT FROM EXCLUDED.kind
+                      OR banking.account.last_four_digits IS DISTINCT FROM COALESCE(EXCLUDED.last_four_digits, banking.account.last_four_digits)
+                      OR banking.account.opening_balance_cents IS DISTINCT FROM EXCLUDED.opening_balance_cents
+                    THEN now()
+                    ELSE banking.account.updated_at
+                END
             RETURNING id
             """,
             new

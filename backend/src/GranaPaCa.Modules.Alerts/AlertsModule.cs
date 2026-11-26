@@ -14,6 +14,7 @@ public static class AlertsModule
     public static IServiceCollection AddAlertsModule(this IServiceCollection services)
     {
         services.AddSingleton<IAlertPublisher, AlertPublisher>();
+        services.AddSingleton<IAlertsDeltaReader, AlertsDeltaReader>();
         services.AddSingleton<IAlertsPurgeService, AlertsPurgeService>();
         return services;
     }

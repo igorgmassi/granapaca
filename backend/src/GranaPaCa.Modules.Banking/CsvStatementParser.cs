@@ -1,11 +1,12 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GranaPaCa.Modules.Categorization.Contracts;
 
 namespace GranaPaCa.Modules.Banking;
 
-internal static class CsvStatementParser
+internal static partial class CsvStatementParser
 {
     private static readonly HashSet<string> DateHeaders = new(StringComparer.Ordinal)
     {
@@ -472,32 +473,99 @@ internal static class CsvStatementParser
         {
             if (lastComma > lastDot)
             {
-                // Brazilian format: 1.234,56
+                // Brazilian format: 1.234,56 (strictly validate thousands grouping).
+                if (!BrazilianGroupedDecimalRegex().IsMatch(cleaned))
+                {
+                    error = $"formato numérico inválido ('{raw}').";
+                    return false;
+                }
+
                 normalized = cleaned.Replace(".", string.Empty, StringComparison.Ordinal)
                     .Replace(',', '.');
             }
             else
             {
-                // US/ISO format: 1,234.56
+                // US/ISO format: 1,234.56 (strictly validate thousands grouping).
+                if (!UsGroupedDecimalRegex().IsMatch(cleaned))
+                {
+                    error = $"formato numérico inválido ('{raw}').";
+                    return false;
+                }
+
                 normalized = cleaned.Replace(",", string.Empty, StringComparison.Ordinal);
             }
         }
         else if (lastComma >= 0)
         {
             var commaCount = cleaned.Count(c => c == ',');
-            normalized = commaCount > 1
-                ? cleaned.Replace(",", string.Empty, StringComparison.Ordinal)
-                : cleaned.Replace(',', '.');
+            if (commaCount > 1)
+            {
+                // US/ISO multi-thousands integer: 1,000,000.
+                if (!UsMultiThousandsIntegerRegex().IsMatch(cleaned))
+                {
+                    error = $"formato numérico inválido ('{raw}').";
+                    return false;
+                }
+
+                normalized = cleaned.Replace(",", string.Empty, StringComparison.Ordinal);
+            }
+            else
+            {
+                // Single comma: Brazilian decimal (e.g. -18,50). Reject >2 fractional digits to prevent 1000x corruption or fractional cents.
+                if (!SingleCommaDecimalRegex().IsMatch(cleaned))
+                {
+                    error = $"formato numérico inválido ('{raw}').";
+                    return false;
+                }
+
+                var fractionalLength = cleaned.Length - lastComma - 1;
+                if (fractionalLength > 2)
+                {
+                    error = $"valor '{raw}' contém fração de centavo ou separador ambíguo (ADR-013).";
+                    return false;
+                }
+
+                normalized = cleaned.Replace(',', '.');
+            }
         }
         else if (lastDot >= 0)
         {
             var dotCount = cleaned.Count(c => c == '.');
-            normalized = dotCount > 1
-                ? cleaned.Replace(".", string.Empty, StringComparison.Ordinal)
-                : cleaned;
+            if (dotCount > 1)
+            {
+                // Brazilian multi-thousands integer: 1.000.000.
+                if (!BrazilianMultiThousandsIntegerRegex().IsMatch(cleaned))
+                {
+                    error = $"formato numérico inválido ('{raw}').";
+                    return false;
+                }
+
+                normalized = cleaned.Replace(".", string.Empty, StringComparison.Ordinal);
+            }
+            else if (BrazilianSingleThousandsIntegerRegex().IsMatch(cleaned))
+            {
+                // Brazilian thousands integer without cents (e.g. -1.000, -1.500): BRL has max 2 decimal places (ADR-013).
+                normalized = cleaned.Replace(".", string.Empty, StringComparison.Ordinal);
+            }
+            else if (IsoDotDecimalRegex().IsMatch(cleaned))
+            {
+                // ISO decimal with 1 or 2 decimal places (e.g. -75.00, 12.5).
+                normalized = cleaned;
+            }
+            else
+            {
+                error = $"formato numérico inválido ou fração de centavo ('{raw}').";
+                return false;
+            }
         }
         else
         {
+            if (!PlainIntegerRegex().IsMatch(cleaned))
+            {
+                error = $"formato numérico inválido ('{raw}').";
+                return false;
+            }
+
             normalized = cleaned;
         }
 
@@ -526,5 +594,34 @@ internal static class CsvStatementParser
             error = $"valor '{raw}' contém fração de centavo (ADR-013).";
             return false;
         }
+        catch (OverflowException)
+        {
+            error = $"valor '{raw}' excede o limite suportado.";
+            return false;
+        }
     }
+
+    [GeneratedRegex(@"^\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex PlainIntegerRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:\.\d{3})+,\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrazilianGroupedDecimalRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:,\d{3})+\.\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex UsGroupedDecimalRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:,\d{3}){2,}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex UsMultiThousandsIntegerRegex();
+
+    [GeneratedRegex(@"^\d+,\d+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex SingleCommaDecimalRegex();
+
+    [GeneratedRegex(@"^\d{1,3}(?:\.\d{3}){2,}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrazilianMultiThousandsIntegerRegex();
+
+    [GeneratedRegex(@"^[1-9]\d{0,2}\.\d{3}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex BrazilianSingleThousandsIntegerRegex();
+
+    [GeneratedRegex(@"^\d+\.\d{1,2}$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex IsoDotDecimalRegex();
 }

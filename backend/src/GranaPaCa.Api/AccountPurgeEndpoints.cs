@@ -17,6 +17,7 @@ internal static class AccountPurgeEndpoints
     {
         endpoints.MapPost("/api/v1/account/purge", async (
             AccountPurgeRequest? request,
+            HttpContext httpContext,
             ClaimsPrincipal user,
             NpgsqlDataSource dataSource,
             IIdentityPurgeService identityPurge,
@@ -34,33 +35,48 @@ internal static class AccountPurgeEndpoints
             if (request is null ||
                 !string.Equals(request.ConfirmationText, RequiredConfirmationText, StringComparison.Ordinal))
             {
-                return Results.BadRequest(new AccountPurgeErrorResponse(
-                    "invalid_confirmation",
-                    "Para confirmar a exclusão permanente, informe exatamente 'APAGAR TUDO'."));
+                return Results.Problem(
+                    title: "Confirmação inválida",
+                    detail: "Para confirmar a exclusão permanente, informe exatamente 'APAGAR TUDO'.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_confirmation" });
             }
 
             if (string.IsNullOrWhiteSpace(request.Password) ||
                 string.IsNullOrWhiteSpace(request.TotpCode))
             {
-                return Results.BadRequest(new AccountPurgeErrorResponse(
-                    "missing_credentials",
-                    "Informe sua senha e o código de verificação em duas etapas."));
+                return Results.Problem(
+                    title: "Credenciais obrigatórias",
+                    detail: "Informe sua senha e o código de verificação em duas etapas.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    extensions: new Dictionary<string, object?> { ["code"] = "missing_credentials" });
             }
 
-            var credentialsValid = await identityPurge.VerifyOwnerCredentialsAsync(
+            var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "local";
+            var verification = await identityPurge.VerifyOwnerCredentialsAsync(
                 ownerId,
                 householdId,
                 request.Password,
                 request.TotpCode,
+                clientIp,
                 cancellationToken);
 
-            if (!credentialsValid)
+            if (verification == OwnerCredentialVerificationStatus.RateLimited)
             {
-                return Results.Json(
-                    new AccountPurgeErrorResponse(
-                        "invalid_credentials",
-                        "Senha ou código de verificação inválidos."),
-                    statusCode: StatusCodes.Status401Unauthorized);
+                return Results.Problem(
+                    title: "Muitas tentativas de acesso",
+                    detail: "Muitas tentativas de verificação. Tente novamente em alguns minutos.",
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    extensions: new Dictionary<string, object?> { ["code"] = "rate_limited" });
+            }
+
+            if (verification != OwnerCredentialVerificationStatus.Valid)
+            {
+                return Results.Problem(
+                    title: "Credenciais inválidas",
+                    detail: "Senha ou código de verificação inválidos.",
+                    statusCode: StatusCodes.Status401Unauthorized,
+                    extensions: new Dictionary<string, object?> { ["code"] = "invalid_credentials" });
             }
 
             await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
@@ -75,16 +91,25 @@ internal static class AccountPurgeEndpoints
                 await bankingPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await categorizationPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
                 await alertsPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
+                // Destroy DEK rows atomically inside the same transaction before deleting identity records (ADR-016).
+                await envelopeEncryptor.DestroyHouseholdKeysAsync(householdId, connection, transaction, cancellationToken);
                 await identityPurge.PurgeHouseholdAsync(householdId, connection, transaction, cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
             }
 
-            // Cryptographic erasure of all household DEKs and in-memory caches (ADR-016).
-            await envelopeEncryptor.DestroyHouseholdKeysAsync(householdId, cancellationToken);
+            // Evict cached DEKs only after commit so a rolled-back purge never invalidates active keys.
+            envelopeEncryptor.EvictHouseholdKeysFromCache(householdId);
 
             return Results.NoContent();
-        }).RequireAuthorization();
+        })
+        .RequireAuthorization()
+        .WithName("PurgeAccount")
+        .WithTags("Account")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         return endpoints;
     }
@@ -106,7 +131,3 @@ internal sealed record AccountPurgeRequest(
     string? Password,
     string? TotpCode,
     string? ConfirmationText);
-
-internal sealed record AccountPurgeErrorResponse(
-    string Error,
-    string Message);
