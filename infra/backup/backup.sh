@@ -159,7 +159,7 @@ main() {
 
   CURRENT_STEP="postgres_backup"
   log "Streaming PostgreSQL dump directly into restic..."
-  local producer_status restic_status snapshot_id total_bytes
+  local pipe_statuses producer_status restic_status snapshot_id total_bytes
   RESTIC_OUT_FILE="$(mktemp)"
 
   set +e
@@ -171,8 +171,9 @@ main() {
       --tag granapaca \
       --tag postgres \
       --json >"$RESTIC_OUT_FILE"
-  producer_status=${PIPESTATUS[0]}
-  restic_status=${PIPESTATUS[1]}
+  pipe_statuses=("${PIPESTATUS[@]}")
+  producer_status=${pipe_statuses[0]}
+  restic_status=${pipe_statuses[1]}
   set -e
 
   snapshot_id="$(extract_snapshot_id "$RESTIC_OUT_FILE")"
@@ -207,8 +208,9 @@ main() {
         --tag granapaca \
         --tag files \
         --json >"$RESTIC_OUT_FILE"
-    producer_status=${PIPESTATUS[0]}
-    restic_status=${PIPESTATUS[1]}
+    pipe_statuses=("${PIPESTATUS[@]}")
+    producer_status=${pipe_statuses[0]}
+    restic_status=${pipe_statuses[1]}
     set -e
 
     snapshot_id="$(extract_snapshot_id "$RESTIC_OUT_FILE")"
