@@ -88,6 +88,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  void _skipReviewRules() {
+    if (widget.profileOnly) {
+      Navigator.of(context).pop();
+    } else {
+      _next();
+    }
+  }
+
   void _applyRulesAndContinue(AppState state) {
     final selected = _candidateRules
         .where((r) => !_deselectedRuleIds.contains(r.id))
@@ -519,17 +527,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         step == _OnboardingStep.transport;
 
     if (step == _OnboardingStep.reviewRules) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          OutlinedButton(onPressed: _back, child: const Text('Voltar')),
-          FilledButton.icon(
-            key: const Key('onboarding_apply_rules'),
-            onPressed: () => _applyRulesAndContinue(state),
-            icon: const Icon(Icons.check_rounded),
-            label: const Text('Aplicar regras'),
-          ),
-        ],
+      return SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: GranaSpacing.sm,
+          runSpacing: GranaSpacing.sm,
+          children: [
+            OutlinedButton(onPressed: _back, child: const Text('Voltar')),
+            Wrap(
+              spacing: GranaSpacing.sm,
+              runSpacing: GranaSpacing.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                TextButton(
+                  key: const Key('onboarding_skip_button'),
+                  onPressed: _skipReviewRules,
+                  child: const Text('Pular por agora'),
+                ),
+                FilledButton.icon(
+                  key: const Key('onboarding_apply_rules'),
+                  onPressed: () => _applyRulesAndContinue(state),
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Aplicar regras'),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
     }
 

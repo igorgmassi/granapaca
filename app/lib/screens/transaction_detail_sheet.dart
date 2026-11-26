@@ -162,6 +162,10 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
     final bank = state.originalDataset.bank(account.bankId);
     final historyEntries = state.adjustmentsFor(tx.id);
     final undone = state.undoneIds;
+    final activeUndoableIds = latestActiveAdjustmentIdsFor(
+      tx.id,
+      state.adjustments,
+    );
     final scheme = Theme.of(context).colorScheme;
     final tokens = GranaTokens.of(context);
     final textTheme = Theme.of(context).textTheme;
@@ -517,7 +521,7 @@ class _TransactionDetailSheetState extends State<_TransactionDetailSheet> {
                               ],
                             ),
                           ),
-                          if (!entry.isUndo && !undone.contains(entry.id))
+                          if (activeUndoableIds.contains(entry.id))
                             OutlinedButton(
                               key: Key('undo_${entry.id}'),
                               onPressed: () {

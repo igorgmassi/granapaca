@@ -117,6 +117,35 @@ void main() {
         expect(find.text('Notebook Loja Byte'), findsWidgets);
         expect(find.text('Parcela 5 de 10'), findsWidgets);
 
+        // Edit the purchase directly from the bill sheet and verify the bill
+        // modal updates reactively when returning.
+        await tester.tap(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.text('Notebook Loja Byte'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final detailScrollable = find.byType(Scrollable).last;
+        final descField = find.byKey(const Key('tx_description_field'));
+        await _scrollTo(tester, descField, scrollable: detailScrollable);
+        await tester.enterText(descField, 'Notebook Trabalho');
+        await tester.pumpAndSettle();
+        final saveBtn = find.byKey(const Key('save_correction_button'));
+        await _scrollTo(tester, saveBtn, scrollable: detailScrollable);
+        await tester.tap(saveBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Fechar').last);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.text('Notebook Trabalho'),
+          ),
+          findsOneWidget,
+        );
+
         // Close bill sheet.
         await tester.tap(find.byTooltip('Fechar'));
         await tester.pumpAndSettle();
@@ -258,6 +287,31 @@ void main() {
         expect(find.text('Conta de luz'), findsOneWidget);
         expect(find.text('2 transações'), findsOneWidget);
 
+        // Go back to Gastos and test "Demais categorias" drilldown.
+        await _tapTab(tester, 'Gastos');
+        final restLegend = find.byKey(const Key('donut_legend_rest'));
+        await _scrollTo(
+          tester,
+          restLegend,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(restLegend);
+        await tester.pumpAndSettle();
+
+        final restChip = find.byKey(const Key('filter_chip_categories'));
+        expect(restChip, findsOneWidget);
+        expect(find.text('3 transações'), findsOneWidget);
+        expect(find.text('Aluguel'), findsNothing);
+        expect(find.text('Livraria Página Virada'), findsOneWidget);
+
+        // Remove the multi-category chip and verify all March spending returns.
+        await tester.tap(
+          find.descendant(of: restChip, matching: find.byType(Icon)),
+        );
+        await tester.pumpAndSettle();
+        expect(restChip, findsNothing);
+        expect(find.text('16 transações'), findsOneWidget);
+
         // Go back to Gastos and select Abr/2026 (empty month).
         await _tapTab(tester, 'Gastos');
 
@@ -370,6 +424,65 @@ void main() {
           find.text('Nenhuma regra personalizada ainda'),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'shows Undo button only on the latest active adjustment per field',
+      (tester) async {
+        await tester.pumpWidget(const GranaPaCaApp());
+        await tester.pumpAndSettle();
+
+        await _tapTab(tester, 'Extrato');
+        await tester.enterText(
+          find.byKey(const Key('history_search_field')),
+          'padaria',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Padaria Pão de Ontem').first);
+        await tester.pumpAndSettle();
+
+        final sheetScrollable = find.byType(Scrollable).last;
+
+        // First category adjustment: Alimentação -> Lazer (adj-1)
+        final lazerChip = find.byKey(const Key('cat_choice_leisure'));
+        await _scrollTo(tester, lazerChip, scrollable: sheetScrollable);
+        await tester.tap(lazerChip);
+        await tester.pumpAndSettle();
+
+        final saveBtn = find.byKey(const Key('save_correction_button'));
+        await _scrollTo(tester, saveBtn, scrollable: sheetScrollable);
+        await tester.tap(saveBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Só esta'));
+        await tester.pumpAndSettle();
+
+        // Second category adjustment on the same field: Lazer -> Saúde (adj-2)
+        final healthChip = find.byKey(const Key('cat_choice_health'));
+        await _scrollTo(tester, healthChip, scrollable: sheetScrollable);
+        await tester.tap(healthChip);
+        await tester.pumpAndSettle();
+
+        await _scrollTo(tester, saveBtn, scrollable: sheetScrollable);
+        await tester.tap(saveBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Só esta'));
+        await tester.pumpAndSettle();
+
+        // Only the latest adjustment (adj-2) should show the Desfazer button.
+        final undo2 = find.byKey(const Key('undo_adj-2'));
+        await _scrollTo(tester, undo2, scrollable: sheetScrollable);
+        expect(undo2, findsOneWidget);
+        expect(find.byKey(const Key('undo_adj-1')), findsNothing);
+        expect(find.widgetWithText(OutlinedButton, 'Desfazer'), findsOneWidget);
+
+        // Undoing adj-2 exposes Desfazer on adj-1 (now the active adjustment).
+        await tester.tap(undo2);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('undo_adj-2')), findsNothing);
+        expect(find.byKey(const Key('undo_adj-1')), findsOneWidget);
+        expect(find.widgetWithText(OutlinedButton, 'Desfazer'), findsOneWidget);
       },
     );
   });
@@ -497,6 +610,101 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('●●● Essencial'), findsNWidgets(2));
         expect(find.text('●○○ Flexível'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'supports skipping on rule review in both full trail and profileOnly mode '
+      'without overwriting existing rules',
+      (tester) async {
+        await tester.pumpWidget(const GranaPaCaApp());
+        await tester.pumpAndSettle();
+
+        // Full trail: reach reviewRules (step 8) and skip without applying.
+        await tester.tap(find.text('Primeiro acesso'));
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 4; i++) {
+          await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+          await tester.pumpAndSettle();
+        }
+        expect(find.text('Etapa 5 de 9'), findsOneWidget);
+        await tester.tap(find.text('Motorista de app'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Etapa 8 de 9'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('onboarding_skip_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Etapa 9 de 9'), findsOneWidget);
+        expect(find.text('Conectar bancos'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('onboarding_finish_button')));
+        await tester.pumpAndSettle();
+
+        // Confirm no profile rules were saved.
+        await _tapTab(tester, 'Ajustes');
+        final rulesTile = find.byKey(const Key('settings_manage_rules'));
+        await _scrollTo(
+          tester,
+          rulesTile,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Nenhuma regra ativa'), findsOneWidget);
+
+        // Apply one rule in profileOnly mode.
+        final guideTile = find.byKey(const Key('settings_redo_profile_guide'));
+        await _scrollTo(
+          tester,
+          guideTile,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(guideTile);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Etapa 1 de 4'), findsOneWidget);
+        await tester.tap(find.text('Motorista de app'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Etapa 4 de 4'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('onboarding_apply_rules')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 regra(s) ativa(s)'), findsOneWidget);
+
+        // Re-open profileOnly mode, select extra option, then skip on reviewRules.
+        await _scrollTo(
+          tester,
+          guideTile,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(guideTile);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Desenvolvedor'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_continue_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Etapa 4 de 4'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('onboarding_skip_button')));
+        await tester.pumpAndSettle();
+
+        // Guide closed and existing rule count remained 1.
+        expect(find.text('Privacidade e aparência'), findsOneWidget);
+        expect(find.text('1 regra(s) ativa(s)'), findsOneWidget);
       },
     );
   });

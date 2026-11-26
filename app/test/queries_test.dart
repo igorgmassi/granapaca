@@ -213,6 +213,36 @@ void main() {
       );
     });
 
+    test('filters by a set of categories and preserves copyWith', () {
+      const filter = TxFilter(
+        categories: {SpendingCategory.health, SpendingCategory.housing},
+      );
+      expect(filter.hasActiveFilters, isTrue);
+
+      final h = history(data, filter);
+      expect(h.items.map((t) => t.description), [
+        'Aluguel',
+        'Farmácia Central',
+      ]);
+      expect(h.totalCents, -83000);
+
+      final resolved = resolveEffectiveTransactions(
+        originals: data.transactions,
+        rules: const [],
+        adjustments: const [],
+      );
+      final eh = effectiveHistory(data, resolved, filter);
+      expect(eh.items.map((t) => t.description), [
+        'Aluguel',
+        'Farmácia Central',
+      ]);
+      expect(eh.totalCents, -83000);
+
+      final cleared = filter.copyWith(clearCategories: true);
+      expect(cleared.categories, isNull);
+      expect(cleared.hasActiveFilters, isFalse);
+    });
+
     test('a filter with no match is empty with a zero total', () {
       final h = history(data, const TxFilter(search: 'nada disso'));
       expect(h.items, isEmpty);
@@ -557,6 +587,51 @@ void main() {
         paged.totalCents,
         data.transactions.fold(0, (s, t) => s + t.amountCents),
       );
+    });
+
+    test('latestActiveAdjustmentIdsFor tracks the latest active record per field', () {
+      final adj1 = TxAdjustment(
+        id: 'adj-1',
+        txId: 4,
+        field: AdjustmentField.category,
+        oldValue: SpendingCategory.food.name,
+        newValue: SpendingCategory.leisure.name,
+        timestamp: DateTime(2026, 3, 25),
+      );
+      final adj2 = TxAdjustment(
+        id: 'adj-2',
+        txId: 4,
+        field: AdjustmentField.category,
+        oldValue: SpendingCategory.leisure.name,
+        newValue: SpendingCategory.health.name,
+        timestamp: DateTime(2026, 3, 26),
+      );
+      final adj3 = TxAdjustment(
+        id: 'adj-3',
+        txId: 4,
+        field: AdjustmentField.description,
+        oldValue: 'Restaurante',
+        newValue: 'Jantar',
+        timestamp: DateTime(2026, 3, 26),
+      );
+      expect(latestActiveAdjustmentIdsFor(4, [adj1, adj2, adj3]), {
+        'adj-2',
+        'adj-3',
+      });
+
+      final undo2 = TxAdjustment(
+        id: 'adj-4',
+        txId: 4,
+        field: AdjustmentField.category,
+        oldValue: SpendingCategory.health.name,
+        newValue: SpendingCategory.leisure.name,
+        timestamp: DateTime(2026, 3, 27),
+        undoesId: 'adj-2',
+      );
+      expect(latestActiveAdjustmentIdsFor(4, [adj1, adj2, adj3, undo2]), {
+        'adj-1',
+        'adj-3',
+      });
     });
   });
 

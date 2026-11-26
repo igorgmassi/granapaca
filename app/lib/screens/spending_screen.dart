@@ -40,6 +40,9 @@ class SpendingScreen extends StatelessWidget {
         .toList(growable: false);
 
     void openCategoryInHistory(SpendingCategory? category) {
+      final restCategories = category == null
+          ? ranking.skip(donutCategories).map((c) => c.category).toSet()
+          : null;
       state.openHistoryWithFilter(
         TxFilter(
           from: from,
@@ -47,6 +50,9 @@ class SpendingScreen extends StatelessWidget {
           bankId: state.spendingBankId,
           accountId: state.spendingAccountId,
           category: category,
+          categories: restCategories != null && restCategories.isNotEmpty
+              ? restCategories
+              : null,
           spendingOnly: true,
         ),
       );

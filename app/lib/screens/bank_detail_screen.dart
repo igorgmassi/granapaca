@@ -318,105 +318,121 @@ class _BankDetailScreenState extends State<BankDetailScreen> {
   Future<void> _showCardBillSheet(
     BuildContext context,
     Account card,
-    CardBill bill,
+    CardBill initialBill,
   ) {
-    final state = AppScope.of(context);
-    final data = state.effectiveDataset;
-    final bank = data.bank(card.bankId);
-    final billTxs = [
-      for (final p in bill.purchases) state.effectiveById(p.id),
-    ];
-    final tokens = GranaTokens.of(context);
-    final textTheme = Theme.of(context).textTheme;
-
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (sheetContext) => FractionallySizedBox(
-        heightFactor: 0.85,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                GranaSpacing.lg,
-                0,
-                GranaSpacing.sm,
-                GranaSpacing.md,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Fatura ${formatMonthYear(DateTime(bill.year, bill.month))}',
-                          style: textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
+      builder: (sheetContext) {
+        final state = AppScope.of(sheetContext);
+        final data = state.effectiveDataset;
+        final bank = data.bank(card.bankId);
+        final bill = cardBills(data, card.id).firstWhere(
+          (b) => b.year == initialBill.year && b.month == initialBill.month,
+          orElse: () => CardBill(
+            accountId: initialBill.accountId,
+            year: initialBill.year,
+            month: initialBill.month,
+            closingDate: initialBill.closingDate,
+            dueDate: initialBill.dueDate,
+            totalCents: 0,
+            isOpen: initialBill.isOpen,
+            purchases: const [],
+          ),
+        );
+        final billTxs = [
+          for (final p in bill.purchases) state.effectiveById(p.id),
+        ];
+        final tokens = GranaTokens.of(sheetContext);
+        final textTheme = Theme.of(sheetContext).textTheme;
+
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  GranaSpacing.lg,
+                  0,
+                  GranaSpacing.sm,
+                  GranaSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Fatura ${formatMonthYear(DateTime(bill.year, bill.month))}',
+                            style: textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${card.name} ${card.lastFourDigits != null ? '•••• ${card.lastFourDigits}' : ''} · '
-                          '${bill.isOpen ? 'Aberta' : 'Fechada'}',
-                          style: TextStyle(
-                            color: Theme.of(
-                              sheetContext,
-                            ).colorScheme.onSurfaceVariant,
+                          const SizedBox(height: 4),
+                          Text(
+                            '${card.name} ${card.lastFourDigits != null ? '•••• ${card.lastFourDigits}' : ''} · '
+                            '${bill.isOpen ? 'Aberta' : 'Fechada'}',
+                            style: TextStyle(
+                              color: Theme.of(
+                                sheetContext,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        MoneyText(
-                          cents: bill.totalCents,
-                          hideValues: state.hideValues,
-                          style: tokens.valorGrande,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Fechamento: ${formatFullDate(bill.closingDate)} · '
-                          'Vencimento: ${formatFullDate(bill.dueDate)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              sheetContext,
-                            ).colorScheme.onSurfaceVariant,
+                          const SizedBox(height: 6),
+                          MoneyText(
+                            cents: bill.totalCents,
+                            hideValues: state.hideValues,
+                            style: tokens.valorGrande,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          Text(
+                            'Fechamento: ${formatFullDate(bill.closingDate)} · '
+                            'Vencimento: ${formatFullDate(bill.dueDate)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                sheetContext,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    tooltip: 'Fechar',
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+                    IconButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      tooltip: 'Fechar',
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.all(GranaSpacing.md),
-                itemCount: billTxs.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (itemContext, index) {
-                  final tx = billTxs[index];
-                  return TransactionRow(
-                    tx: tx,
-                    account: card,
-                    bank: bank,
-                    hideValues: state.hideValues,
-                    onTap: () => showTransactionDetailSheet(context, tx.id),
-                  );
-                },
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(GranaSpacing.md),
+                  itemCount: billTxs.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (itemContext, index) {
+                    final tx = billTxs[index];
+                    return TransactionRow(
+                      tx: tx,
+                      account: card,
+                      bank: bank,
+                      hideValues: state.hideValues,
+                      onTap: () =>
+                          showTransactionDetailSheet(sheetContext, tx.id),
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

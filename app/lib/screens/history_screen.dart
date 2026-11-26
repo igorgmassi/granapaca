@@ -145,8 +145,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     const SizedBox(width: GranaSpacing.sm),
                     _FilterPickerButton(
                       key: const Key('filter_category_button'),
-                      label: filter.category?.label ?? 'Categoria',
-                      active: filter.category != null,
+                      label: filter.category != null
+                          ? filter.category!.label
+                          : (filter.categories != null &&
+                                    filter.categories!.isNotEmpty
+                                ? _categoriesLabel(filter.categories!)
+                                : 'Categoria'),
+                      active:
+                          filter.category != null ||
+                          (filter.categories != null &&
+                              filter.categories!.isNotEmpty),
                       onPressed: () => _pickCategory(context, state, filter),
                     ),
                     const SizedBox(width: GranaSpacing.sm),
@@ -210,6 +218,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         label: Text(filter.category!.label),
                         onDeleted: () => state.updateHistoryFilter(
                           filter.copyWith(clearCategory: true),
+                        ),
+                      ),
+                    if (filter.categories != null &&
+                        filter.categories!.isNotEmpty)
+                      InputChip(
+                        key: const Key('filter_chip_categories'),
+                        label: Text(_categoriesLabel(filter.categories!)),
+                        onDeleted: () => state.updateHistoryFilter(
+                          filter.copyWith(clearCategories: true),
                         ),
                       ),
                     if (filter.essentiality != null)
@@ -365,6 +382,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String _periodLabel(TxFilter filter) {
     if (filter.from == null) return 'Período';
     return formatShortMonth(filter.from!);
+  }
+
+  String _categoriesLabel(Set<SpendingCategory> categories) {
+    if (categories.length == 1) return categories.first.label;
+    return 'Demais categorias (${categories.length})';
   }
 
   Future<void> _pickPeriod(
@@ -570,9 +592,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           ListTile(
             title: const Text('Todas as categorias'),
-            trailing: filter.category == null ? const Icon(Icons.check) : null,
+            trailing:
+                filter.category == null &&
+                    (filter.categories == null || filter.categories!.isEmpty)
+                ? const Icon(Icons.check)
+                : null,
             onTap: () {
-              state.updateHistoryFilter(filter.copyWith(clearCategory: true));
+              state.updateHistoryFilter(
+                filter.copyWith(clearCategory: true, clearCategories: true),
+              );
               Navigator.of(sheetContext).pop();
             },
           ),
@@ -581,7 +609,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               title: Text(c.label),
               trailing: filter.category == c ? const Icon(Icons.check) : null,
               onTap: () {
-                state.updateHistoryFilter(filter.copyWith(category: c));
+                state.updateHistoryFilter(
+                  filter.copyWith(category: c, clearCategories: true),
+                );
                 Navigator.of(sheetContext).pop();
               },
             ),

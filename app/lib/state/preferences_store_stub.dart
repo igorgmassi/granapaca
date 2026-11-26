@@ -1,4 +1,4 @@
 import 'preferences_store_base.dart';
 
-/// Web/non-IO fallback store without external dependencies.
+/// Non-IO, non-web fallback store without external dependencies.
 PreferencesStore createDefaultPreferencesStore() => InMemoryPreferencesStore();

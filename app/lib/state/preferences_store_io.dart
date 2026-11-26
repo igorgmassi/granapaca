@@ -73,6 +73,9 @@ PreferencesStore createDefaultPreferencesStore() {
   final baseDir =
       Platform.environment['XDG_CONFIG_HOME'] ??
       Platform.environment['HOME'] ??
+      Platform.environment['APPDATA'] ??
+      Platform.environment['LOCALAPPDATA'] ??
+      Platform.environment['USERPROFILE'] ??
       Directory.systemTemp.path;
   return FilePreferencesStore(File('$baseDir/.granapaca/preferences.json'));
 }

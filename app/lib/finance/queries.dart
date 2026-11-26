@@ -72,6 +72,7 @@ class TxFilter {
     this.accountId,
     this.kind,
     this.category,
+    this.categories,
     this.essentiality,
     this.search,
     this.spendingOnly = false,
@@ -83,6 +84,7 @@ class TxFilter {
   final String? accountId;
   final TxKind? kind;
   final SpendingCategory? category;
+  final Set<SpendingCategory>? categories;
   final Essentiality? essentiality;
 
   /// Matches the original or corrected description ignoring case and accents.
@@ -99,6 +101,7 @@ class TxFilter {
       accountId != null ||
       kind != null ||
       category != null ||
+      (categories != null && categories!.isNotEmpty) ||
       essentiality != null ||
       spendingOnly ||
       (search != null && search!.trim().isNotEmpty);
@@ -116,6 +119,8 @@ class TxFilter {
     bool clearKind = false,
     SpendingCategory? category,
     bool clearCategory = false,
+    Set<SpendingCategory>? categories,
+    bool clearCategories = false,
     Essentiality? essentiality,
     bool clearEssentiality = false,
     String? search,
@@ -128,6 +133,7 @@ class TxFilter {
     accountId: clearAccountId ? null : (accountId ?? this.accountId),
     kind: clearKind ? null : (kind ?? this.kind),
     category: clearCategory ? null : (category ?? this.category),
+    categories: clearCategories ? null : (categories ?? this.categories),
     essentiality: clearEssentiality
         ? null
         : (essentiality ?? this.essentiality),
@@ -177,6 +183,11 @@ History history(
     if (f.spendingOnly && !isSpending(t)) return false;
     if (f.kind != null && t.kind != f.kind) return false;
     if (f.category != null && t.category != f.category) return false;
+    if (f.categories != null &&
+        f.categories!.isNotEmpty &&
+        !f.categories!.contains(t.category)) {
+      return false;
+    }
     if (f.essentiality != null && t.essentiality != f.essentiality) {
       return false;
     }
@@ -231,6 +242,11 @@ EffectiveHistory effectiveHistory(
     if (f.spendingOnly && !isSpendingKind(t.kind)) return false;
     if (f.kind != null && t.kind != f.kind) return false;
     if (f.category != null && t.category != f.category) return false;
+    if (f.categories != null &&
+        f.categories!.isNotEmpty &&
+        !f.categories!.contains(t.category)) {
+      return false;
+    }
     if (f.essentiality != null && t.essentiality != f.essentiality) {
       return false;
     }
@@ -450,6 +466,22 @@ Set<String> undoneAdjustmentIds(List<TxAdjustment> adjustments) => {
   for (final a in adjustments)
     if (a.undoesId != null) a.undoesId!,
 };
+
+/// Returns the IDs of the latest active (non-undo, non-undone) manual
+/// adjustment per [AdjustmentField] for [txId], matching the precedence order
+/// applied by [resolveEffectiveTransactions].
+Set<String> latestActiveAdjustmentIdsFor(
+  int txId,
+  List<TxAdjustment> adjustments,
+) {
+  final undone = undoneAdjustmentIds(adjustments);
+  final latestByField = <AdjustmentField, String>{};
+  for (final a in adjustments) {
+    if (a.txId != txId || a.isUndo || undone.contains(a.id)) continue;
+    latestByField[a.field] = a.id;
+  }
+  return latestByField.values.toSet();
+}
 
 /// Resolves effective transactions by layering:
 /// 1. Manual [TxAdjustment] (highest precedence, never overwritten by rules)
