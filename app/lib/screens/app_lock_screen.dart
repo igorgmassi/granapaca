@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../security/app_lock.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
+import '../theme/pacoca_mascot.dart';
 
 /// Full-screen local app lock with 6-digit PIN keypad, optional biometric
 /// prompt, remaining attempts feedback, and 5-attempt lockout protection
@@ -25,6 +26,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   String _digits = '';
   String? _errorMessage;
   bool _biometricBusy = false;
+  int _errorSignal = 0;
 
   bool get _isLocalOnlyMode =>
       widget.controller.isLocalOnlyMode?.call() ?? false;
@@ -64,6 +66,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       final secs = widget.controller.remainingCooldown.inSeconds.clamp(1, 3600);
       setState(() {
         _digits = '';
+        _errorSignal++;
         _errorMessage =
             'Muitas tentativas incorretas. Aguarde ${secs}s para tentar '
             'novamente. Seus dados locais permanecem cifrados e protegidos.';
@@ -74,6 +77,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (widget.controller.lockedOut) {
       setState(() {
         _digits = '';
+        _errorSignal++;
         _errorMessage =
             'Limite de tentativas atingido. Sua sessão foi encerrada por '
             'segurança.';
@@ -84,6 +88,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     final remaining = widget.controller.remainingAttempts;
     setState(() {
       _digits = '';
+      _errorSignal++;
       _errorMessage = _isLocalOnlyMode
           ? 'PIN incorreto. Restam $remaining '
                 '${remaining == 1 ? 'tentativa' : 'tentativas'} antes da '
@@ -120,16 +125,19 @@ class _AppLockScreenState extends State<AppLockScreen> {
         widget.onUnlocked?.call();
       } else if (result == BiometricAuthResult.cancelled) {
         setState(() {
+          _errorSignal++;
           _errorMessage =
               'Biometria cancelada. Digite seu PIN de 6 dígitos para entrar.';
         });
       } else if (result == BiometricAuthResult.unavailable) {
         setState(() {
+          _errorSignal++;
           _errorMessage =
               'Biometria indisponível neste dispositivo. Use o seu PIN.';
         });
       } else {
         setState(() {
+          _errorSignal++;
           _errorMessage =
               'Não foi possível validar a biometria. Digite seu PIN.';
         });
@@ -145,6 +153,11 @@ class _AppLockScreenState extends State<AppLockScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final pinProgress = _digits.length / AppLockController.pinLength;
+    final mood = _errorMessage != null
+        ? PacocaMood.calmError
+        : PacocaMood.securityShield;
+    final compact = MediaQuery.sizeOf(context).height < 680;
 
     return ListenableBuilder(
       listenable: widget.controller,
@@ -152,26 +165,22 @@ class _AppLockScreenState extends State<AppLockScreen> {
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(GranaSpacing.xl),
+              padding: EdgeInsets.all(
+                compact ? GranaSpacing.md : GranaSpacing.xl,
+              ),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 380),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.lock_outline_rounded,
-                        size: 32,
-                        color: scheme.onPrimaryContainer,
-                      ),
+                    AnimatedPacocaMascot(
+                      key: const Key('app_lock_pacoca_mascot'),
+                      mood: mood,
+                      securityProgress: pinProgress,
+                      errorSignal: _errorSignal,
+                      size: compact ? 74 : 112,
                     ),
-                    const SizedBox(height: GranaSpacing.lg),
+                    SizedBox(height: compact ? GranaSpacing.xs : GranaSpacing.md),
                     Text(
                       'GranaPaCá bloqueado',
                       textAlign: TextAlign.center,
@@ -187,7 +196,9 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(height: GranaSpacing.xl),
+                    SizedBox(
+                      height: compact ? GranaSpacing.md : GranaSpacing.xl,
+                    ),
 
                     // 6-dot PIN indicator
                     Semantics(

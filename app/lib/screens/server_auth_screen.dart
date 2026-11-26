@@ -4,14 +4,18 @@ import 'package:material_ui/material_ui.dart';
 import '../api/api_models.dart';
 import '../state/app_state.dart';
 import '../theme/grana_theme.dart';
+import '../theme/pacoca_mascot.dart';
 import '../widgets/totp_qr_code.dart';
 import 'app_shell.dart';
 
 enum _AuthFlowStep { server, ownerSetup, login, totpSetup, recoveryCodes }
 
+enum _ModeFocus { localDevice, server, demo }
+
 /// Real self-hosted server validation, initial owner creation, login,
-/// mandatory TOTP 2FA enrollment, and recovery codes confirmation
-/// (RF-01, RF-02, RF-03).
+/// mandatory TOTP 2FA enrollment, recovery codes confirmation, and zero-server
+/// encrypted local mode entry — styled in Toca Editorial with interactive
+/// Paçoca mascot animations (RF-01, RF-02, RF-03, ADR-030).
 class ServerAuthScreen extends StatefulWidget {
   const ServerAuthScreen({
     super.key,
@@ -30,9 +34,11 @@ class ServerAuthScreen extends StatefulWidget {
 
 class _ServerAuthScreenState extends State<ServerAuthScreen> {
   _AuthFlowStep _step = _AuthFlowStep.server;
+  _ModeFocus _focusedMode = _ModeFocus.localDevice;
   bool _busy = false;
   String? _errorMessage;
   String? _infoMessage;
+  int _errorSignal = 0;
 
   late final TextEditingController _serverUrlController;
   final _ownerNameController = TextEditingController();
@@ -44,6 +50,19 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
   final _loginPasswordController = TextEditingController();
   final _loginSecondFactorController = TextEditingController();
   bool _useRecoveryCode = false;
+  bool _showOwnerPassword = false;
+  bool _showLoginPassword = false;
+
+  // Focus nodes driving Paçoca's real-time eye tracking, eye covering, and shield poses.
+  final _serverUrlFocus = FocusNode();
+  final _ownerNameFocus = FocusNode();
+  final _ownerEmailFocus = FocusNode();
+  final _ownerPasswordFocus = FocusNode();
+  final _ownerConfirmPasswordFocus = FocusNode();
+  final _loginEmailFocus = FocusNode();
+  final _loginPasswordFocus = FocusNode();
+  final _loginSecondFactorFocus = FocusNode();
+  final _totpConfirmFocus = FocusNode();
 
   String? _pendingTotpToken;
   TotpSetupData? _totpSetupData;
@@ -52,12 +71,67 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
   bool _savedRecoveryCodes = false;
   bool _initialized = false;
 
+  final Map<TextEditingController, String> _lastControllerText = {};
+  final Map<TextEditingController, VoidCallback> _controllerListeners = {};
+
   @override
   void initState() {
     super.initState();
     _serverUrlController = TextEditingController(
       text: widget.initialServerUrl ?? '',
     );
+    for (final node in _allFocusNodes) {
+      node.addListener(_onFieldStateChanged);
+    }
+    for (final controller in _trackedTextControllers) {
+      _lastControllerText[controller] = controller.text;
+      void listener() => _onTextControllerChanged(controller);
+      _controllerListeners[controller] = listener;
+      controller.addListener(listener);
+    }
+  }
+
+  List<FocusNode> get _allFocusNodes => [
+    _serverUrlFocus,
+    _ownerNameFocus,
+    _ownerEmailFocus,
+    _ownerPasswordFocus,
+    _ownerConfirmPasswordFocus,
+    _loginEmailFocus,
+    _loginPasswordFocus,
+    _loginSecondFactorFocus,
+    _totpConfirmFocus,
+  ];
+
+  List<TextEditingController> get _trackedTextControllers => [
+    _serverUrlController,
+    _ownerNameController,
+    _ownerEmailController,
+    _ownerPasswordController,
+    _ownerConfirmPasswordController,
+    _loginEmailController,
+    _loginPasswordController,
+    _loginSecondFactorController,
+    _totpConfirmCodeController,
+  ];
+
+  void _onFieldStateChanged() {
+    if (!mounted) return;
+    if (_serverUrlFocus.hasFocus) {
+      _focusedMode = _ModeFocus.server;
+    }
+    setState(() {});
+  }
+
+  void _onTextControllerChanged(TextEditingController controller) {
+    final current = controller.text;
+    final textChanged = _lastControllerText[controller] != current;
+    _lastControllerText[controller] = current;
+    if (!mounted) return;
+    if (textChanged && _errorMessage != null) {
+      _errorMessage = null;
+    }
+    setState(() {});
   }
 
   @override
@@ -67,6 +141,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       final state = AppScope.of(context);
       if (_serverUrlController.text.isEmpty && state.serverUrl != null) {
         _serverUrlController.text = state.serverUrl!;
+        _lastControllerText[_serverUrlController] = _serverUrlController.text;
       }
       _initialized = true;
     }
@@ -74,6 +149,15 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
 
   @override
   void dispose() {
+    for (final node in _allFocusNodes) {
+      node.removeListener(_onFieldStateChanged);
+      node.dispose();
+    }
+    for (final entry in _controllerListeners.entries) {
+      entry.key.removeListener(entry.value);
+    }
+    _controllerListeners.clear();
+    _lastControllerText.clear();
     _serverUrlController.dispose();
     _ownerNameController.dispose();
     _ownerEmailController.dispose();
@@ -84,6 +168,160 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     _loginSecondFactorController.dispose();
     _totpConfirmCodeController.dispose();
     super.dispose();
+  }
+
+  void _setError(String message) {
+    setState(() {
+      _errorMessage = message;
+      _errorSignal++;
+    });
+  }
+
+  int get _stepIndex {
+    switch (_step) {
+      case _AuthFlowStep.server:
+        return 0;
+      case _AuthFlowStep.ownerSetup:
+        return 1;
+      case _AuthFlowStep.login:
+        return 2;
+      case _AuthFlowStep.totpSetup:
+        return 3;
+      case _AuthFlowStep.recoveryCodes:
+        return 4;
+    }
+  }
+
+  ({
+    PacocaMood mood,
+    double gazeX,
+    double gazeY,
+    double securityProgress,
+  })
+  get _mascotPose {
+    if (_errorMessage != null) {
+      return (
+        mood: PacocaMood.calmError,
+        gazeX: 0.0,
+        gazeY: 0.1,
+        securityProgress: 0.0,
+      );
+    }
+
+    final isPasswordFocused =
+        _ownerPasswordFocus.hasFocus ||
+        _ownerConfirmPasswordFocus.hasFocus ||
+        _loginPasswordFocus.hasFocus;
+    final isPasswordRevealed =
+        ((_ownerPasswordFocus.hasFocus ||
+                _ownerConfirmPasswordFocus.hasFocus) &&
+            _showOwnerPassword) ||
+        (_loginPasswordFocus.hasFocus && _showLoginPassword);
+
+    if (isPasswordFocused) {
+      return (
+        mood: isPasswordRevealed
+            ? PacocaMood.peekingPassword
+            : PacocaMood.coveringEyes,
+        gazeX: 0.0,
+        gazeY: 0.25,
+        securityProgress: 0.0,
+      );
+    }
+
+    if (_loginSecondFactorFocus.hasFocus) {
+      final progress = (_loginSecondFactorController.text.trim().length / 6.0)
+          .clamp(0.0, 1.0);
+      return (
+        mood: PacocaMood.securityShield,
+        gazeX: 0.0,
+        gazeY: 0.15,
+        securityProgress: progress,
+      );
+    }
+
+    switch (_step) {
+      case _AuthFlowStep.server:
+        if (_serverUrlFocus.hasFocus) {
+          return (
+            mood: PacocaMood.trackingInput,
+            gazeX: _textGazeX(_serverUrlController.text),
+            gazeY: 0.45,
+            securityProgress: 0.0,
+          );
+        }
+        final modeGaze = switch (_focusedMode) {
+          _ModeFocus.localDevice => -0.55,
+          _ModeFocus.server => 0.0,
+          _ModeFocus.demo => 0.55,
+        };
+        return (
+          mood: PacocaMood.welcome,
+          gazeX: modeGaze,
+          gazeY: 0.25,
+          securityProgress: 0.0,
+        );
+
+      case _AuthFlowStep.ownerSetup:
+        if (_ownerNameFocus.hasFocus) {
+          return (
+            mood: PacocaMood.trackingInput,
+            gazeX: _textGazeX(_ownerNameController.text),
+            gazeY: 0.4,
+            securityProgress: 0.0,
+          );
+        }
+        if (_ownerEmailFocus.hasFocus) {
+          return (
+            mood: PacocaMood.trackingInput,
+            gazeX: _textGazeX(_ownerEmailController.text),
+            gazeY: 0.5,
+            securityProgress: 0.0,
+          );
+        }
+        return (
+          mood: PacocaMood.trackingInput,
+          gazeX: _textGazeX(
+            _ownerEmailController.text.isNotEmpty
+                ? _ownerEmailController.text
+                : _ownerNameController.text,
+          ),
+          gazeY: 0.35,
+          securityProgress: 0.0,
+        );
+
+      case _AuthFlowStep.login:
+        return (
+          mood: PacocaMood.trackingInput,
+          gazeX: _textGazeX(_loginEmailController.text),
+          gazeY: 0.45,
+          securityProgress: 0.0,
+        );
+
+      case _AuthFlowStep.totpSetup:
+        final progress = (_totpConfirmCodeController.text.trim().length / 6.0)
+            .clamp(0.0, 1.0);
+        return (
+          mood: PacocaMood.securityShield,
+          gazeX: 0.0,
+          gazeY: 0.15,
+          securityProgress: progress,
+        );
+
+      case _AuthFlowStep.recoveryCodes:
+        return (
+          mood: PacocaMood.celebrating,
+          gazeX: 0.0,
+          gazeY: 0.0,
+          securityProgress: 1.0,
+        );
+    }
+  }
+
+  static double _textGazeX(String text) {
+    if (text.isEmpty) return -0.35;
+    final ratio = (text.length / 26.0).clamp(0.0, 1.0);
+    return -0.75 + ratio * 1.5;
   }
 
   void _finishIntoApp() {
@@ -102,6 +340,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
 
   Future<void> _startLocalDevice(AppState state) async {
     setState(() {
+      _focusedMode = _ModeFocus.localDevice;
       _busy = true;
       _errorMessage = null;
       _infoMessage = null;
@@ -116,6 +355,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
   }
 
   void _exploreDemo(AppState state) {
+    setState(() => _focusedMode = _ModeFocus.demo);
     state.enterDemoMode();
     if (widget.onExploreDemo != null) {
       widget.onExploreDemo!();
@@ -132,6 +372,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
 
   Future<void> _validateServer(AppState state) async {
     setState(() {
+      _focusedMode = _ModeFocus.server;
       _busy = true;
       _errorMessage = null;
       _infoMessage = null;
@@ -151,7 +392,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       });
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = error.message);
+      _setError(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -164,22 +405,21 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     final confirm = _ownerConfirmPasswordController.text;
 
     if (name.isEmpty) {
-      setState(() => _errorMessage = 'Informe como você prefere ser chamado.');
+      _setError('Informe como você prefere ser chamado.');
       return;
     }
     if (!email.contains('@') || !email.contains('.')) {
-      setState(() => _errorMessage = 'Informe um endereço de e-mail válido.');
+      _setError('Informe um endereço de e-mail válido.');
       return;
     }
     if (!_passwordMeetsPolicy(password)) {
-      setState(
-        () => _errorMessage =
-            'A senha precisa atender a todos os critérios de segurança abaixo.',
+      _setError(
+        'A senha precisa atender a todos os critérios de segurança abaixo.',
       );
       return;
     }
     if (password != confirm) {
-      setState(() => _errorMessage = 'As duas senhas precisam ser iguais.');
+      _setError('As duas senhas precisam ser iguais.');
       return;
     }
 
@@ -204,7 +444,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       });
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = error.message);
+      _setError(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -216,7 +456,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     final secondFactor = _loginSecondFactorController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Informe seu e-mail e sua senha.');
+      _setError('Informe seu e-mail e sua senha.');
       return;
     }
 
@@ -257,7 +497,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       _finishIntoApp();
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = error.message);
+      _setError(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -267,9 +507,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     final pending = _pendingTotpToken;
     final code = _totpConfirmCodeController.text.trim();
     if (pending == null || code.length < 6) {
-      setState(
-        () => _errorMessage = 'Digite o código de 6 dígitos do autenticador.',
-      );
+      _setError('Digite o código de 6 dígitos do autenticador.');
       return;
     }
 
@@ -288,7 +526,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       });
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _errorMessage = error.message);
+      _setError(error.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -335,118 +573,183 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     final state = AppScope.of(context);
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final pose = _mascotPose;
+    final compact = MediaQuery.sizeOf(context).height < 680;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
+      appBar: AppBar(
+        toolbarHeight: compact ? 44 : null,
+        title: Text(_title),
+        actions: compact
+            ? [
+                Padding(
+                  padding: const EdgeInsets.only(right: GranaSpacing.md),
+                  child: EditorialStepDots(total: 5, currentIndex: _stepIndex),
+                ),
+              ]
+            : null,
+      ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(GranaSpacing.md),
+          padding: EdgeInsets.fromLTRB(
+            GranaSpacing.md,
+            compact ? 2 : GranaSpacing.sm,
+            GranaSpacing.md,
+            GranaSpacing.lg,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.sessionClearedNotice != null) ...[
-                  Card(
-                    key: const Key('session_cleared_notice'),
-                    color: scheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(GranaSpacing.md),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            color: scheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: GranaSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              state.sessionClearedNotice!,
-                              style: TextStyle(
-                                color: scheme.onErrorContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                if (!compact) ...[
+                  Center(
+                    child: Column(
+                      children: [
+                        const GranaPacaLogo(compact: true),
+                        const SizedBox(height: GranaSpacing.sm),
+                        EditorialStepDots(total: 5, currentIndex: _stepIndex),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: GranaSpacing.sm),
-                ],
-                if (_infoMessage != null) ...[
-                  Card(
-                    color: scheme.secondaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(GranaSpacing.md),
-                      child: Text(
-                        _infoMessage!,
-                        style: TextStyle(
-                          color: scheme.onSecondaryContainer,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: GranaSpacing.sm),
-                ],
-                if (_errorMessage != null) ...[
-                  Card(
-                    key: const Key('auth_error_banner'),
-                    color: scheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(GranaSpacing.md),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            color: scheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: GranaSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              _errorMessage!,
-                              style: TextStyle(
-                                color: scheme.onErrorContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: GranaSpacing.sm),
+                  const SizedBox(height: GranaSpacing.xs),
                 ],
 
-                switch (_step) {
-                  _AuthFlowStep.server => _buildServerStep(
-                    state,
-                    scheme,
-                    textTheme,
+                // Paçoca perched cleanly right on the top edge of the form card
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (compact) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8, right: 12),
+                          child: GranaPacaLogo(compact: true),
+                        ),
+                      ],
+                      AnimatedPacocaMascot(
+                        key: const Key('auth_pacoca_mascot'),
+                        mood: pose.mood,
+                        gazeX: pose.gazeX,
+                        gazeY: pose.gazeY,
+                        securityProgress: pose.securityProgress,
+                        errorSignal: _errorSignal,
+                        size: compact ? 74 : 112,
+                      ),
+                    ],
                   ),
-                  _AuthFlowStep.ownerSetup => _buildOwnerSetupStep(
-                    state,
-                    scheme,
-                    textTheme,
+                ),
+
+                Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(
+                      compact ? GranaSpacing.md : GranaSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (state.sessionClearedNotice != null) ...[
+                          Card(
+                            key: const Key('session_cleared_notice'),
+                            color: scheme.errorContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(GranaSpacing.md),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.shield_outlined,
+                                    color: scheme.onErrorContainer,
+                                  ),
+                                  const SizedBox(width: GranaSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      state.sessionClearedNotice!,
+                                      style: TextStyle(
+                                        color: scheme.onErrorContainer,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: GranaSpacing.sm),
+                        ],
+                        if (_infoMessage != null) ...[
+                          Card(
+                            color: scheme.secondaryContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(GranaSpacing.md),
+                              child: Text(
+                                _infoMessage!,
+                                style: TextStyle(
+                                  color: scheme.onSecondaryContainer,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: GranaSpacing.sm),
+                        ],
+                        if (_errorMessage != null) ...[
+                          Card(
+                            key: const Key('auth_error_banner'),
+                            color: scheme.errorContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(GranaSpacing.md),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline_rounded,
+                                    color: scheme.onErrorContainer,
+                                  ),
+                                  const SizedBox(width: GranaSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      _errorMessage!,
+                                      style: TextStyle(
+                                        color: scheme.onErrorContainer,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: GranaSpacing.sm),
+                        ],
+
+                        switch (_step) {
+                          _AuthFlowStep.server => _buildServerStep(
+                            state,
+                            scheme,
+                            textTheme,
+                          ),
+                          _AuthFlowStep.ownerSetup => _buildOwnerSetupStep(
+                            state,
+                            scheme,
+                            textTheme,
+                          ),
+                          _AuthFlowStep.login => _buildLoginStep(
+                            state,
+                            scheme,
+                            textTheme,
+                          ),
+                          _AuthFlowStep.totpSetup => _buildTotpSetupStep(
+                            state,
+                            scheme,
+                            textTheme,
+                          ),
+                          _AuthFlowStep.recoveryCodes =>
+                            _buildRecoveryCodesStep(state, scheme, textTheme),
+                        },
+                      ],
+                    ),
                   ),
-                  _AuthFlowStep.login => _buildLoginStep(
-                    state,
-                    scheme,
-                    textTheme,
-                  ),
-                  _AuthFlowStep.totpSetup => _buildTotpSetupStep(
-                    state,
-                    scheme,
-                    textTheme,
-                  ),
-                  _AuthFlowStep.recoveryCodes => _buildRecoveryCodesStep(
-                    state,
-                    scheme,
-                    textTheme,
-                  ),
-                },
+                ),
               ],
             ),
           ),
@@ -465,184 +768,244 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Path 1: Zero-server encrypted local device mode (recommended for beginners)
-        Card(
-          key: const Key('mode_local_device_card'),
-          color: scheme.primaryContainer.withValues(alpha: 0.45),
-          child: Padding(
-            padding: const EdgeInsets.all(GranaSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: GranaSpacing.sm,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+        MouseRegion(
+          onEnter: (_) => setState(() => _focusedMode = _ModeFocus.localDevice),
+          child: Card(
+            key: const Key('mode_local_device_card'),
+            color: _focusedMode == _ModeFocus.localDevice
+                ? scheme.secondaryContainer
+                : scheme.surfaceContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              side: BorderSide(
+                color: _focusedMode == _ModeFocus.localDevice
+                    ? scheme.primary
+                    : scheme.outlineVariant,
+                width: _focusedMode == _ModeFocus.localDevice ? 1.5 : 1,
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              onTap: () =>
+                  setState(() => _focusedMode = _ModeFocus.localDevice),
+              child: Padding(
+                padding: const EdgeInsets.all(GranaSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.smartphone_outlined,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                    Text(
-                      'Usar só neste aparelho',
-                      style: textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: tokens.mata.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(GranaRadius.chip),
-                      ),
-                      child: Text(
-                        'Recomendado para começar',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: tokens.mata,
+                    Wrap(
+                      spacing: GranaSpacing.sm,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.smartphone_outlined,
+                          size: 18,
+                          color: scheme.primary,
                         ),
+                        Text(
+                          'Usar só neste aparelho',
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: tokens.mata.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(
+                              GranaRadius.chip,
+                            ),
+                          ),
+                          child: Text(
+                            'Recomendado para começar',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: tokens.mata,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Sem servidor, sem Docker e sem mensalidade. Seus dados ficam '
+                      'cifrados só no celular; importe extratos OFX/CSV ou lance '
+                      'gastos na hora.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: GranaSpacing.sm),
+                    FilledButton.icon(
+                      key: const Key('start_local_device_button'),
+                      onPressed: _busy ? null : () => _startLocalDevice(state),
+                      icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                      label: const Text('Começar só neste aparelho'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Sem servidor, sem Docker e sem mensalidade. Seus dados ficam '
-                  'cifrados só no celular; importe extratos OFX/CSV ou lance '
-                  'gastos na hora.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: GranaSpacing.sm),
-                FilledButton.icon(
-                  key: const Key('start_local_device_button'),
-                  onPressed: _busy ? null : () => _startLocalDevice(state),
-                  icon: const Icon(Icons.lock_outline_rounded, size: 18),
-                  label: const Text('Começar só neste aparelho'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
         const SizedBox(height: GranaSpacing.sm),
 
         // Path 2: Connect to self-hosted server (inline URL field + validate CTA)
-        Card(
-          key: const Key('mode_server_card'),
-          child: Padding(
-            padding: const EdgeInsets.all(GranaSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+        MouseRegion(
+          onEnter: (_) => setState(() => _focusedMode = _ModeFocus.server),
+          child: Card(
+            key: const Key('mode_server_card'),
+            color: _focusedMode == _ModeFocus.server
+                ? scheme.secondaryContainer
+                : scheme.surfaceContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              side: BorderSide(
+                color: _focusedMode == _ModeFocus.server
+                    ? scheme.primary
+                    : scheme.outlineVariant,
+                width: _focusedMode == _ModeFocus.server ? 1.5 : 1,
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              onTap: () => setState(() => _focusedMode = _ModeFocus.server),
+              child: Padding(
+                padding: const EdgeInsets.all(GranaSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.dns_outlined,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: GranaSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'Conectar ao meu servidor',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.dns_outlined,
+                          size: 18,
+                          color: scheme.primary,
                         ),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Conectar ao meu servidor',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Para quem já roda sua instância com sincronização '
+                      'automática via Open Finance.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: GranaSpacing.sm),
+                    TextField(
+                      key: const Key('server_url_field'),
+                      controller: _serverUrlController,
+                      focusNode: _serverUrlFocus,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Endereço do servidor',
+                        hintText: 'https://financas.minha-rede.ts.net',
+                        prefixIcon: Icon(Icons.dns_outlined),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: GranaSpacing.sm),
+                    FilledButton.icon(
+                      key: const Key('server_validate_button'),
+                      onPressed: _busy ? null : () => _validateServer(state),
+                      icon: _busy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check_circle_outline, size: 18),
+                      label: Text(
+                        _busy ? 'Validando servidor...' : 'Validar e continuar',
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Para quem já roda sua instância com sincronização '
-                  'automática via Open Finance.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: GranaSpacing.sm),
-                TextField(
-                  key: const Key('server_url_field'),
-                  controller: _serverUrlController,
-                  keyboardType: TextInputType.url,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Endereço do servidor',
-                    hintText: 'https://financas.minha-rede.ts.net',
-                    prefixIcon: Icon(Icons.dns_outlined),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: GranaSpacing.sm),
-                FilledButton.icon(
-                  key: const Key('server_validate_button'),
-                  onPressed: _busy ? null : () => _validateServer(state),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_circle_outline, size: 18),
-                  label: Text(
-                    _busy ? 'Validando servidor...' : 'Validar e continuar',
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
         const SizedBox(height: GranaSpacing.sm),
 
         // Path 3: Explore deterministic demo
-        Card(
-          key: const Key('mode_demo_card'),
-          child: Padding(
-            padding: const EdgeInsets.all(GranaSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+        MouseRegion(
+          onEnter: (_) => setState(() => _focusedMode = _ModeFocus.demo),
+          child: Card(
+            key: const Key('mode_demo_card'),
+            color: _focusedMode == _ModeFocus.demo
+                ? scheme.secondaryContainer
+                : scheme.surfaceContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              side: BorderSide(
+                color: _focusedMode == _ModeFocus.demo
+                    ? scheme.primary
+                    : scheme.outlineVariant,
+                width: _focusedMode == _ModeFocus.demo ? 1.5 : 1,
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(GranaRadius.card),
+              onTap: () => setState(() => _focusedMode = _ModeFocus.demo),
+              child: Padding(
+                padding: const EdgeInsets.all(GranaSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.science_outlined,
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: GranaSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'Explorar a demonstração',
-                        style: textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.science_outlined,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
                         ),
+                        const SizedBox(width: GranaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Explorar a demonstração',
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Teste com dados fictícios antes de colocar os seus.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: GranaSpacing.sm),
+                    OutlinedButton.icon(
+                      key: const Key('server_explore_demo_button'),
+                      onPressed: _busy ? null : () => _exploreDemo(state),
+                      icon: const Icon(Icons.science_outlined, size: 18),
+                      label: const Text('Explorar a demonstração'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Teste com dados fictícios antes de colocar os seus.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: GranaSpacing.sm),
-                OutlinedButton.icon(
-                  key: const Key('server_explore_demo_button'),
-                  onPressed: _busy ? null : () => _exploreDemo(state),
-                  icon: const Icon(Icons.science_outlined, size: 18),
-                  label: const Text('Explorar a demonstração'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -680,6 +1043,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('setup_name_field'),
           controller: _ownerNameController,
+          focusNode: _ownerNameFocus,
           decoration: const InputDecoration(
             labelText: 'Seu nome',
             prefixIcon: Icon(Icons.person_outline),
@@ -689,6 +1053,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('setup_email_field'),
           controller: _ownerEmailController,
+          focusNode: _ownerEmailFocus,
           keyboardType: TextInputType.emailAddress,
           autocorrect: false,
           decoration: const InputDecoration(
@@ -700,11 +1065,23 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('setup_password_field'),
           controller: _ownerPasswordController,
-          obscureText: true,
+          focusNode: _ownerPasswordFocus,
+          obscureText: !_showOwnerPassword,
           onChanged: (_) => setState(() {}),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Senha forte',
-            prefixIcon: Icon(Icons.lock_outline),
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              key: const Key('setup_password_visibility_toggle'),
+              tooltip: _showOwnerPassword ? 'Ocultar senha' : 'Mostrar senha',
+              onPressed: () =>
+                  setState(() => _showOwnerPassword = !_showOwnerPassword),
+              icon: Icon(
+                _showOwnerPassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: GranaSpacing.sm),
@@ -757,13 +1134,30 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('setup_confirm_password_field'),
           controller: _ownerConfirmPasswordController,
-          obscureText: true,
+          focusNode: _ownerConfirmPasswordFocus,
+          obscureText: !_showOwnerPassword,
           decoration: const InputDecoration(
             labelText: 'Confirmar senha',
             prefixIcon: Icon(Icons.lock_outline),
           ),
         ),
-        const SizedBox(height: GranaSpacing.xl),
+        const SizedBox(height: GranaSpacing.sm),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 14,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Seus dados ficam só com você',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+        const SizedBox(height: GranaSpacing.lg),
         FilledButton(
           key: const Key('setup_owner_submit_button'),
           onPressed: _busy ? null : () => _submitOwnerSetup(state),
@@ -820,6 +1214,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('login_email_field'),
           controller: _loginEmailController,
+          focusNode: _loginEmailFocus,
           keyboardType: TextInputType.emailAddress,
           autocorrect: false,
           decoration: const InputDecoration(
@@ -831,10 +1226,22 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('login_password_field'),
           controller: _loginPasswordController,
-          obscureText: true,
-          decoration: const InputDecoration(
+          focusNode: _loginPasswordFocus,
+          obscureText: !_showLoginPassword,
+          decoration: InputDecoration(
             labelText: 'Senha',
-            prefixIcon: Icon(Icons.lock_outline),
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              key: const Key('login_password_visibility_toggle'),
+              tooltip: _showLoginPassword ? 'Ocultar senha' : 'Mostrar senha',
+              onPressed: () =>
+                  setState(() => _showLoginPassword = !_showLoginPassword),
+              icon: Icon(
+                _showLoginPassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: GranaSpacing.md),
@@ -843,6 +1250,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
             _useRecoveryCode ? 'login_recovery_field' : 'login_totp_field',
           ),
           controller: _loginSecondFactorController,
+          focusNode: _loginSecondFactorFocus,
           keyboardType: _useRecoveryCode
               ? TextInputType.text
               : TextInputType.number,
@@ -971,6 +1379,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         TextField(
           key: const Key('totp_confirm_code_field'),
           controller: _totpConfirmCodeController,
+          focusNode: _totpConfirmFocus,
           keyboardType: TextInputType.number,
           maxLength: 6,
           decoration: const InputDecoration(

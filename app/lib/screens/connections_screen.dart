@@ -302,10 +302,10 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                                     leading: CircleAvatar(
                                       radius: 14,
                                       backgroundColor: Color(bank.colorValue),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.account_balance_outlined,
                                         size: 16,
-                                        color: Colors.white,
+                                        color: scheme.onPrimary,
                                       ),
                                     ),
                                     title: Text(
