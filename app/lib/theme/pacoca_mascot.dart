@@ -47,11 +47,10 @@ class GranaPacaLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = scheme.brightness == Brightness.dark;
     final fontSize = compact ? 22.0 : 30.0;
     final pacaW = compact ? 42.0 : 58.0;
     final pacaH = compact ? 25.0 : 34.0;
-    final pacaFill = isDark ? scheme.primary : const Color(0xFFB85C28);
+    final pacaFill = scheme.primary;
     final spotCutout = scheme.surface;
 
     return Semantics(
@@ -71,6 +70,7 @@ class GranaPacaLogo extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     style: TextStyle(
+                      fontFamily: granaBrandFontFamily,
                       fontSize: fontSize,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.8,
@@ -133,7 +133,7 @@ class RestingPacaMark extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
     final bg = isDark ? scheme.surfaceContainerLow : scheme.primary;
-    final fg = isDark ? scheme.primary : const Color(0xFFFAF8F5);
+    final fg = isDark ? scheme.primary : scheme.surface;
 
     return Container(
       width: size,
@@ -1126,7 +1126,8 @@ class _PacocaPainter extends CustomPainter {
       old.reducedMotion != reducedMotion ||
       old.shieldColor != shieldColor ||
       old.goldColor != goldColor ||
-      old.portraitBg != portraitBg;
+      old.portraitBg != portraitBg ||
+      old.borderColor != borderColor;
 }
 
 /// Minimal 5-dot Toca Editorial step indicator (using the brand's spot motif).

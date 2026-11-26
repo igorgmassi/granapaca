@@ -38,6 +38,46 @@ abstract final class GranaMotion {
       MediaQuery.disableAnimationsOf(context) ? Duration.zero : normal;
 }
 
+/// Brand display font family (headings & Paçoca voice).
+const String granaBrandFontFamily = 'Plus Jakarta Sans';
+
+/// UI & tabular numeric font family.
+const String granaUiFontFamily = 'Inter';
+
+TextStyle _granaTextStyle(
+  String family,
+  double size,
+  double lineHeight,
+  FontWeight weight,
+) => TextStyle(
+  fontFamily: family,
+  fontSize: size,
+  height: lineHeight / size,
+  fontWeight: weight,
+);
+
+final TextTheme _granaBaseTextTheme = TextTheme(
+  displayMedium: _granaTextStyle(granaBrandFontFamily, 36, 44, FontWeight.w700),
+  displaySmall: _granaTextStyle(granaBrandFontFamily, 30, 38, FontWeight.w700),
+  headlineLarge: _granaTextStyle(granaBrandFontFamily, 26, 34, FontWeight.w700),
+  headlineMedium: _granaTextStyle(
+    granaBrandFontFamily,
+    22,
+    30,
+    FontWeight.w700,
+  ),
+  headlineSmall: _granaTextStyle(granaBrandFontFamily, 18, 26, FontWeight.w600),
+  titleLarge: _granaTextStyle(granaUiFontFamily, 20, 28, FontWeight.w600),
+  titleMedium: _granaTextStyle(granaUiFontFamily, 16, 24, FontWeight.w600),
+  titleSmall: _granaTextStyle(granaUiFontFamily, 14, 20, FontWeight.w600),
+  bodyLarge: _granaTextStyle(granaUiFontFamily, 16, 24, FontWeight.w400),
+  bodyMedium: _granaTextStyle(granaUiFontFamily, 14, 20, FontWeight.w400),
+  bodySmall: _granaTextStyle(granaUiFontFamily, 12, 16, FontWeight.w400),
+  labelLarge: _granaTextStyle(granaUiFontFamily, 14, 20, FontWeight.w600),
+  labelMedium: _granaTextStyle(granaUiFontFamily, 12, 16, FontWeight.w600),
+  labelSmall: _granaTextStyle(granaUiFontFamily, 11, 16, FontWeight.w600),
+);
+
 /// Verified "Toca Editorial" light ColorScheme (WCAG AA 54/54 pairs).
 const ColorScheme granaLightColorScheme = ColorScheme(
   brightness: Brightness.light,
@@ -60,6 +100,8 @@ const ColorScheme granaLightColorScheme = ColorScheme(
   surface: Color(0xFFFAF8F5),
   onSurface: Color(0xFF231C16),
   onSurfaceVariant: Color(0xFF63564B),
+  surfaceDim: Color(0xFFEAE4DC),
+  surfaceBright: Color(0xFFFFFFFF),
   surfaceContainerLowest: Color(0xFFFFFFFF),
   surfaceContainerLow: Color(0xFFFFFFFF),
   surfaceContainer: Color(0xFFF6F3EE),
@@ -67,6 +109,12 @@ const ColorScheme granaLightColorScheme = ColorScheme(
   surfaceContainerHighest: Color(0xFFECE8E1),
   outline: Color(0xFF8A7B6D),
   outlineVariant: Color(0xFFE8E2DA),
+  inverseSurface: Color(0xFF2F2721),
+  onInverseSurface: Color(0xFFF5F1EC),
+  inversePrimary: Color(0xFFE5965C),
+  shadow: Color(0xFF000000),
+  scrim: Color(0xFF000000),
+  surfaceTint: Color(0xFFA84C19),
 );
 
 /// Verified "Toca Noturna" dark ColorScheme (WCAG AA 54/54 pairs).
@@ -91,6 +139,8 @@ const ColorScheme granaDarkColorScheme = ColorScheme(
   surface: Color(0xFF14110F),
   onSurface: Color(0xFFF5F1EC),
   onSurfaceVariant: Color(0xFFB5A89C),
+  surfaceDim: Color(0xFF14110F),
+  surfaceBright: Color(0xFF342E29),
   surfaceContainerLowest: Color(0xFF0E0C0A),
   surfaceContainerLow: Color(0xFF1E1A17),
   surfaceContainer: Color(0xFF241F1B),
@@ -98,6 +148,12 @@ const ColorScheme granaDarkColorScheme = ColorScheme(
   surfaceContainerHighest: Color(0xFF312A24),
   outline: Color(0xFF8A7A6C),
   outlineVariant: Color(0xFF2E2823),
+  inverseSurface: Color(0xFFF5F1EC),
+  onInverseSurface: Color(0xFF231C16),
+  inversePrimary: Color(0xFFA84C19),
+  shadow: Color(0xFF000000),
+  scrim: Color(0xFF000000),
+  surfaceTint: Color(0xFFE5965C),
 );
 
 /// Semantic tokens and tabular monetary styles for GranaPaCá ("Toca Editorial").
@@ -116,6 +172,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     required this.valorDestaque,
     required this.valorGrande,
     required this.valorLinha,
+    required this.falaPacoca,
   });
 
   final Color mata;
@@ -133,6 +190,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
   final TextStyle valorDestaque;
   final TextStyle valorGrande;
   final TextStyle valorLinha;
+  final TextStyle falaPacoca;
 
   static const List<FontFeature> tabularFeatures = [
     FontFeature.tabularFigures(),
@@ -165,27 +223,35 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       Color(0xFF67330C),
     ],
     valorDestaque: TextStyle(
-      fontSize: 34,
+      fontFamily: granaUiFontFamily,
+      fontSize: 38,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.6,
-      height: 1.15,
+      height: 46 / 38,
       color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
     ),
     valorGrande: TextStyle(
-      fontSize: 22,
-      fontWeight: FontWeight.w700,
-      letterSpacing: -0.3,
-      height: 1.2,
+      fontFamily: granaUiFontFamily,
+      fontSize: 24,
+      fontWeight: FontWeight.w600,
+      height: 32 / 24,
       color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
     ),
     valorLinha: TextStyle(
-      fontSize: 15,
+      fontFamily: granaUiFontFamily,
+      fontSize: 16,
       fontWeight: FontWeight.w600,
-      height: 1.3,
+      height: 24 / 16,
       color: Color(0xFF231C16),
       fontFeatures: tabularFeatures,
+    ),
+    falaPacoca: TextStyle(
+      fontFamily: granaBrandFontFamily,
+      fontSize: 16,
+      fontWeight: FontWeight.w500,
+      height: 24 / 16,
+      color: Color(0xFF231C16),
     ),
   );
 
@@ -216,27 +282,35 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       Color(0xFFF5CBA4),
     ],
     valorDestaque: TextStyle(
-      fontSize: 34,
+      fontFamily: granaUiFontFamily,
+      fontSize: 38,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.6,
-      height: 1.15,
+      height: 46 / 38,
       color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
     ),
     valorGrande: TextStyle(
-      fontSize: 22,
-      fontWeight: FontWeight.w700,
-      letterSpacing: -0.3,
-      height: 1.2,
+      fontFamily: granaUiFontFamily,
+      fontSize: 24,
+      fontWeight: FontWeight.w600,
+      height: 32 / 24,
       color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
     ),
     valorLinha: TextStyle(
-      fontSize: 15,
+      fontFamily: granaUiFontFamily,
+      fontSize: 16,
       fontWeight: FontWeight.w600,
-      height: 1.3,
+      height: 24 / 16,
       color: Color(0xFFF5F1EC),
       fontFeatures: tabularFeatures,
+    ),
+    falaPacoca: TextStyle(
+      fontFamily: granaBrandFontFamily,
+      fontSize: 16,
+      fontWeight: FontWeight.w500,
+      height: 24 / 16,
+      color: Color(0xFFF5F1EC),
     ),
   );
 
@@ -282,6 +356,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     TextStyle? valorDestaque,
     TextStyle? valorGrande,
     TextStyle? valorLinha,
+    TextStyle? falaPacoca,
   }) => GranaTokens(
     mata: mata ?? this.mata,
     milho: milho ?? this.milho,
@@ -295,6 +370,7 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
     valorDestaque: valorDestaque ?? this.valorDestaque,
     valorGrande: valorGrande ?? this.valorGrande,
     valorLinha: valorLinha ?? this.valorLinha,
+    falaPacoca: falaPacoca ?? this.falaPacoca,
   );
 
   @override
@@ -331,6 +407,8 @@ class GranaTokens extends ThemeExtension<GranaTokens> {
       valorGrande:
           TextStyle.lerp(valorGrande, other.valorGrande, t) ?? valorGrande,
       valorLinha: TextStyle.lerp(valorLinha, other.valorLinha, t) ?? valorLinha,
+      falaPacoca:
+          TextStyle.lerp(falaPacoca, other.falaPacoca, t) ?? falaPacoca,
     );
   }
 }
@@ -402,6 +480,10 @@ IconData iconForTxKind(TxKind kind) {
 }
 
 ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
+  final textTheme = _granaBaseTextTheme.apply(
+    bodyColor: scheme.onSurface,
+    displayColor: scheme.onSurface,
+  );
   final pillButtonStyle = ButtonStyle(
     shape: const WidgetStatePropertyAll(StadiumBorder()),
     minimumSize: const WidgetStatePropertyAll(
@@ -416,6 +498,8 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
+    fontFamily: granaUiFontFamily,
+    textTheme: textTheme,
     extensions: [tokens],
     appBarTheme: AppBarTheme(
       elevation: 0,
@@ -423,9 +507,7 @@ ThemeData _buildTheme(ColorScheme scheme, GranaTokens tokens) {
       backgroundColor: scheme.surface,
       foregroundColor: scheme.onSurface,
       centerTitle: false,
-      titleTextStyle: TextStyle(
-        color: scheme.onSurface,
-        fontSize: 20,
+      titleTextStyle: textTheme.titleLarge?.copyWith(
         fontWeight: FontWeight.w700,
         letterSpacing: -0.3,
       ),

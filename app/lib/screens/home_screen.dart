@@ -1031,6 +1031,7 @@ class _PacocaInsightStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final tokens = GranaTokens.of(context);
     final message = hideValues
         ? 'Seus valores estão ocultos. Toque aqui para conversar com a Paçoca.'
         : summaryData.leftoverCents >= 0
@@ -1058,12 +1059,8 @@ class _PacocaInsightStrip extends StatelessWidget {
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                    color: scheme.onSurface,
-                  ),
+                  key: const Key('home_pacoca_insight_text'),
+                  style: tokens.falaPacoca,
                 ),
               ),
               Icon(

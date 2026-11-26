@@ -71,6 +71,9 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
   bool _savedRecoveryCodes = false;
   bool _initialized = false;
 
+  final Map<TextEditingController, String> _lastControllerText = {};
+  final Map<TextEditingController, VoidCallback> _controllerListeners = {};
+
   @override
   void initState() {
     super.initState();
@@ -81,7 +84,10 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       node.addListener(_onFieldStateChanged);
     }
     for (final controller in _trackedTextControllers) {
-      controller.addListener(_onFieldStateChanged);
+      _lastControllerText[controller] = controller.text;
+      void listener() => _onTextControllerChanged(controller);
+      _controllerListeners[controller] = listener;
+      controller.addListener(listener);
     }
   }
 
@@ -101,7 +107,10 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     _serverUrlController,
     _ownerNameController,
     _ownerEmailController,
+    _ownerPasswordController,
+    _ownerConfirmPasswordController,
     _loginEmailController,
+    _loginPasswordController,
     _loginSecondFactorController,
     _totpConfirmCodeController,
   ];
@@ -114,6 +123,17 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     setState(() {});
   }
 
+  void _onTextControllerChanged(TextEditingController controller) {
+    final current = controller.text;
+    final textChanged = _lastControllerText[controller] != current;
+    _lastControllerText[controller] = current;
+    if (!mounted) return;
+    if (textChanged && _errorMessage != null) {
+      _errorMessage = null;
+    }
+    setState(() {});
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -121,6 +141,7 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       final state = AppScope.of(context);
       if (_serverUrlController.text.isEmpty && state.serverUrl != null) {
         _serverUrlController.text = state.serverUrl!;
+        _lastControllerText[_serverUrlController] = _serverUrlController.text;
       }
       _initialized = true;
     }
@@ -132,9 +153,11 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
       node.removeListener(_onFieldStateChanged);
       node.dispose();
     }
-    for (final controller in _trackedTextControllers) {
-      controller.removeListener(_onFieldStateChanged);
+    for (final entry in _controllerListeners.entries) {
+      entry.key.removeListener(entry.value);
     }
+    _controllerListeners.clear();
+    _lastControllerText.clear();
     _serverUrlController.dispose();
     _ownerNameController.dispose();
     _ownerEmailController.dispose();
@@ -176,6 +199,15 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
     double securityProgress,
   })
   get _mascotPose {
+    if (_errorMessage != null) {
+      return (
+        mood: PacocaMood.calmError,
+        gazeX: 0.0,
+        gazeY: 0.1,
+        securityProgress: 0.0,
+      );
+    }
+
     final isPasswordFocused =
         _ownerPasswordFocus.hasFocus ||
         _ownerConfirmPasswordFocus.hasFocus ||
@@ -205,15 +237,6 @@ class _ServerAuthScreenState extends State<ServerAuthScreen> {
         gazeX: 0.0,
         gazeY: 0.15,
         securityProgress: progress,
-      );
-    }
-
-    if (_errorMessage != null) {
-      return (
-        mood: PacocaMood.calmError,
-        gazeX: 0.0,
-        gazeY: 0.1,
-        securityProgress: 0.0,
       );
     }
 

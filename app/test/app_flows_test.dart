@@ -395,7 +395,16 @@ void main() {
 
         // Adjustment history shows entries + Desfazer button.
         final undoButtons = find.widgetWithText(OutlinedButton, 'Desfazer');
-        await _scrollTo(tester, undoButtons.first, scrollable: sheetScrollable);
+        for (
+          var step = 0;
+          step < 20 && undoButtons.evaluate().isEmpty;
+          step++
+        ) {
+          await tester.drag(sheetScrollable, const Offset(0, -250));
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(undoButtons.first);
+        await tester.pumpAndSettle();
         expect(undoButtons, findsWidgets);
         expect(find.textContaining('Motivo: Encontro com amigos'), findsWidgets);
 
@@ -611,7 +620,13 @@ void main() {
 
         // Step 7: Transport (select Aplicativo)
         expect(find.text('Etapa 7 de 9'), findsOneWidget);
-        await tester.tap(find.text('Aplicativo'));
+        final appTransport = find.text('Aplicativo');
+        await _scrollTo(
+          tester,
+          appTransport,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(appTransport);
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('onboarding_continue_button')));
         await tester.pumpAndSettle();
